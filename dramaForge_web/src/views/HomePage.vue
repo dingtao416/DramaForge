@@ -1,0 +1,1027 @@
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { projectsApi } from '@/api/projects'
+import { scriptsApi } from '@/api/scripts'
+import { VideoStyle } from '@/types/enums'
+import type { ProjectList } from '@/types/project'
+
+const router = useRouter()
+const userInput = ref('')
+const loading = ref(false)
+const recentProjects = ref<ProjectList[]>([])
+const sidebarCollapsed = ref(false)
+
+/* ─── Mode definitions ─── */
+type Mode = 'agent' | 'drama' | 'clip' | 'longvideo2' | 'image' | 'longvideo'
+
+interface ModeOption {
+  key: Mode
+  label: string
+  tag?: string
+  desc: string
+  placeholder: string
+  topHint?: string
+}
+
+const modes: ModeOption[] = [
+  { key: 'agent', label: 'Agent 模式', desc: '全能创作 Agent，图片、短片、长视频一站式创作', placeholder: '想做视频？做图片？还是来点灵感探索？' },
+  { key: 'drama', label: '短剧 Agent', tag: 'New', desc: '一键进入短剧创作工作台，快速开始分镜与剧情生成', placeholder: '' },
+  { key: 'clip', label: '沉浸式短片', desc: '15秒内音画同出短视频，一句话秒出片', placeholder: '描述你的想法，可用@指定素材，进行参考生视频' },
+  { key: 'longvideo2', label: '智能长视频 2.0', desc: '自动多分镜编排，轻松生成高质量长片', placeholder: '描述你想创作的长视频内容...' },
+  { key: 'image', label: '生成图片', desc: '输入描述即刻出图，快速验证创意灵感', placeholder: '描述你想生成的图片...' },
+  { key: 'longvideo', label: '智能长视频', desc: '基础长视频流程，速度稳定均衡', placeholder: '描述你想创作的视频内容...' },
+]
+
+const currentMode = ref<Mode>('agent')
+const showModeMenu = ref(false)
+
+const currentModeOption = computed(() => modes.find(m => m.key === currentMode.value)!)
+
+function selectMode(mode: Mode) {
+  if (mode === 'drama') {
+    router.push('/drama-agent')
+    closeAllMenus()
+    return
+  }
+  currentMode.value = mode
+  closeAllMenus()
+}
+
+/* ─── Dropdown states ─── */
+const showUploadMenu = ref(false)
+const showModelMenu = ref(false)
+const showRatioMenu = ref(false)
+const showPresetMenu = ref(false)
+
+const modelAuto = ref(true)
+const modelTab = ref<'video' | 'image'>('video')
+const selectedRatio = ref('auto')
+const presetSearch = ref('')
+
+const videoModels = [
+  { name: 'Seedance 2.0 Fast', desc: '更快更实惠的视频生成模型。' },
+]
+const imageModels = [
+  { name: 'Seedream 5.0 Lite', desc: '字节跳动最新图像生成模型，画质更强。' },
+  { name: 'Seedream 4.5', desc: '字节跳动图像生成模型。' },
+  { name: 'Seedream 4.1', desc: '字节跳动图像生成模型。' },
+]
+const ratioOptions = [
+  { value: 'auto', label: '自动', icon: '⊞' },
+  { value: '16:9', label: '16:9 (横屏)', icon: '▭' },
+  { value: '9:16', label: '9:16 (竖屏)', icon: '▯' },
+  { value: '4:3', label: '4:3', icon: '▭' },
+  { value: '3:4', label: '3:4', icon: '▯' },
+]
+
+function closeAllMenus() {
+  showUploadMenu.value = false
+  showModelMenu.value = false
+  showRatioMenu.value = false
+  showPresetMenu.value = false
+  showModeMenu.value = false
+}
+
+function toggleMenu(menu: 'upload' | 'model' | 'ratio' | 'preset' | 'mode') {
+  const wasOpen = {
+    upload: showUploadMenu.value,
+    model: showModelMenu.value,
+    ratio: showRatioMenu.value,
+    preset: showPresetMenu.value,
+    mode: showModeMenu.value,
+  }[menu]
+  closeAllMenus()
+  if (!wasOpen) {
+    if (menu === 'upload') showUploadMenu.value = true
+    else if (menu === 'model') showModelMenu.value = true
+    else if (menu === 'ratio') showRatioMenu.value = true
+    else if (menu === 'preset') showPresetMenu.value = true
+    else if (menu === 'mode') showModeMenu.value = true
+  }
+}
+
+const quickTags = ['香港电影 · 996', '漫剧：超绝人物特写', '潮汕功夫茶宣传片', '爆款手办生成']
+
+const featureCards = [
+  { title: '短剧 Agent', desc: 'Seedance 2.0 多剧集一键成片', isNew: true, bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
+  { title: 'Seedance 2.0', desc: '首发试用', isNew: false, bg: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' },
+  { title: '爆款复刻', desc: '自动解析爆点，参考文案/主题/画风', isNew: false, bg: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' },
+  { title: '一镜到底', desc: '多张图片生成连续自然的转场', isNew: false, bg: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' },
+]
+
+;(async () => {
+  try {
+    const { data } = await projectsApi.list({ limit: 10 })
+    recentProjects.value = data
+  } catch {}
+})()
+
+async function startCreation() {
+  if (!userInput.value.trim()) return
+  loading.value = true
+  try {
+    const { data: project } = await projectsApi.create({
+      title: userInput.value.slice(0, 50),
+      description: userInput.value,
+      style: VideoStyle.REALISTIC,
+    })
+    await scriptsApi.generate(project.id, { user_input: userInput.value })
+    router.push(`/projects/${project.id}/script`)
+  } catch (e) {
+    console.error('创建失败', e)
+  } finally {
+    loading.value = false
+  }
+}
+
+function fillTag(tag: string) {
+  userInput.value = tag
+}
+</script>
+
+<template>
+  <div class="h-screen flex">
+    <!-- ═══ Left Sidebar ═══ -->
+    <aside
+      class="border-r border-[#EBEBEB] bg-white flex flex-col shrink-0 transition-all duration-200"
+      :class="sidebarCollapsed ? 'w-0 overflow-hidden border-r-0' : 'w-[272px]'"
+    >
+      <!-- Top: Logo + collapse -->
+      <div class="sidebar-section sidebar-header flex items-center justify-between h-[56px] shrink-0">
+        <div class="flex items-center gap-2.5">
+          <div class="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center text-white text-[11px] font-bold">D</div>
+          <span class="text-[15px] font-semibold text-gray-900 whitespace-nowrap">DramaForge</span>
+        </div>
+        <button
+          class="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer transition-colors"
+          @click="sidebarCollapsed = true"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="2" x2="6" y2="14" stroke="currentColor" stroke-width="1.5"/></svg>
+        </button>
+      </div>
+
+      <!-- + 新对话 -->
+      <div class="sidebar-section sidebar-new-chat">
+        <button
+          class="new-chat-btn rounded-full border border-[#E5E5E5] bg-white text-gray-600 flex items-center hover:bg-gray-50 cursor-pointer transition-colors"
+          @click="userInput = ''"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><line x1="8" y1="3" x2="8" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span>新对话</span>
+        </button>
+      </div>
+
+      <!-- 资产库 -->
+      <div class="sidebar-section">
+        <div
+          class="sidebar-item rounded-[10px] text-gray-600 flex items-center hover:bg-gray-50 cursor-pointer transition-colors"
+          @click="router.push('/assets')"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2.5 5.5C2.5 4.4 3.4 3.5 4.5 3.5H7L8.75 5.25H13.5C14.6 5.25 15.5 6.15 15.5 7.25V12.5C15.5 13.6 14.6 14.5 13.5 14.5H4.5C3.4 14.5 2.5 13.6 2.5 12.5V5.5Z" stroke="currentColor" stroke-width="1.4"/></svg>
+          资产库
+        </div>
+      </div>
+
+      <!-- 历史记录 -->
+      <div class="sidebar-section sidebar-history flex items-center justify-between">
+        <span class="text-[12px] text-gray-400 font-medium">历史记录</span>
+        <span class="text-[12px] text-gray-400 cursor-pointer hover:text-primary-600 transition-colors">全部</span>
+      </div>
+
+      <!-- Project list -->
+      <div class="sidebar-section flex-1 overflow-y-auto">
+        <template v-if="recentProjects.length">
+          <div class="text-[11px] text-gray-400 px-3 mb-2">更早</div>
+          <div
+            v-for="p in recentProjects"
+            :key="p.id"
+            class="flex items-center gap-3 px-3 py-3 rounded-[10px] hover:bg-gray-50 cursor-pointer transition-colors"
+            @click="router.push(`/projects/${p.id}`)"
+          >
+            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center text-[13px] text-primary-600 font-medium shrink-0">
+              {{ p.title.charAt(0) }}
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="text-[13px] text-gray-800 truncate leading-tight">{{ p.title }}</div>
+              <div class="text-[11px] text-gray-400 truncate mt-0.5">全能创作Agent</div>
+            </div>
+          </div>
+        </template>
+        <div v-else class="text-center text-[13px] text-gray-400 py-10">暂无项目</div>
+      </div>
+    </aside>
+
+    <!-- Sidebar expand button -->
+    <button
+      v-if="sidebarCollapsed"
+      class="absolute left-3 top-4 z-20 w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-50 cursor-pointer shadow-sm transition-colors"
+      @click="sidebarCollapsed = false"
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="2" x2="6" y2="14" stroke="currentColor" stroke-width="1.5"/></svg>
+    </button>
+
+    <!-- ═══ Main Content ═══ -->
+    <div class="flex-1 flex flex-col relative bg-white">
+      <!-- Floating top-right icons -->
+      <div class="absolute top-4 right-6 z-10 flex items-center gap-4">
+        <button class="h-[34px] px-3.5 rounded-full border border-gray-200 flex items-center gap-1.5 text-[13px] text-gray-500 hover:bg-gray-50 cursor-pointer transition-colors bg-white">
+          <span class="text-primary-500 text-[14px]">✦</span>
+          <span>0</span>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" class="text-gray-400 ml-0.5"><path d="M3 4L5 6L7 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="text-[13px] text-primary-600 font-semibold hover:text-primary-700 cursor-pointer transition-colors">订阅</button>
+        <button class="w-[34px] h-[34px] rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer transition-colors">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2a2.5 2.5 0 0 0-2.5 2.5v1.25a.5.5 0 0 1-.12.33l-.7.8A2 2 0 0 0 6 8.5V10c0 1.1-.4 2.1-1.07 2.9l-.43.5a1 1 0 0 0 .76 1.6h9.48a1 1 0 0 0 .76-1.6l-.43-.5A4.5 4.5 0 0 1 14 10V8.5a2 2 0 0 0-.68-1.5l-.7-.82a.5.5 0 0 1-.12-.33V4.5A2.5 2.5 0 0 0 10 2z" stroke="currentColor" stroke-width="1.3"/><path d="M8.5 15.5s.5 1.5 1.5 1.5 1.5-1.5 1.5-1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        </button>
+        <div class="w-[34px] h-[34px] rounded-full bg-gray-800 flex items-center justify-center text-white text-[12px] font-medium cursor-pointer hover:bg-gray-900 transition-colors">U</div>
+      </div>
+
+      <!-- Center content — 垂直居中，自然滚动 -->
+      <div class="flex-1 flex flex-col items-center justify-center overflow-y-auto py-10">
+        <div class="w-full max-w-[880px] px-10 flex flex-col items-center">
+
+          <!-- Logo -->
+          <div class="w-[56px] h-[56px] bg-gradient-to-br from-primary-500 to-primary-700 rounded-[16px] flex items-center justify-center text-white text-[24px] font-bold shadow-[0_4px_16px_rgba(124,58,237,0.2)] mb-5">D</div>
+
+          <!-- Greeting -->
+          <h1 class="greeting-title text-[32px] font-semibold text-gray-900 text-center leading-[1.2] tracking-[-0.5px] mb-0">
+            Hi，DramaForge 助你爆款写剧一键成片
+          </h1>
+
+          <!-- ─── Input card ─── -->
+          <div class="input-card w-full max-w-[777px] mt-[56px] bg-white rounded-[24px] border border-[#E5E5E5] shadow-[0_1px_4px_rgba(0,0,0,0.03)] focus-within:border-[#C4B5FD] focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.06)] transition-all">
+            <!-- Top hint bar (mode-specific) -->
+            <div v-if="currentModeOption.topHint" class="top-hint-bar">
+              {{ currentModeOption.topHint }}
+            </div>
+
+            <!-- Textarea -->
+            <textarea
+              v-model="userInput"
+              rows="1"
+              class="input-textarea w-full pr-7 resize-none border-none outline-none text-[16px] text-gray-800 placeholder-gray-400 bg-transparent leading-[1.8]"
+              :placeholder="currentModeOption.placeholder"
+            />
+
+            <!-- Toolbar -->
+            <div class="input-toolbar flex items-center pr-6">
+              <!-- ① + 上传参考素材（所有模式） -->
+              <div class="dropdown-wrapper">
+                <button
+                  class="w-[36px] h-[36px] rounded-[10px] border border-[#E5E5E5] flex items-center justify-center text-gray-500 hover:bg-gray-50 hover:text-gray-700 cursor-pointer transition-colors bg-white"
+                  @click="toggleMenu('upload')"
+                  title="上传参考素材"
+                >
+                  <!-- + 加号 -->
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><line x1="9" y1="4" x2="9" y2="14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="4" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                </button>
+                <div v-if="showUploadMenu" class="dropdown-menu dropdown-sm">
+                  <div class="dropdown-item" @click="closeAllMenus()">
+                    <!-- 上传箭头 -->
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 10V3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M5 5.5L8 2.5l3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 10.5v2a1.5 1.5 0 001.5 1.5h8a1.5 1.5 0 001.5-1.5v-2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                    <span>本地上传</span>
+                  </div>
+                  <div class="dropdown-item" @click="closeAllMenus()">
+                    <!-- 文件夹 -->
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 5a2 2 0 012-2h2.5l1.5 2H12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2V5z" stroke="currentColor" stroke-width="1.3"/></svg>
+                    <span>从资产库选择</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ② 模式切换按钮（所有模式） -->
+              <div class="dropdown-wrapper">
+                <button
+                  class="toolbar-btn-text rounded-full flex items-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white"
+                  @click="toggleMenu('mode')"
+                >
+                  <!-- Agent 模式 — 地球/网络图标 -->
+                  <svg v-if="currentMode === 'agent'" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><ellipse cx="8" cy="8" rx="3" ry="6" stroke="currentColor" stroke-width="1"/><path d="M2 8h12" stroke="currentColor" stroke-width="1"/><path d="M2.8 5h10.4M2.8 11h10.4" stroke="currentColor" stroke-width="0.8"/></svg>
+                  <!-- 沉浸式短片 — 闪电图标 -->
+                  <svg v-else-if="currentMode === 'clip'" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M9.5 1.5L4 9h4l-1.5 5.5L13 7H9l.5-5.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <!-- 智能长视频2.0 — 视频+星星图标 -->
+                  <svg v-else-if="currentMode === 'longvideo2'" width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="3.5" width="11" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><polygon points="6,6 6,9.5 9,7.75" fill="currentColor"/><path d="M13.5 2l.4 1.2 1.1.3-1.1.3-.4 1.2-.4-1.2-1.1-.3 1.1-.3z" fill="currentColor"/></svg>
+                  <!-- 生成图片 — 风景画图标 -->
+                  <svg v-else-if="currentMode === 'image'" width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="11" rx="2" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6" r="1.5" stroke="currentColor" stroke-width="1"/><path d="M2 12l3-3.5 2.5 2 3-4L14.5 12" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <!-- 智能长视频 — 场记板图标 -->
+                  <svg v-else-if="currentMode === 'longvideo'" width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="4" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M2 7h12" stroke="currentColor" stroke-width="1"/><path d="M5 4L7 7M9 4l2 3" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+                  <span>{{ currentModeOption.label }}</span>
+                  <!-- 下拉箭头 -->
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" class="text-gray-400"><path d="M3.5 4.5L6 7L8.5 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <!-- 模式选择浮层 -->
+                <div v-if="showModeMenu" class="dropdown-menu dropdown-mode">
+                  <div
+                    v-for="m in modes"
+                    :key="m.key"
+                    class="mode-item"
+                    :class="currentMode === m.key ? 'mode-item-active' : ''"
+                    @click="selectMode(m.key)"
+                  >
+                    <div class="mode-item-content">
+                      <div class="mode-item-header">
+                        <span class="mode-item-label">{{ m.label }}</span>
+                        <span v-if="m.tag" class="mode-tag">{{ m.tag }}</span>
+                      </div>
+                      <div class="mode-item-desc">{{ m.desc }}</div>
+                    </div>
+                    <!-- 选中勾 -->
+                    <svg v-if="currentMode === m.key" width="16" height="16" viewBox="0 0 16 16" fill="none" class="mode-check"><path d="M3.5 8l3 3 6-7" stroke="#7C3AED" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </div>
+                </div>
+              </div>
+
+
+              <!-- ④ 模型偏好（Agent / 生成图片 / 智能长视频） -->
+              <div v-if="['agent', 'image', 'longvideo'].includes(currentMode)" class="dropdown-wrapper">
+                <button
+                  class="toolbar-btn-icon-text rounded-full flex items-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white"
+                  @click="toggleMenu('model')"
+                  title="模型偏好"
+                >
+                  <!-- 调节滑块图标 -->
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 4h4M10 4h4M2 8h8M12 8h2M2 12h2M6 12h8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="4" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="11" cy="8" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="5" cy="12" r="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" class="text-gray-400"><path d="M3.5 4.5L6 7L8.5 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div v-if="showModelMenu" class="dropdown-menu dropdown-lg">
+                  <div class="dropdown-header">
+                    <span class="dropdown-header-title">模型偏好</span>
+                    <div class="auto-toggle" @click="modelAuto = !modelAuto">
+                      <span class="auto-toggle-label">自动</span>
+                      <div class="toggle-switch" :class="modelAuto ? 'toggle-on' : ''">
+                        <div class="toggle-dot" />
+                      </div>
+                    </div>
+                  </div>
+                  <div class="model-tabs">
+                    <button class="model-tab" :class="modelTab === 'video' ? 'model-tab-active' : ''" @click="modelTab = 'video'">视频</button>
+                    <button class="model-tab" :class="modelTab === 'image' ? 'model-tab-active' : ''" @click="modelTab = 'image'">图片</button>
+                  </div>
+                  <template v-if="modelTab === 'video'">
+                    <div class="model-section-label">视频模型</div>
+                    <div v-for="m in videoModels" :key="m.name" class="model-item">
+                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><path d="M4 4l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 4l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <div>
+                        <div class="model-name">{{ m.name }}</div>
+                        <div class="model-desc">{{ m.desc }}</div>
+                      </div>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="model-section-label">图片模型</div>
+                    <div v-for="m in imageModels" :key="m.name" class="model-item">
+                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><path d="M4 4l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 4l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <div>
+                        <div class="model-name">{{ m.name }}</div>
+                        <div class="model-desc">{{ m.desc }}</div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+
+              <!-- ⑤ @引用素材（仅沉浸式短片） -->
+              <button v-if="currentMode === 'clip'" class="toolbar-btn-circle rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white" title="@引用素材">
+                <!-- @ 符号 -->
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M10.5 8v1a2 2 0 004 0V8a6 6 0 10-2 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+              </button>
+
+              <!-- ⑥ 画幅比例（所有模式通用） -->
+              <div class="dropdown-wrapper">
+                <button
+                  class="toolbar-btn-circle rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white"
+                  @click="toggleMenu('ratio')"
+                  title="画幅比例"
+                >
+                  <!-- 画幅/比例图标 -->
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M2 6h12" stroke="currentColor" stroke-width="1" stroke-dasharray="2 1.5"/><path d="M6 3v10" stroke="currentColor" stroke-width="1" stroke-dasharray="2 1.5"/></svg>
+                </button>
+                <div v-if="showRatioMenu" class="dropdown-menu dropdown-sm">
+                  <div
+                    v-for="opt in ratioOptions"
+                    :key="opt.value"
+                    class="dropdown-item"
+                    :class="selectedRatio === opt.value ? 'dropdown-item-active' : ''"
+                    @click="selectedRatio = opt.value; closeAllMenus()"
+                  >
+                    <span class="ratio-icon">{{ opt.icon }}</span>
+                    <span>{{ opt.label }}</span>
+                    <svg v-if="selectedRatio === opt.value" width="14" height="14" viewBox="0 0 14 14" fill="none" class="check-icon"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ⑦ 参考（仅沉浸式短片） -->
+              <button v-if="currentMode === 'clip'" class="toolbar-btn-circle rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white" title="参考风格">
+                <!-- 链接/参考图标 -->
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6.5 9.5l3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M9 7l1.5-1.5a2.12 2.12 0 013 3L12 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M7 9L5.5 10.5a2.12 2.12 0 01-3-3L4 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+              </button>
+
+              <!-- ⑧ 时长选择（仅沉浸式短片） -->
+              <button v-if="currentMode === 'clip'" class="toolbar-btn-circle rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white" title="时长选择">
+                <!-- 时钟图标 -->
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3.5l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+
+              <!-- ⑨ 创作偏好（仅智能长视频2.0） -->
+              <button v-if="currentMode === 'longvideo2'" class="toolbar-btn-circle rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white" title="创作偏好">
+                <!-- 调色板/画笔图标 -->
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6.5" r="1" fill="currentColor"/><circle cx="8" cy="5" r="1" fill="currentColor"/><circle cx="10.5" cy="6.5" r="1" fill="currentColor"/><circle cx="5.5" cy="9.5" r="1" fill="currentColor"/></svg>
+              </button>
+
+              <!-- ⑩ 预设提示词（Agent / 沉浸式短片 / 智能长视频2.0 / 生成图片 / 智能长视频） -->
+              <div v-if="['agent', 'clip', 'longvideo2', 'image', 'longvideo'].includes(currentMode)" class="dropdown-wrapper">
+                <button
+                  class="toolbar-btn-circle rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white"
+                  @click="toggleMenu('preset')"
+                  title="预设提示词"
+                >
+                  <!-- 文档/模板图标 -->
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2h6l4 4v7.5a1.5 1.5 0 01-1.5 1.5h-7A1.5 1.5 0 014 13.5V2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M10 2v4h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 8.5h3M6.5 11h5" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+                </button>
+                <div v-if="showPresetMenu" class="dropdown-menu dropdown-preset">
+                  <div class="dropdown-header">
+                    <div class="flex items-center gap-2">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.3"/><line x1="5" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="5" y1="10" x2="9" y2="10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                      <span class="dropdown-header-title">预设提示词</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="text-gray-400 cursor-pointer hover:text-gray-600"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="text-gray-400 cursor-pointer hover:text-gray-600"><path d="M2 4h10M4 4v7a1 1 0 001 1h4a1 1 0 001-1V4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                    </div>
+                  </div>
+                  <div class="preset-search-row">
+                    <div class="preset-search-box">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="text-gray-400"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><path d="M9.5 9.5L12 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                      <input v-model="presetSearch" class="preset-search-input" placeholder="搜索预设..." />
+                    </div>
+                    <button class="preset-new-btn">+ 新建</button>
+                  </div>
+                  <div class="preset-empty">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" class="text-gray-200"><rect x="8" y="6" width="32" height="36" rx="4" stroke="currentColor" stroke-width="2"/><path d="M16 18h16M16 26h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                    <p>暂无预设，点击新建创建第一个预设</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex-1" />
+
+              <!-- 一键优化提示词（固定） -->
+              <button class="w-[36px] h-[36px] rounded-[8px] flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-primary-500 cursor-pointer transition-colors" title="一键优化提示词">
+                <!-- 魔法棒/星火图标 -->
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2l1.2 3.6L14 7l-3.8 1.4L9 12l-1.2-3.6L4 7l3.8-1.4L9 2z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><path d="M14 12l.5 1.5L16 14l-1.5.5L14 16l-.5-1.5L12 14l1.5-.5z" fill="currentColor"/><path d="M3 13l.4 1L4.5 14.5l-1.1.5-.4 1-.4-1-1.1-.5 1.1-.5z" fill="currentColor"/></svg>
+              </button>
+              <!-- 发送 -->
+              <button
+                class="w-[40px] h-[40px] rounded-full flex items-center justify-center transition-all cursor-pointer"
+                :class="userInput.trim()
+                  ? 'bg-gray-900 text-white hover:bg-black shadow-[0_2px_8px_rgba(0,0,0,0.15)]'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'"
+                :disabled="!userInput.trim() || loading"
+                @click="startCreation"
+              >
+                <span v-if="loading" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 13V3M8 3L4 7M8 3L12 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- ─── Quick tags ─── -->
+          <div class="quick-tags flex items-center justify-center flex-wrap">
+            <button
+              v-for="tag in quickTags"
+              :key="tag"
+              class="tag-pill"
+              @click="fillTag(tag)"
+            >
+              {{ tag }}
+            </button>
+          </div>
+
+          <!-- ─── Feature cards ─── -->
+          <div class="feature-section w-full">
+            <h2 class="feature-section-title font-semibold text-gray-900">常用功能</h2>
+            <div class="feature-cards-grid">
+              <div
+                v-for="card in featureCards"
+                :key="card.title"
+                class="feature-card rounded-[14px] overflow-hidden relative cursor-pointer group hover:shadow-lg transition-shadow"
+                :style="{ background: card.bg }"
+              >
+                <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+                <span
+                  v-if="card.isNew"
+                  class="new-badge absolute z-10"
+                >New</span>
+                <div class="absolute bottom-3 left-3.5 z-10">
+                  <div class="card-title text-white font-semibold leading-tight">{{ card.title }}</div>
+                  <div class="card-desc text-white/70 leading-snug">{{ card.desc }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ─── Sidebar ─── */
+.sidebar-section {
+  padding-left: 15px;
+  padding-right: 15px;
+}
+
+.sidebar-header {
+  padding-right: 12px;
+}
+
+.sidebar-new-chat {
+  margin-top: 12px;
+  margin-bottom: 6px;
+}
+
+.sidebar-history {
+  margin-top: 25px;
+  margin-bottom: 12px;
+}
+
+.new-chat-btn {
+  width: 100%;
+  height: 45px;
+  padding: 0 16px;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.sidebar-item {
+  height: 45px;
+  padding: 0 16px;
+  gap: 8px;
+  font-size: 13px;
+}
+
+/* ─── Greeting ─── */
+.greeting-title {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
+}
+
+/* ─── Input card ─── */
+.input-textarea {
+  padding: 15px 28px 64px 20px;
+}
+
+.input-toolbar {
+  padding: 0 24px 15px 15px;
+  gap: 12px;
+}
+
+/* ─── Toolbar buttons ─── */
+.toolbar-btn-text {
+  height: 42px;
+  padding: 0 18px;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.toolbar-btn-icon-text {
+  height: 42px;
+  padding: 0 14px;
+  gap: 6px;
+}
+
+.toolbar-btn-circle {
+  width: 42px;
+  height: 42px;
+}
+
+.toolbar-icon-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: currentColor;
+}
+
+/* ─── Quick tags ─── */
+.quick-tags {
+  margin-top: 10px;
+  gap: 14px;
+}
+
+.tag-pill {
+  height: 40px;
+  min-width: 115px;
+  padding: 0 20px;
+  border-radius: 20px;
+  font-size: 13px;
+  color: #444;
+  background: #fff;
+  border: 1px solid #E8E8E8;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+}
+
+.tag-pill:hover {
+  border-color: #C4B5FD;
+  color: #7C3AED;
+  background: #F5F3FF;
+  box-shadow: 0 1px 6px rgba(124, 58, 237, 0.08);
+}
+
+/* ─── Feature cards ─── */
+.feature-section {
+  margin-top: 100px;
+}
+
+.feature-section-title {
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.feature-cards-grid {
+  display: flex;
+  gap: 16px;
+}
+
+.feature-card {
+  width: 235px;
+  height: 115px;
+}
+
+.feature-card .new-badge {
+  top: 8px;
+  left: 10px;
+  background: linear-gradient(135deg, #34d399, #10b981);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+}
+
+.feature-card .card-title {
+  font-size: 13px;
+}
+
+.feature-card .card-desc {
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+/* ─── Dropdown menus ─── */
+.dropdown-wrapper {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: #fff;
+  border: 1px solid #E5E5E5;
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.04);
+  z-index: 100;
+  overflow: hidden;
+  animation: dropdownFadeIn 0.15s ease;
+}
+
+@keyframes dropdownFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Top hint bar ─── */
+.top-hint-bar {
+  padding: 8px 20px;
+  font-size: 12px;
+  color: #888;
+  background: #FAFAFA;
+  border-bottom: 1px solid #F0F0F0;
+  border-radius: 24px 24px 0 0;
+}
+
+/* ─── Model version tag ─── */
+.model-version-tag {
+  font-size: 11px;
+  color: #888;
+  background: #F5F5F5;
+  padding: 4px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+/* ─── Mode selector dropdown ─── */
+.dropdown-mode {
+  width: 380px;
+  padding: 6px;
+}
+
+.mode-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.mode-item:hover {
+  background: #F8F7FF;
+}
+
+.mode-item-active {
+  background: #F5F3FF;
+}
+
+.mode-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.mode-item-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mode-item-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1a1a1a;
+}
+
+.mode-tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #34d399, #10b981);
+  padding: 1px 6px;
+  border-radius: 8px;
+  letter-spacing: 0.3px;
+}
+
+.mode-item-desc {
+  font-size: 12px;
+  color: #999;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.mode-check {
+  flex-shrink: 0;
+}
+
+.dropdown-sm {
+  width: 200px;
+  padding: 6px;
+}
+
+.dropdown-lg {
+  width: 320px;
+  padding: 0;
+}
+
+.dropdown-preset {
+  width: 360px;
+  padding: 0;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #444;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.dropdown-item:hover {
+  background: #F5F3FF;
+}
+
+.dropdown-item-active {
+  color: #7C3AED;
+  background: #F5F3FF;
+}
+
+.dropdown-item .check-icon {
+  margin-left: auto;
+}
+
+.dropdown-item .ratio-icon {
+  font-size: 14px;
+  color: #888;
+  width: 18px;
+  text-align: center;
+}
+
+/* ─── Dropdown header ─── */
+.dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+}
+
+.dropdown-header-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+/* ─── Auto toggle ─── */
+.auto-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.auto-toggle-label {
+  font-size: 13px;
+  color: #666;
+}
+
+.toggle-switch {
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: #ddd;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.toggle-switch.toggle-on {
+  background: #7C3AED;
+}
+
+.toggle-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: left 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.toggle-on .toggle-dot {
+  left: 20px;
+}
+
+/* ─── Model tabs ─── */
+.model-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.model-tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #888;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+
+.model-tab:hover {
+  color: #333;
+}
+
+.model-tab-active {
+  color: #1a1a1a;
+  font-weight: 600;
+  border-bottom-color: #1a1a1a;
+}
+
+.model-section-label {
+  font-size: 11px;
+  color: #aaa;
+  padding: 12px 16px 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.model-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.model-item:hover {
+  background: #FAFAFA;
+}
+
+.model-item:last-child {
+  border-radius: 0 0 14px 14px;
+}
+
+.model-icon {
+  color: #666;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.model-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1a1a1a;
+  line-height: 1.3;
+}
+
+.model-desc {
+  font-size: 12px;
+  color: #999;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+/* ─── Preset panel ─── */
+.preset-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 12px;
+}
+
+.preset-search-box {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid #E5E5E5;
+  border-radius: 10px;
+  background: #FAFAFA;
+}
+
+.preset-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: #333;
+}
+
+.preset-search-input::placeholder {
+  color: #bbb;
+}
+
+.preset-new-btn {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 10px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.preset-new-btn:hover {
+  background: #333;
+}
+
+.preset-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  gap: 12px;
+}
+
+.preset-empty p {
+  font-size: 13px;
+  color: #aaa;
+}
+</style>

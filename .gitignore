@@ -1,32 +1,46 @@
-# Python
+# ===========================
+# DramaForge .gitignore
+# ===========================
+
+# ----- Python (Backend) -----
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-*.egg
 *.egg-info/
+*.egg
 dist/
 build/
-venv/
 .venv/
+venv/
+*.pyo
 
-# Env secrets
+# ----- Node (Frontend) -----
+node_modules/
+dramaForge_web/dist/
+
+# ----- Env secrets -----
 .env
+dramaForge_bac/.env
 
-# Storage
-storage/images/
-storage/audio/
-storage/videos/
-storage/test_audio/
-storage/test_images/
-storage/*.db
-
-# IDE
+# ----- IDE -----
 .idea/
 .vscode/
 *.swp
 *.swo
+.kiro/
 
-# OS
+# ----- OS -----
 .DS_Store
 Thumbs.db
+
+# ----- Storage (generated assets) -----
+storage/
+dramaForge_bac/storage/
+
+# ----- Logs -----
+*.log
+logs/
+
+# ----- Test artifacts -----
+.pytest_cache/
+.coverage
+htmlcov/
