@@ -75,9 +75,12 @@ def generate_qr_base64(data: str, box_size: int = 8, border: int = 2) -> str:
 
 
 def generate_order_no() -> str:
-    """Generate a unique order number: DF + timestamp + 6-char random."""
+    """
+    Generate a unique order number: DF + timestamp + 12-char random.
+    Uses cryptographically secure random to prevent enumeration.
+    """
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
-    rand = secrets.token_hex(3).upper()
+    rand = secrets.token_hex(6).upper()  # 12 hex chars = 48 bits of entropy
     return f"DF{ts}{rand}"
 
 

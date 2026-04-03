@@ -9,7 +9,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 import { useBillingStore } from '@/stores/billing'
 import BottomSheet from '@/components/common/BottomSheet.vue'
-import ModalOverlay from '@/components/common/ModalOverlay.vue'
+        import ModalOverlay from '@/components/common/ModalOverlay.vue'
+        import TopbarActions from '@/components/common/TopbarActions.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -268,13 +269,101 @@ function handleLogout() {
   router.push('/login')
 }
 
+/**
+ * Handle subscription — now opens the payment QR flow
+ * instead of bypassing payment directly.
+ */
 async function handleSubscribe(planCode: string) {
-  const ok = await billingStore.doSubscribe(planCode)
+  // Store selected plan for the payment flow
+  pendingPaymentPlan.value = planCode
+  showSubscribeSheet.value = false
+  showPaymentModal.value = true
+}
+
+// ── Payment flow state ──
+const showPaymentModal = ref(false)
+const pendingPaymentPlan = ref('')
+const selectedChannel = ref<'wechat' | 'alipay' | 'douyin'>('wechat')
+const agreementChecked = ref(false)
+const paymentStep = ref<'select' | 'qr' | 'success' | 'error'>('select')
+const paymentError = ref('')
+const selectedCreditPack = ref('')
+
+import { usePaymentStore } from '@/stores/payment'
+const paymentStore = usePaymentStore()
+
+async function startPayment() {
+  if (!agreementChecked.value) {
+    paymentError.value = '请先阅读并同意服务协议'
+    return
+  }
+  paymentError.value = ''
+  const ok = await paymentStore.createOrder({
+    order_type: 'subscription',
+    product_code: pendingPaymentPlan.value,
+    channel: selectedChannel.value,
+    agreement_accepted: true,
+  })
   if (ok) {
-    showSubscribeSheet.value = false
+    paymentStep.value = 'qr'
+    // Watch for payment completion
+    const unwatch = watch(() => paymentStore.pollStatus, (status) => {
+      if (status === 'paid') {
+        paymentStep.value = 'success'
+        billingStore.fetchBalance()
+        billingStore.fetchSubscription()
+        unwatch()
+      } else if (['closed', 'failed'].includes(status)) {
+        paymentStep.value = 'error'
+        paymentError.value = '支付未完成'
+        unwatch()
+      }
+    })
   } else {
-    // Error is stored in billingStore.error, user sees it
-    alert(billingStore.error || '订阅失败，请稍后再试')
+    paymentError.value = paymentStore.error || '创建订单失败'
+  }
+}
+
+function closePaymentModal() {
+  paymentStore.stopPolling()
+  paymentStore.reset()
+  showPaymentModal.value = false
+  paymentStep.value = 'select'
+  agreementChecked.value = false
+  paymentError.value = ''
+}
+
+/** Buy a credit pack */
+const showCreditPackModal = ref(false)
+async function buyCreditPack(packCode: string) {
+  if (!agreementChecked.value) {
+    paymentError.value = '请先阅读并同意服务协议'
+    return
+  }
+  paymentError.value = ''
+  const ok = await paymentStore.createOrder({
+    order_type: 'credit_pack',
+    product_code: packCode,
+    channel: selectedChannel.value,
+    agreement_accepted: true,
+  })
+  if (ok) {
+    paymentStep.value = 'qr'
+    showCreditPackModal.value = false
+    showPaymentModal.value = true
+    const unwatch = watch(() => paymentStore.pollStatus, (status) => {
+      if (status === 'paid') {
+        paymentStep.value = 'success'
+        billingStore.fetchBalance()
+        unwatch()
+      } else if (['closed', 'failed'].includes(status)) {
+        paymentStep.value = 'error'
+        paymentError.value = '支付未完成'
+        unwatch()
+      }
+    })
+  } else {
+    paymentError.value = paymentStore.error || '创建订单失败'
   }
 }
 
@@ -418,34 +507,12 @@ function formatTime(isoStr: string): string {
     <div class="flex-1 flex flex-col bg-white min-w-0">
       <!-- Top bar -->
       <div class="topbar">
-        <div class="topbar-actions">
-          <!-- Credits + Subscribe (purple bg group) -->
-          <div class="topbar-credits-group" @click="showSubscribeSheet = true">
-            <span class="topbar-credits-icon">✦</span>
-            <span class="topbar-credits-num">{{ billingStore.credits }}</span>
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 4L5 6L7 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <div class="topbar-group-divider" />
-            <span class="topbar-subscribe">订阅</span>
-          </div>
-          <!-- Feedback -->
-          <button class="topbar-icon-btn" title="反馈" @click="showFeedbackSheet = true">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 5.5A1.5 1.5 0 015.5 4h9A1.5 1.5 0 0116 5.5v7a1.5 1.5 0 01-1.5 1.5H8.5L6 16v-3H5.5A1.5 1.5 0 014 11.5v-6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7.5 8h5M7.5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          </button>
-          <!-- Notification -->
-          <button class="topbar-icon-btn" title="通知" @click="showNotificationSheet = true">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3a4 4 0 00-4 4v3c0 .9-.4 1.75-1.1 2.35l-.4.3a.75.75 0 00.5 1.35h10a.75.75 0 00.5-1.35l-.4-.3A3.5 3.5 0 0114 10V7a4 4 0 00-4-4z" stroke="currentColor" stroke-width="1.4"/><path d="M8 14s.5 2 2 2 2-2 2-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-          </button>
-          <!-- Messages -->
-          <button class="topbar-icon-btn" title="消息" @click="showMessageSheet = true">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="4.5" width="14" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 6l7 4.5L17 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <!-- Avatar -->
-          <div
-            class="topbar-avatar"
-            :title="authStore.isLoggedIn ? authStore.displayName : '未登录'"
-            @click="authStore.isLoggedIn ? handleLogout() : router.push('/login')"
-          >{{ authStore.isLoggedIn ? authStore.displayName.charAt(0).toUpperCase() : 'U' }}</div>
-        </div>
+        <TopbarActions
+          @subscribe="showSubscribeSheet = true"
+          @feedback="showFeedbackSheet = true"
+          @notification="showNotificationSheet = true"
+          @message="showMessageSheet = true"
+        />
       </div>
 
       <!-- Center content (takes remaining height) -->
@@ -662,7 +729,7 @@ function formatTime(isoStr: string): string {
                       :key="m.id"
                       class="model-item"
                       :class="[selectedModel === m.id ? 'model-item-active' : '', m.premium && billingStore.planCode === 'free' ? 'model-item-locked' : '']"
-                      @click="m.premium && billingStore.planCode === 'free' ? showSubscriptionModal = true : selectModel(m.id)"
+                      @click="m.premium && billingStore.planCode === 'free' ? showSubscribeSheet = true : selectModel(m.id)"
                     >
                       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M9 6v6M6 9h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
                       <div class="flex-1 min-w-0">
@@ -686,7 +753,7 @@ function formatTime(isoStr: string): string {
                       :key="m.id"
                       class="model-item"
                       :class="[selectedModel === m.id ? 'model-item-active' : '', m.premium && billingStore.planCode === 'free' ? 'model-item-locked' : '']"
-                      @click="m.premium && billingStore.planCode === 'free' ? showSubscriptionModal = true : selectModel(m.id)"
+                      @click="m.premium && billingStore.planCode === 'free' ? showSubscribeSheet = true : selectModel(m.id)"
                     >
                       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><rect x="3" y="4" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 7.5l4 2.5-4 2.5z" fill="currentColor"/></svg>
                       <div class="flex-1 min-w-0">
@@ -710,7 +777,7 @@ function formatTime(isoStr: string): string {
                       :key="m.id"
                       class="model-item"
                       :class="[selectedModel === m.id ? 'model-item-active' : '', m.premium && billingStore.planCode === 'free' ? 'model-item-locked' : '']"
-                      @click="m.premium && billingStore.planCode === 'free' ? showSubscriptionModal = true : selectModel(m.id)"
+                      @click="m.premium && billingStore.planCode === 'free' ? showSubscribeSheet = true : selectModel(m.id)"
                     >
                       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="7.5" r="1.5" stroke="currentColor" stroke-width="1"/><path d="M3 13l3-4 2 2 3-3 4 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       <div class="flex-1 min-w-0">
@@ -1028,16 +1095,197 @@ function formatTime(isoStr: string): string {
         <span style="font-size:14px;color:#999;">积分</span>
       </div>
       <p style="font-size:13px;color:#999;margin:0 0 24px;">每次 AI 对话消耗 1-3 积分，升级会员可获得每月 1200 积分</p>
-      <div style="display:flex;gap:12px;justify-content:center;">
+      <div style="display:flex;gap:10px;justify-content:center;">
         <button
-          style="flex:1;height:44px;border-radius:12px;border:1px solid #e5e5e5;background:#fff;color:#333;font-size:14px;font-weight:600;cursor:pointer;"
+          style="flex:1;height:44px;border-radius:12px;border:1px solid #e5e5e5;background:#fff;color:#333;font-size:13px;font-weight:600;cursor:pointer;"
           @click="showInsufficientCredits = false"
         >稍后再说</button>
         <button
-          style="flex:1;height:44px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:14px;font-weight:600;cursor:pointer;"
+          style="flex:1;height:44px;border-radius:12px;border:1px solid #7c3aed;background:#F9F5FF;color:#7c3aed;font-size:13px;font-weight:600;cursor:pointer;"
+          @click="showInsufficientCredits = false; showCreditPackModal = true"
+        >充值积分</button>
+        <button
+          style="flex:1;height:44px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:13px;font-weight:600;cursor:pointer;"
           @click="showInsufficientCredits = false; showSubscribeSheet = true"
         >升级套餐</button>
       </div>
+    </div>
+  </ModalOverlay>
+
+  <!-- ═══════ 积分包购买弹窗 ═══════ -->
+  <ModalOverlay :visible="showCreditPackModal" title="充值积分" subtitle="选择积分包，支付后即时到账" width="480px" @close="showCreditPackModal = false">
+    <template #icon>
+      <div style="width:48px;height:48px;border-radius:50%;background:#F3F0FF;display:flex;align-items:center;justify-content:center;margin:0 auto 8px;font-size:24px;">⚡</div>
+    </template>
+    <div style="padding:0 24px 24px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+        <button v-for="pack in [{code:'pack_50',name:'50 积分',price:'¥9.9',credits:50},{code:'pack_200',name:'200 积分',price:'¥29.9',credits:200},{code:'pack_500',name:'500 积分',price:'¥59.9',credits:500},{code:'pack_1200',name:'1200 积分',price:'¥99.9',credits:1200}]"
+          :key="pack.code"
+          style="padding:16px;border-radius:14px;border:2px solid #e5e5e5;background:#fff;cursor:pointer;text-align:center;transition:all 0.2s;"
+          @click="selectedCreditPack = pack.code"
+          :style="selectedCreditPack === pack.code ? { borderColor: '#7c3aed', background: '#F9F5FF' } : {}">
+          <div style="font-size:20px;font-weight:700;color:#333;">{{ pack.credits }}</div>
+          <div style="font-size:12px;color:#999;margin:4px 0;">积分</div>
+          <div style="font-size:16px;font-weight:700;color:#7c3aed;">{{ pack.price }}</div>
+        </button>
+      </div>
+
+      <!-- 渠道选择 -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <button v-for="ch in [{code:'wechat',name:'微信'},{code:'alipay',name:'支付宝'},{code:'douyin',name:'抖音'}]"
+          :key="ch.code"
+          style="flex:1;padding:8px;border-radius:8px;border:1.5px solid #e5e5e5;background:#fff;cursor:pointer;font-size:12px;color:#666;"
+          :style="selectedChannel === ch.code ? { borderColor: '#7c3aed', color: '#7c3aed', fontWeight: 600 } : {}"
+          @click="selectedChannel = ch.code as any">
+          {{ ch.name }}
+        </button>
+      </div>
+
+      <!-- 协议 -->
+      <label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:16px;cursor:pointer;">
+        <input type="checkbox" v-model="agreementChecked" style="margin-top:3px;accent-color:#7c3aed;" />
+        <span style="font-size:12px;color:#999;">我已阅读并同意 <a href="javascript:void(0)" style="color:#7c3aed;">服务协议</a></span>
+      </label>
+
+      <div v-if="paymentError" style="color:#ef4444;font-size:13px;text-align:center;margin-bottom:12px;">{{ paymentError }}</div>
+
+      <button
+        style="width:100%;height:48px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:15px;font-weight:600;cursor:pointer;"
+        :disabled="!selectedCreditPack || paymentStore.isLoading"
+        :style="{ opacity: !selectedCreditPack || paymentStore.isLoading ? 0.5 : 1 }"
+        @click="buyCreditPack(selectedCreditPack)">
+        {{ paymentStore.isLoading ? '处理中...' : '立即充值' }}
+      </button>
+    </div>
+  </ModalOverlay>
+
+  <!-- ═══════ 支付二维码弹窗 ═══════ -->
+  <ModalOverlay :visible="showPaymentModal" :title="paymentStep === 'success' ? '支付成功' : paymentStep === 'qr' ? '扫码支付' : '选择支付方式'" width="460px" @close="closePaymentModal">
+    <template #icon>
+      <div style="width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 8px;font-size:24px;"
+        :style="{ background: paymentStep === 'success' ? '#D1FAE5' : '#F3F0FF' }">
+        {{ paymentStep === 'success' ? '✅' : paymentStep === 'error' ? '❌' : '💳' }}
+      </div>
+    </template>
+
+    <div style="padding:0 24px 24px;">
+      <!-- Step 1: 选择渠道 + 协议 -->
+      <template v-if="paymentStep === 'select'">
+        <div style="text-align:center;margin-bottom:16px;">
+          <div style="font-size:22px;font-weight:700;color:#333;">
+            ¥{{ pendingPaymentPlan === 'basic_yearly' ? '379' : '39' }}
+          </div>
+          <div style="font-size:13px;color:#999;margin-top:4px;">
+            {{ pendingPaymentPlan === 'basic_yearly' ? '基础会员 · 年付' : '基础会员 · 月付' }}
+          </div>
+        </div>
+
+        <!-- 支付渠道 -->
+        <div style="display:flex;gap:10px;margin-bottom:20px;">
+          <button v-for="ch in [{code:'wechat',name:'微信支付',icon:'💚'},{code:'alipay',name:'支付宝',icon:'🔵'},{code:'douyin',name:'抖音支付',icon:'🎵'}]"
+            :key="ch.code"
+            style="flex:1;padding:12px 8px;border-radius:12px;border:2px solid #e5e5e5;background:#fff;cursor:pointer;text-align:center;transition:all 0.2s;"
+            :style="selectedChannel === ch.code ? { borderColor: '#7c3aed', background: '#F9F5FF' } : {}"
+            @click="selectedChannel = ch.code as any">
+            <div style="font-size:20px;">{{ ch.icon }}</div>
+            <div style="font-size:12px;color:#666;margin-top:4px;">{{ ch.name }}</div>
+          </button>
+        </div>
+
+        <!-- 协议勾选 -->
+        <label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:20px;cursor:pointer;">
+          <input type="checkbox" v-model="agreementChecked" style="margin-top:3px;accent-color:#7c3aed;" />
+          <span style="font-size:12px;color:#999;line-height:1.5;">
+            我已阅读并同意
+            <a href="javascript:void(0)" style="color:#7c3aed;text-decoration:underline;">《DramaForge 服务协议》</a>
+            和
+            <a href="javascript:void(0)" style="color:#7c3aed;text-decoration:underline;">《支付协议》</a>
+          </span>
+        </label>
+
+        <div v-if="paymentError" style="color:#ef4444;font-size:13px;text-align:center;margin-bottom:12px;">{{ paymentError }}</div>
+
+        <button
+          style="width:100%;height:48px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:15px;font-weight:600;cursor:pointer;transition:opacity 0.2s;"
+          :style="{ opacity: paymentStore.isLoading ? 0.6 : 1 }"
+          :disabled="paymentStore.isLoading"
+          @click="startPayment">
+          {{ paymentStore.isLoading ? '创建订单中...' : '确认支付' }}
+        </button>
+      </template>
+
+      <!-- Step 2: QR 码 -->
+      <template v-if="paymentStep === 'qr'">
+        <div style="text-align:center;">
+          <div style="font-size:14px;color:#666;margin-bottom:12px;">
+            请使用 <b>{{ selectedChannel === 'wechat' ? '微信' : selectedChannel === 'alipay' ? '支付宝' : '抖音' }}</b> 扫描下方二维码
+          </div>
+
+          <!-- QR Code Image -->
+          <div style="display:inline-block;padding:16px;background:#fff;border-radius:16px;border:1px solid #eee;margin-bottom:16px;">
+            <img v-if="paymentStore.qrBase64" :src="paymentStore.qrBase64" alt="支付二维码" style="width:200px;height:200px;" />
+            <div v-else style="width:200px;height:200px;display:flex;align-items:center;justify-content:center;background:#f5f5f5;border-radius:8px;color:#999;font-size:13px;">
+              二维码加载中...
+            </div>
+          </div>
+
+          <div style="font-size:22px;font-weight:700;color:#7c3aed;margin-bottom:4px;">
+            ¥{{ paymentStore.currentOrder?.amount_cny }}
+          </div>
+          <div style="font-size:12px;color:#999;margin-bottom:16px;">
+            {{ paymentStore.currentOrder?.product_name }}
+          </div>
+
+          <!-- Polling indicator -->
+          <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px;">
+            <div style="width:8px;height:8px;border-radius:50%;background:#F59E0B;animation:pulse 1.5s infinite;"></div>
+            <span style="font-size:13px;color:#999;">等待支付...</span>
+          </div>
+
+          <button
+            style="width:100%;height:44px;border-radius:12px;border:1px solid #e5e5e5;background:#fff;color:#666;font-size:14px;cursor:pointer;"
+            @click="closePaymentModal">
+            取消支付
+          </button>
+        </div>
+      </template>
+
+      <!-- Step 3: 支付成功 -->
+      <template v-if="paymentStep === 'success'">
+        <div style="text-align:center;">
+          <div style="font-size:48px;margin-bottom:12px;">🎉</div>
+          <div style="font-size:18px;font-weight:700;color:#333;margin-bottom:8px;">支付成功！</div>
+          <div style="font-size:14px;color:#666;margin-bottom:24px;">
+            {{ paymentStore.currentOrder?.product_name }} 已到账
+          </div>
+          <button
+            style="width:100%;height:48px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:15px;font-weight:600;cursor:pointer;"
+            @click="closePaymentModal">
+            完成
+          </button>
+        </div>
+      </template>
+
+      <!-- Step 4: 支付失败/超时 -->
+      <template v-if="paymentStep === 'error'">
+        <div style="text-align:center;">
+          <div style="font-size:48px;margin-bottom:12px;">😔</div>
+          <div style="font-size:18px;font-weight:700;color:#333;margin-bottom:8px;">支付未完成</div>
+          <div style="font-size:14px;color:#999;margin-bottom:24px;">{{ paymentError || '订单已关闭或支付超时' }}</div>
+          <div style="display:flex;gap:12px;">
+            <button
+              style="flex:1;height:44px;border-radius:12px;border:1px solid #e5e5e5;background:#fff;color:#333;font-size:14px;font-weight:600;cursor:pointer;"
+              @click="closePaymentModal">
+              关闭
+            </button>
+            <button
+              style="flex:1;height:44px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:14px;font-weight:600;cursor:pointer;"
+              @click="paymentStep = 'select'; paymentError = ''">
+              重新支付
+            </button>
+          </div>
+        </div>
+      </template>
     </div>
   </ModalOverlay>
 </template>
@@ -1648,6 +1896,11 @@ function formatTime(isoStr: string): string {
   color: #7c3aed;
   font-weight: 400;
   animation: cursorBlink 0.8s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.2); }
 }
 
 @keyframes cursorBlink {

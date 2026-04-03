@@ -171,16 +171,28 @@ async def get_my_subscription(user: CurrentUser, db: DbSession):
     )
 
 
-@router.post("/subscribe", response_model=SubscriptionResponse)
+@router.post("/subscribe", response_model=SubscriptionResponse, deprecated=True)
 async def subscribe_to_plan(
     request: SubscribeRequest,
     user: CurrentUser,
     db: DbSession,
 ):
     """
-    Subscribe to a plan (simulated payment).
-    In production, this would integrate with a payment gateway.
+    **[已弃用]** 直接订阅 (跳过支付)。
+
+    生产环境请使用 `POST /payment/create-order` 走正式支付流程。
+    此端点仅保留用于开发调试。
     """
+    from app.core.config import settings
+    if not settings.debug:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={
+                "code": "USE_PAYMENT_FLOW",
+                "message": "请通过支付流程订阅: POST /api/v2/payment/create-order",
+            },
+        )
+
     try:
         sub = await subscribe(db, user.id, request.plan_code)
         await db.commit()

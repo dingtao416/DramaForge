@@ -385,28 +385,78 @@ async def close_order(
 
 # ═══════════════════════════════════════════════════════════════════
 # Provider Callbacks (no auth — called by WeChat/Alipay/Douyin)
+#
+# Security notes:
+# - These endpoints have NO JWT auth (they're called by payment providers)
+# - Signature verification happens inside process_callback()
+# - In production, configure a WAF/Nginx IP whitelist for these routes:
+#     WeChat:  https://pay.weixin.qq.com/docs/merchant/development/development-preparations/introduction.html
+#     Alipay:  https://opendocs.alipay.com/open/01zuoj
+#     Douyin:  callback IP ranges from Douyin developer portal
+# - Body size is limited to prevent abuse (max 64KB)
 # ═══════════════════════════════════════════════════════════════════
+
+# Known provider IP ranges (for logging/soft validation)
+# In production, enforce these at the reverse proxy (Nginx/CloudFlare) level
+_KNOWN_CALLBACK_CIDRS = {
+    "wechat": [
+        # WeChat Pay callback IPs (partial list — check official docs)
+        # Configure in Nginx: allow 140.207.0.0/16; deny all;
+    ],
+    "alipay": [
+        # Alipay notify IPs
+    ],
+    "douyin": [
+        # Douyin callback IPs
+    ],
+}
+
+_MAX_CALLBACK_BODY_SIZE = 64 * 1024  # 64KB max
+
+
+async def _validate_callback_request(request: Request, channel: str) -> tuple[dict, bytes]:
+    """
+    Common validation for all callback endpoints.
+    Returns (headers, body) or raises HTTPException.
+    """
+    from loguru import logger as cb_logger
+
+    # ── Body size check ──
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > _MAX_CALLBACK_BODY_SIZE:
+        cb_logger.warning(f"[SECURITY] Callback body too large: {content_length} bytes from {request.client.host}")
+        raise HTTPException(status_code=413, detail="Payload too large")
+
+    body = await request.body()
+    if len(body) > _MAX_CALLBACK_BODY_SIZE:
+        cb_logger.warning(f"[SECURITY] Callback body exceeded limit: {len(body)} bytes")
+        raise HTTPException(status_code=413, detail="Payload too large")
+
+    # ── Log source IP for audit ──
+    source_ip = request.client.host if request.client else "unknown"
+    cb_logger.info(f"[Callback] {channel} callback from IP={source_ip}, size={len(body)}B")
+
+    headers = dict(request.headers)
+    return headers, body
+
 
 @router.post("/callback/wechat")
 async def wechat_callback(request: Request, db: DbSession):
-    """WeChat Pay callback endpoint."""
-    headers = dict(request.headers)
-    body = await request.body()
+    """WeChat Pay callback endpoint. No JWT auth — verified by signature."""
+    headers, body = await _validate_callback_request(request, "wechat")
 
     order = await process_callback(db, "wechat", headers, body)
     await db.commit()
 
     if order:
-        # WeChat expects {"code": "SUCCESS", "message": "成功"}
         return {"code": "SUCCESS", "message": "成功"}
     return Response(status_code=500, content='{"code":"FAIL","message":"签名验证失败"}')
 
 
 @router.post("/callback/alipay")
 async def alipay_callback(request: Request, db: DbSession):
-    """Alipay callback endpoint."""
-    headers = dict(request.headers)
-    body = await request.body()
+    """Alipay callback endpoint. No JWT auth — verified by RSA2 signature."""
+    headers, body = await _validate_callback_request(request, "alipay")
 
     order = await process_callback(db, "alipay", headers, body)
     await db.commit()
@@ -418,9 +468,8 @@ async def alipay_callback(request: Request, db: DbSession):
 
 @router.post("/callback/douyin")
 async def douyin_callback(request: Request, db: DbSession):
-    """Douyin Pay callback endpoint."""
-    headers = dict(request.headers)
-    body = await request.body()
+    """Douyin Pay callback endpoint. No JWT auth — verified by MD5 signature."""
+    headers, body = await _validate_callback_request(request, "douyin")
 
     order = await process_callback(db, "douyin", headers, body)
     await db.commit()
@@ -434,7 +483,15 @@ async def douyin_callback(request: Request, db: DbSession):
 # Helpers
 # ═══════════════════════════════════════════════════════════════════
 
-def _to_order_response(order) -> OrderResponse:
+def _to_order_response(order, include_qr: bool = True) -> OrderResponse:
+    """
+    Convert ORM order to response.
+
+    Security: Only include QR data for PENDING orders.
+    Once paid/closed, the QR code is no longer relevant and
+    should not be exposed to reduce data leakage surface.
+    """
+    show_qr = include_qr and order.status.value == "pending"
     return OrderResponse(
         order_no=order.order_no,
         order_type=order.order_type.value,
@@ -443,8 +500,8 @@ def _to_order_response(order) -> OrderResponse:
         channel=order.channel.value,
         amount_cny=order.amount_cny,
         status=order.status.value,
-        qr_url=order.qr_url,
-        qr_image_base64=order.qr_image_base64,
+        qr_url=order.qr_url if show_qr else None,
+        qr_image_base64=order.qr_image_base64 if show_qr else None,
         agreement_accepted=order.agreement_accepted,
         agreement_version=order.agreement_version,
         created_at=order.created_at,

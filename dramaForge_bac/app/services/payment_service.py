@@ -224,12 +224,19 @@ async def fulfill_order(db: AsyncSession, order: PaymentOrder) -> None:
     Grant the user their purchase after successful payment.
     - Subscription: call subscribe() which handles plan switch + credit grant
     - Credit pack: add credits directly
+
+    Idempotent: uses meta.fulfilled flag to prevent double-granting.
     """
     if order.status != OrderStatus.PAID:
         logger.warning(f"Attempted to fulfill non-paid order {order.order_no}")
         return
 
     meta = order.meta or {}
+
+    # Idempotency guard: check if already fulfilled
+    if meta.get("fulfilled"):
+        logger.info(f"Order {order.order_no} already fulfilled, skipping")
+        return
 
     if order.order_type == OrderType.SUBSCRIPTION:
         plan_code = meta.get("plan_code", order.product_code)
@@ -253,6 +260,15 @@ async def fulfill_order(db: AsyncSession, order: PaymentOrder) -> None:
             )
             logger.info(f"Fulfilled credit pack for user {order.user_id}: +{credits}")
 
+    # Mark as fulfilled to prevent double-granting
+    if order.meta is None:
+        order.meta = {}
+    order.meta["fulfilled"] = True
+    order.meta["fulfilled_at"] = datetime.utcnow().isoformat()
+    # Force SQLAlchemy to detect JSON mutation
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(order, "meta")
+
     await db.flush()
 
 
@@ -270,7 +286,27 @@ async def process_callback(
     Process a payment callback from a provider.
     Verifies signature, finds order, updates status, and fulfills if paid.
     Returns the updated order or None if verification failed.
+
+    Security checks:
+    - Signature verification (via adapter)
+    - Amount verification (callback amount must match order amount)
+    - Status transition validation (only PENDING → PAID allowed)
+    - Idempotency (already-paid orders are skipped)
     """
+    from app.core.config import settings as app_settings
+
+    # ── Security: Block mock-mode callbacks in production ──
+    is_production = not app_settings.debug
+    adapter = payment_gateway.get_adapter(channel)
+    is_mock = not adapter._is_configured()
+
+    if is_production and is_mock:
+        logger.critical(
+            f"[SECURITY] Callback received for unconfigured channel '{channel}' "
+            f"in production mode — REJECTING. This may be a forgery attempt."
+        )
+        return None
+
     # Verify callback with the provider adapter
     result = await payment_gateway.verify_callback(channel, headers, body)
     if not result:
@@ -291,15 +327,46 @@ async def process_callback(
         logger.error(f"[Payment] Order not found: {order_no}")
         return None
 
+    # ── Security: Verify channel matches ──
+    if order.channel.value != channel:
+        logger.critical(
+            f"[SECURITY] Channel mismatch for order {order_no}: "
+            f"expected={order.channel.value}, received={channel}"
+        )
+        return None
+
     # Already processed?
     if order.status in (OrderStatus.PAID, OrderStatus.REFUNDED):
         logger.info(f"[Payment] Order {order_no} already processed: {order.status.value}")
         return order
 
-    # Update order
+    # ── Security: Only PENDING orders can transition to PAID ──
+    if order.status != OrderStatus.PENDING:
+        logger.warning(
+            f"[SECURITY] Callback for non-pending order {order_no}: "
+            f"status={order.status.value}"
+        )
+        return order
+
+    # ── Security: Verify callback amount matches order amount ──
+    callback_amount_fen = result.get("amount_fen", 0)
     callback_status = result.get("status", "")
+
+    if callback_status == "paid" and callback_amount_fen > 0:
+        if callback_amount_fen != order.amount_fen:
+            logger.critical(
+                f"[SECURITY] Amount mismatch for order {order_no}: "
+                f"expected={order.amount_fen}fen, callback={callback_amount_fen}fen. "
+                f"Possible tampering — REJECTING."
+            )
+            order.status = OrderStatus.FAILED
+            order.callback_raw = _sanitize_callback_raw(result.get("raw", {}))
+            await db.flush()
+            return None
+
+    # Update order
     order.trade_no = result.get("trade_no") or order.trade_no
-    order.callback_raw = json.dumps(result.get("raw", {}), ensure_ascii=False)
+    order.callback_raw = _sanitize_callback_raw(result.get("raw", {}))
 
     if callback_status == "paid":
         order.status = OrderStatus.PAID
@@ -317,6 +384,30 @@ async def process_callback(
         logger.info(f"[Payment] Order {order_no} callback status: {callback_status} (no action)")
 
     return order
+
+
+def _sanitize_callback_raw(raw: dict) -> str:
+    """
+    Sanitize callback raw data before storing — remove sensitive fields
+    that could leak payment credentials if the DB is compromised.
+    """
+    SENSITIVE_KEYS = {
+        "sign", "signature", "sign_type", "msg_signature",
+        "ciphertext", "nonce", "key", "secret", "token",
+        "openid", "buyer_id", "buyer_logon_id",
+    }
+    sanitized = {}
+    for k, v in raw.items():
+        if k.lower() in SENSITIVE_KEYS:
+            sanitized[k] = "***REDACTED***"
+        elif isinstance(v, dict):
+            sanitized[k] = {
+                ik: "***REDACTED***" if ik.lower() in SENSITIVE_KEYS else iv
+                for ik, iv in v.items()
+            }
+        else:
+            sanitized[k] = v
+    return json.dumps(sanitized, ensure_ascii=False)
 
 
 # ═══════════════════════════════════════════════════════════════════
