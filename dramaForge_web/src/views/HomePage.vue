@@ -43,12 +43,17 @@ const showModeMenu = ref(false)
 
 const currentModeOption = computed(() => modes.find(m => m.key === currentMode.value)!)
 
+/** Map frontend mode to backend agent mode for chat */
+const modeAgentMap: Record<Mode, string> = {
+  agent: 'general',
+  drama: 'scriptwriter',
+  clip: 'director',
+  longvideo2: 'director',
+  image: 'general',
+  longvideo: 'director',
+}
+
 function selectMode(mode: Mode) {
-  if (mode === 'drama') {
-    router.push('/drama-agent')
-    closeAllMenus()
-    return
-  }
   currentMode.value = mode
   closeAllMenus()
 }
@@ -144,31 +149,13 @@ watch(() => chatStore.streamingContent, () => {
 })
 
 async function startCreation() {
-  if (!userInput.value.trim()) return
+  if (!userInput.value.trim() || chatStore.isStreaming) return
 
-  // Agent mode → use chat store (SSE streaming)
-  if (currentMode.value === 'agent') {
-    const input = userInput.value
-    userInput.value = ''
-    await chatStore.sendMessage(input, { mode: 'general' })
-    return
-  }
-
-  // Other modes → original project creation flow
-  loading.value = true
-  try {
-    const { data: project } = await projectsApi.create({
-      title: userInput.value.slice(0, 50),
-      description: userInput.value,
-      style: VideoStyle.REALISTIC,
-    })
-    await scriptsApi.generate(project.id, { user_input: userInput.value })
-    router.push(`/projects/${project.id}/script`)
-  } catch (e) {
-    console.error('创建失败', e)
-  } finally {
-    loading.value = false
-  }
+  const input = userInput.value
+  // Each mode maps to a different backend agent/workflow
+  const agentMode = modeAgentMap[currentMode.value] || 'general'
+  userInput.value = ''
+  await chatStore.sendMessage(input, { mode: agentMode })
 }
 
 function fillTag(tag: string) {
@@ -187,6 +174,39 @@ async function handleLoadConversation(convId: number) {
 function handleLogout() {
   authStore.doLogout()
   router.push('/login')
+}
+
+/** Group conversations by today / earlier */
+const todayConversations = computed(() => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return chatStore.conversations.filter(c => new Date(c.created_at) >= today)
+})
+
+const earlierConversations = computed(() => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return chatStore.conversations.filter(c => new Date(c.created_at) < today)
+})
+
+/** Get display label for agent mode */
+function getModeLabel(mode: string | null): string {
+  const map: Record<string, string> = {
+    general: '全能创作Agent',
+    scriptwriter: '短剧Agent',
+    director: '导演助手',
+  }
+  return map[mode || ''] || '全能创作Agent'
+}
+
+/** Format ISO timestamp → "2026/4/3 10:49:29" style */
+function formatTime(isoStr: string): string {
+  try {
+    const d = new Date(isoStr)
+    return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`
+  } catch {
+    return ''
+  }
 }
 </script>
 
@@ -241,44 +261,45 @@ function handleLogout() {
 
       <!-- Conversation + Project list -->
       <div class="sidebar-section flex-1 overflow-y-auto">
-        <!-- Chat conversations -->
-        <template v-if="chatStore.conversations.length">
-          <div class="text-[11px] text-gray-400 px-3 mb-2">对话</div>
+        <!-- Today's conversations -->
+        <template v-if="todayConversations.length">
+          <div class="text-[11px] text-gray-400 px-3 mb-2">今天</div>
           <div
-            v-for="conv in chatStore.conversations"
+            v-for="conv in todayConversations"
             :key="'conv-' + conv.id"
-            class="flex items-center gap-3 px-3 py-3 rounded-[10px] cursor-pointer transition-colors"
-            :class="chatStore.currentConversationId === conv.id ? 'bg-purple-50' : 'hover:bg-gray-50'"
+            class="sidebar-conv-item"
+            :class="chatStore.currentConversationId === conv.id ? 'sidebar-conv-active' : ''"
             @click="handleLoadConversation(conv.id)"
           >
-            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center text-[13px] text-primary-600 shrink-0">
-              💬
+            <div class="sidebar-conv-icon">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 4.5C3 3.67 3.67 3 4.5 3h9c.83 0 1.5.67 1.5 1.5v7c0 .83-.67 1.5-1.5 1.5H7l-2.5 2V13H4.5C3.67 13 3 12.33 3 11.5v-7z" stroke="currentColor" stroke-width="1.3"/></svg>
             </div>
             <div class="min-w-0 flex-1">
               <div class="text-[13px] text-gray-800 truncate leading-tight">{{ conv.title || '新对话' }}</div>
-              <div class="text-[11px] text-gray-400 truncate mt-0.5">{{ conv.mode || 'Agent' }} · {{ conv.message_count }} 条</div>
+              <div class="text-[11px] text-gray-400 truncate mt-0.5">{{ getModeLabel(conv.mode) }}</div>
             </div>
           </div>
         </template>
-        <!-- Projects -->
-        <template v-if="recentProjects.length">
-          <div class="text-[11px] text-gray-400 px-3 mb-2 mt-4">项目</div>
+        <!-- Earlier conversations -->
+        <template v-if="earlierConversations.length">
+          <div class="text-[11px] text-gray-400 px-3 mb-2" :class="todayConversations.length ? 'mt-4' : ''">更早</div>
           <div
-            v-for="p in recentProjects"
-            :key="'proj-' + p.id"
-            class="flex items-center gap-3 px-3 py-3 rounded-[10px] hover:bg-gray-50 cursor-pointer transition-colors"
-            @click="router.push(`/projects/${p.id}`)"
+            v-for="conv in earlierConversations"
+            :key="'conv-e-' + conv.id"
+            class="sidebar-conv-item"
+            :class="chatStore.currentConversationId === conv.id ? 'sidebar-conv-active' : ''"
+            @click="handleLoadConversation(conv.id)"
           >
-            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-[13px] text-blue-600 font-medium shrink-0">
-              {{ p.title.charAt(0) }}
+            <div class="sidebar-conv-icon">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 4.5C3 3.67 3.67 3 4.5 3h9c.83 0 1.5.67 1.5 1.5v7c0 .83-.67 1.5-1.5 1.5H7l-2.5 2V13H4.5C3.67 13 3 12.33 3 11.5v-7z" stroke="currentColor" stroke-width="1.3"/></svg>
             </div>
             <div class="min-w-0 flex-1">
-              <div class="text-[13px] text-gray-800 truncate leading-tight">{{ p.title }}</div>
-              <div class="text-[11px] text-gray-400 truncate mt-0.5">短剧项目</div>
+              <div class="text-[13px] text-gray-800 truncate leading-tight">{{ conv.title || '新对话' }}</div>
+              <div class="text-[11px] text-gray-400 truncate mt-0.5">{{ getModeLabel(conv.mode) }}</div>
             </div>
           </div>
         </template>
-        <div v-if="!chatStore.conversations.length && !recentProjects.length" class="text-center text-[13px] text-gray-400 py-10">暂无记录</div>
+        <div v-if="!chatStore.conversations.length" class="text-center text-[13px] text-gray-400 py-10">暂无记录</div>
       </div>
     </aside>
 
@@ -314,60 +335,81 @@ function handleLogout() {
       <!-- Center content -->
       <div class="flex-1 flex flex-col overflow-y-auto">
 
-        <!-- ═══ Chat Messages (Agent mode with messages) ═══ -->
-        <template v-if="currentMode === 'agent' && chatStore.hasMessages">
+        <!-- ═══ Chat Messages (any mode, after first message) ═══ -->
+        <template v-if="chatStore.hasMessages">
+          <!-- Share button (top-right of content area) -->
+          <div class="flex justify-end px-8 pt-4 pb-0">
+            <button class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer transition-colors" title="分享">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 10V12a2 2 0 002 2h4a2 2 0 002-2V10M8 2v8M5 5l3-3 3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+
+          <!-- Messages area (scrollable) -->
           <div class="flex-1 overflow-y-auto">
-            <div class="w-full max-w-[800px] mx-auto px-6 py-6">
+            <div class="w-full max-w-[860px] mx-auto px-8 pb-4">
               <div v-for="(msg, idx) in chatStore.messages" :key="idx" class="chat-message" :class="'chat-' + msg.role">
-                <!-- User message -->
-                <div v-if="msg.role === 'user'" class="chat-bubble chat-user-bubble">
-                  <div class="chat-avatar chat-avatar-user">{{ authStore.displayName?.charAt(0)?.toUpperCase() || 'U' }}</div>
-                  <div class="chat-content">{{ msg.content }}</div>
+
+                <!-- ── User message (right-aligned) ── -->
+                <div v-if="msg.role === 'user'" class="chat-row-user">
+                  <div class="chat-user-content">{{ msg.content }}</div>
+                  <div class="chat-time">{{ formatTime(msg.created_at) }}</div>
                 </div>
-                <!-- Assistant message -->
-                <div v-else class="chat-bubble chat-assistant-bubble">
-                  <div class="chat-avatar chat-avatar-ai">D</div>
-                  <div class="chat-content">
-                    <div class="whitespace-pre-wrap">{{ msg.content }}</div>
-                    <span v-if="msg.isStreaming" class="streaming-cursor">▍</span>
-                  </div>
+
+                <!-- ── Assistant message (left-aligned, with tool calls) ── -->
+                <div v-else class="chat-row-assistant">
+                  <div class="chat-assistant-text whitespace-pre-wrap">{{ msg.content }}<span v-if="msg.isStreaming" class="streaming-cursor">▍</span></div>
                 </div>
               </div>
               <div ref="messagesEndRef" />
             </div>
           </div>
 
-          <!-- Input bar (bottom, sticky) -->
-          <div class="w-full max-w-[800px] mx-auto px-6 pb-6 pt-2">
-            <div class="input-card w-full bg-white rounded-[24px] border border-[#E5E5E5] shadow-[0_1px_4px_rgba(0,0,0,0.03)] focus-within:border-[#C4B5FD] focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.06)] transition-all">
-              <textarea
-                v-model="userInput"
-                rows="1"
-                class="input-textarea w-full pr-7 resize-none border-none outline-none text-[16px] text-gray-800 placeholder-gray-400 bg-transparent leading-[1.8]"
-                placeholder="继续对话..."
-                @keydown.enter.exact.prevent="startCreation"
-              />
-              <div class="input-toolbar flex items-center pr-6">
-                <div class="flex-1" />
-                <!-- Stop button (during streaming) -->
-                <button
-                  v-if="chatStore.isStreaming"
-                  class="w-[40px] h-[40px] rounded-full flex items-center justify-center bg-red-500 text-white hover:bg-red-600 cursor-pointer transition-all"
-                  @click="chatStore.stopStreaming"
-                  title="停止生成"
-                >
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="3" y="3" width="8" height="8" rx="1" fill="currentColor"/></svg>
-                </button>
-                <!-- Send button -->
-                <button
-                  v-else
-                  class="w-[40px] h-[40px] rounded-full flex items-center justify-center transition-all cursor-pointer"
-                  :class="userInput.trim() ? 'bg-gray-900 text-white hover:bg-black shadow-[0_2px_8px_rgba(0,0,0,0.15)]' : 'bg-gray-100 text-gray-400 cursor-not-allowed'"
-                  :disabled="!userInput.trim()"
-                  @click="startCreation"
-                >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 13V3M8 3L4 7M8 3L12 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+          <!-- ── Bottom input bar (fixed to bottom) ── -->
+          <div class="chat-input-bar">
+            <div class="w-full max-w-[860px] mx-auto px-8">
+              <div class="chat-input-card">
+                <textarea
+                  v-model="userInput"
+                  rows="1"
+                  class="chat-input-textarea"
+                  placeholder="与综合助手对话，支持多种能力..."
+                  @keydown.enter.exact.prevent="startCreation"
+                />
+                <div class="chat-input-toolbar">
+                  <!-- + upload -->
+                  <button
+                    class="chat-tool-btn"
+                    title="上传参考素材"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><line x1="9" y1="4" x2="9" y2="14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="4" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  </button>
+                  <!-- Mode indicator -->
+                  <button class="chat-mode-btn" @click="toggleMenu('mode')">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M6 6h4M6 10h4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+                    <span>{{ currentModeOption.label }}</span>
+                  </button>
+
+                  <div class="flex-1" />
+
+                  <!-- Stop / Send -->
+                  <button
+                    v-if="chatStore.isStreaming"
+                    class="chat-send-btn chat-stop-btn"
+                    @click="chatStore.stopStreaming"
+                    title="停止生成"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="3" y="3" width="8" height="8" rx="1.5" fill="currentColor"/></svg>
+                  </button>
+                  <button
+                    v-else
+                    class="chat-send-btn"
+                    :class="userInput.trim() ? 'chat-send-active' : ''"
+                    :disabled="!userInput.trim()"
+                    @click="startCreation"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 13V3M8 3L4 7M8 3L12 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1166,60 +1208,53 @@ function handleLogout() {
   color: #aaa;
 }
 
-/* ─── Chat Messages ─── */
+/* ─── Chat Conversation View ─── */
+
 .chat-message {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
-.chat-bubble {
+/* User message — right aligned bubble */
+.chat-row-user {
   display: flex;
-  gap: 12px;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.chat-user-content {
+  background: #f3f0ff;
+  color: #1a1a1a;
+  font-size: 15px;
+  line-height: 1.7;
+  padding: 12px 18px;
+  border-radius: 18px 18px 4px 18px;
+  max-width: 75%;
+  word-break: break-word;
+}
+
+.chat-time {
+  font-size: 12px;
+  color: #bbb;
+  margin-top: 6px;
+  padding-right: 4px;
+}
+
+/* Assistant message — left aligned */
+.chat-row-assistant {
+  display: flex;
+  flex-direction: column;
   align-items: flex-start;
 }
 
-.chat-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.chat-avatar-user {
-  background: #f3f4f6;
-  color: #374151;
-}
-
-.chat-avatar-ai {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
-  color: white;
-  font-size: 12px;
-}
-
-.chat-content {
-  flex: 1;
-  min-width: 0;
+.chat-assistant-text {
   font-size: 15px;
-  line-height: 1.7;
+  line-height: 1.8;
   color: #1a1a1a;
-  padding-top: 4px;
+  max-width: 90%;
+  word-break: break-word;
 }
 
-.chat-user-bubble .chat-content {
-  background: #f9fafb;
-  border-radius: 16px;
-  padding: 12px 16px;
-  color: #374151;
-}
-
-.chat-assistant-bubble .chat-content {
-  padding: 4px 0;
-}
-
+/* Streaming cursor */
 .streaming-cursor {
   display: inline-block;
   color: #7c3aed;
@@ -1230,5 +1265,158 @@ function handleLogout() {
 @keyframes cursorBlink {
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
+}
+
+/* ─── Bottom Chat Input Bar ─── */
+.chat-input-bar {
+  flex-shrink: 0;
+  padding: 12px 0 20px;
+  background: #fff;
+  border-top: 1px solid #f5f5f5;
+}
+
+.chat-input-card {
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 20px;
+  padding: 14px 16px 10px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.chat-input-card:focus-within {
+  border-color: #c4b5fd;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.06);
+}
+
+.chat-input-textarea {
+  width: 100%;
+  min-height: 24px;
+  max-height: 120px;
+  border: none;
+  outline: none;
+  resize: none;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #333;
+  background: transparent;
+}
+
+.chat-input-textarea::placeholder {
+  color: #bbb;
+}
+
+.chat-input-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chat-tool-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #e8e8e8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chat-tool-btn:hover {
+  background: #f5f5f5;
+  color: #555;
+}
+
+.chat-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 12px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #e8e8e8;
+  font-size: 13px;
+  color: #666;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chat-mode-btn:hover {
+  background: #f5f5f5;
+}
+
+.chat-send-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e5e5e5;
+  color: #999;
+  cursor: not-allowed;
+  transition: all 0.2s;
+}
+
+.chat-send-active {
+  background: #0a0a0a;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.chat-send-active:hover {
+  background: #1a1a1a;
+}
+
+.chat-stop-btn {
+  background: #0a0a0a !important;
+  color: #fff !important;
+  cursor: pointer !important;
+}
+
+.chat-stop-btn:hover {
+  background: #333 !important;
+}
+
+/* ─── Sidebar Conversation Items ─── */
+.sidebar-conv-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.sidebar-conv-item:hover {
+  background: #f5f5f5;
+}
+
+.sidebar-conv-active {
+  background: #f3f0ff !important;
+}
+
+.sidebar-conv-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #f3f0ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7c3aed;
+  flex-shrink: 0;
+}
+
+.sidebar-conv-active .sidebar-conv-icon {
+  background: #ede9fe;
 }
 </style>
