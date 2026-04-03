@@ -1,8 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { isAuthenticated } from '@/api/client'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    {
+      path: '/login',
+      name: 'Login',
+      component: () => import('@/views/LoginPage.vue'),
+      meta: { guest: true },
+    },
     {
       path: '/',
       name: 'Home',
@@ -54,6 +61,19 @@ const router = createRouter({
       component: () => import('@/views/SettingsPage.vue'),
     },
   ],
+})
+
+// ── Navigation guard: redirect to login if not authenticated ──
+router.beforeEach((to, _from, next) => {
+  // Guest routes (login/register) — redirect to home if already logged in
+  if (to.meta.guest && isAuthenticated()) {
+    return next('/')
+  }
+  // Protected routes — redirect to login if not authenticated
+  if (!to.meta.guest && to.name !== 'Login' && !isAuthenticated()) {
+    return next('/login')
+  }
+  next()
 })
 
 export default router

@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { projectsApi } from '@/api/projects'
 import { scriptsApi } from '@/api/scripts'
 import { VideoStyle } from '@/types/enums'
 import type { ProjectList } from '@/types/project'
+import { useAuthStore } from '@/stores/auth'
+import { useChatStore } from '@/stores/chat'
 
 const router = useRouter()
+const authStore = useAuthStore()
+const chatStore = useChatStore()
 const userInput = ref('')
 const loading = ref(false)
 const recentProjects = ref<ProjectList[]>([])
 const sidebarCollapsed = ref(false)
+const messagesEndRef = ref<HTMLElement | null>(null)
 
 /* ─── Mode definitions ─── */
 type Mode = 'agent' | 'drama' | 'clip' | 'longvideo2' | 'image' | 'longvideo'
@@ -117,8 +122,39 @@ const featureCards = [
   } catch {}
 })()
 
+// Load chat conversations on mount
+onMounted(async () => {
+  if (authStore.isLoggedIn) {
+    await chatStore.fetchConversations()
+  }
+})
+
+// Auto-scroll when new messages arrive
+watch(() => chatStore.messages.length, () => {
+  nextTick(() => {
+    messagesEndRef.value?.scrollIntoView({ behavior: 'smooth' })
+  })
+})
+
+// Also scroll during streaming content updates
+watch(() => chatStore.streamingContent, () => {
+  nextTick(() => {
+    messagesEndRef.value?.scrollIntoView({ behavior: 'smooth' })
+  })
+})
+
 async function startCreation() {
   if (!userInput.value.trim()) return
+
+  // Agent mode → use chat store (SSE streaming)
+  if (currentMode.value === 'agent') {
+    const input = userInput.value
+    userInput.value = ''
+    await chatStore.sendMessage(input, { mode: 'general' })
+    return
+  }
+
+  // Other modes → original project creation flow
   loading.value = true
   try {
     const { data: project } = await projectsApi.create({
@@ -137,6 +173,20 @@ async function startCreation() {
 
 function fillTag(tag: string) {
   userInput.value = tag
+}
+
+function handleNewChat() {
+  chatStore.newConversation()
+  userInput.value = ''
+}
+
+async function handleLoadConversation(convId: number) {
+  await chatStore.loadConversation(convId)
+}
+
+function handleLogout() {
+  authStore.doLogout()
+  router.push('/login')
 }
 </script>
 
@@ -165,7 +215,7 @@ function fillTag(tag: string) {
       <div class="sidebar-section sidebar-new-chat">
         <button
           class="new-chat-btn rounded-full border border-[#E5E5E5] bg-white text-gray-600 flex items-center hover:bg-gray-50 cursor-pointer transition-colors"
-          @click="userInput = ''"
+          @click="handleNewChat"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><line x1="8" y1="3" x2="8" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           <span>新对话</span>
@@ -189,26 +239,46 @@ function fillTag(tag: string) {
         <span class="text-[12px] text-gray-400 cursor-pointer hover:text-primary-600 transition-colors">全部</span>
       </div>
 
-      <!-- Project list -->
+      <!-- Conversation + Project list -->
       <div class="sidebar-section flex-1 overflow-y-auto">
+        <!-- Chat conversations -->
+        <template v-if="chatStore.conversations.length">
+          <div class="text-[11px] text-gray-400 px-3 mb-2">对话</div>
+          <div
+            v-for="conv in chatStore.conversations"
+            :key="'conv-' + conv.id"
+            class="flex items-center gap-3 px-3 py-3 rounded-[10px] cursor-pointer transition-colors"
+            :class="chatStore.currentConversationId === conv.id ? 'bg-purple-50' : 'hover:bg-gray-50'"
+            @click="handleLoadConversation(conv.id)"
+          >
+            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center text-[13px] text-primary-600 shrink-0">
+              💬
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="text-[13px] text-gray-800 truncate leading-tight">{{ conv.title || '新对话' }}</div>
+              <div class="text-[11px] text-gray-400 truncate mt-0.5">{{ conv.mode || 'Agent' }} · {{ conv.message_count }} 条</div>
+            </div>
+          </div>
+        </template>
+        <!-- Projects -->
         <template v-if="recentProjects.length">
-          <div class="text-[11px] text-gray-400 px-3 mb-2">更早</div>
+          <div class="text-[11px] text-gray-400 px-3 mb-2 mt-4">项目</div>
           <div
             v-for="p in recentProjects"
-            :key="p.id"
+            :key="'proj-' + p.id"
             class="flex items-center gap-3 px-3 py-3 rounded-[10px] hover:bg-gray-50 cursor-pointer transition-colors"
             @click="router.push(`/projects/${p.id}`)"
           >
-            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center text-[13px] text-primary-600 font-medium shrink-0">
+            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-[13px] text-blue-600 font-medium shrink-0">
               {{ p.title.charAt(0) }}
             </div>
             <div class="min-w-0 flex-1">
               <div class="text-[13px] text-gray-800 truncate leading-tight">{{ p.title }}</div>
-              <div class="text-[11px] text-gray-400 truncate mt-0.5">全能创作Agent</div>
+              <div class="text-[11px] text-gray-400 truncate mt-0.5">短剧项目</div>
             </div>
           </div>
         </template>
-        <div v-else class="text-center text-[13px] text-gray-400 py-10">暂无项目</div>
+        <div v-if="!chatStore.conversations.length && !recentProjects.length" class="text-center text-[13px] text-gray-400 py-10">暂无记录</div>
       </div>
     </aside>
 
@@ -234,11 +304,78 @@ function fillTag(tag: string) {
         <button class="w-[34px] h-[34px] rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer transition-colors">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2a2.5 2.5 0 0 0-2.5 2.5v1.25a.5.5 0 0 1-.12.33l-.7.8A2 2 0 0 0 6 8.5V10c0 1.1-.4 2.1-1.07 2.9l-.43.5a1 1 0 0 0 .76 1.6h9.48a1 1 0 0 0 .76-1.6l-.43-.5A4.5 4.5 0 0 1 14 10V8.5a2 2 0 0 0-.68-1.5l-.7-.82a.5.5 0 0 1-.12-.33V4.5A2.5 2.5 0 0 0 10 2z" stroke="currentColor" stroke-width="1.3"/><path d="M8.5 15.5s.5 1.5 1.5 1.5 1.5-1.5 1.5-1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
         </button>
-        <div class="w-[34px] h-[34px] rounded-full bg-gray-800 flex items-center justify-center text-white text-[12px] font-medium cursor-pointer hover:bg-gray-900 transition-colors">U</div>
+        <div
+          class="w-[34px] h-[34px] rounded-full bg-gray-800 flex items-center justify-center text-white text-[12px] font-medium cursor-pointer hover:bg-gray-900 transition-colors"
+          :title="authStore.isLoggedIn ? authStore.displayName : '未登录'"
+          @click="authStore.isLoggedIn ? handleLogout() : router.push('/login')"
+        >{{ authStore.isLoggedIn ? authStore.displayName.charAt(0).toUpperCase() : 'U' }}</div>
       </div>
 
-      <!-- Center content — 垂直居中，自然滚动 -->
-      <div class="flex-1 flex flex-col items-center justify-center overflow-y-auto py-10">
+      <!-- Center content -->
+      <div class="flex-1 flex flex-col overflow-y-auto">
+
+        <!-- ═══ Chat Messages (Agent mode with messages) ═══ -->
+        <template v-if="currentMode === 'agent' && chatStore.hasMessages">
+          <div class="flex-1 overflow-y-auto">
+            <div class="w-full max-w-[800px] mx-auto px-6 py-6">
+              <div v-for="(msg, idx) in chatStore.messages" :key="idx" class="chat-message" :class="'chat-' + msg.role">
+                <!-- User message -->
+                <div v-if="msg.role === 'user'" class="chat-bubble chat-user-bubble">
+                  <div class="chat-avatar chat-avatar-user">{{ authStore.displayName?.charAt(0)?.toUpperCase() || 'U' }}</div>
+                  <div class="chat-content">{{ msg.content }}</div>
+                </div>
+                <!-- Assistant message -->
+                <div v-else class="chat-bubble chat-assistant-bubble">
+                  <div class="chat-avatar chat-avatar-ai">D</div>
+                  <div class="chat-content">
+                    <div class="whitespace-pre-wrap">{{ msg.content }}</div>
+                    <span v-if="msg.isStreaming" class="streaming-cursor">▍</span>
+                  </div>
+                </div>
+              </div>
+              <div ref="messagesEndRef" />
+            </div>
+          </div>
+
+          <!-- Input bar (bottom, sticky) -->
+          <div class="w-full max-w-[800px] mx-auto px-6 pb-6 pt-2">
+            <div class="input-card w-full bg-white rounded-[24px] border border-[#E5E5E5] shadow-[0_1px_4px_rgba(0,0,0,0.03)] focus-within:border-[#C4B5FD] focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.06)] transition-all">
+              <textarea
+                v-model="userInput"
+                rows="1"
+                class="input-textarea w-full pr-7 resize-none border-none outline-none text-[16px] text-gray-800 placeholder-gray-400 bg-transparent leading-[1.8]"
+                placeholder="继续对话..."
+                @keydown.enter.exact.prevent="startCreation"
+              />
+              <div class="input-toolbar flex items-center pr-6">
+                <div class="flex-1" />
+                <!-- Stop button (during streaming) -->
+                <button
+                  v-if="chatStore.isStreaming"
+                  class="w-[40px] h-[40px] rounded-full flex items-center justify-center bg-red-500 text-white hover:bg-red-600 cursor-pointer transition-all"
+                  @click="chatStore.stopStreaming"
+                  title="停止生成"
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="3" y="3" width="8" height="8" rx="1" fill="currentColor"/></svg>
+                </button>
+                <!-- Send button -->
+                <button
+                  v-else
+                  class="w-[40px] h-[40px] rounded-full flex items-center justify-center transition-all cursor-pointer"
+                  :class="userInput.trim() ? 'bg-gray-900 text-white hover:bg-black shadow-[0_2px_8px_rgba(0,0,0,0.15)]' : 'bg-gray-100 text-gray-400 cursor-not-allowed'"
+                  :disabled="!userInput.trim()"
+                  @click="startCreation"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 13V3M8 3L4 7M8 3L12 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- ═══ Welcome Page (default / no messages) ═══ -->
+        <template v-else>
+        <div class="flex-1 flex flex-col items-center justify-center py-10">
         <div class="w-full max-w-[880px] px-10 flex flex-col items-center">
 
           <!-- Logo -->
@@ -522,6 +659,10 @@ function fillTag(tag: string) {
             </div>
           </div>
         </div>
+        </div>
+        </template>
+        <!-- end welcome / chat switch -->
+
       </div>
     </div>
   </div>
@@ -1023,5 +1164,71 @@ function fillTag(tag: string) {
 .preset-empty p {
   font-size: 13px;
   color: #aaa;
+}
+
+/* ─── Chat Messages ─── */
+.chat-message {
+  margin-bottom: 24px;
+}
+
+.chat-bubble {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.chat-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.chat-avatar-user {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.chat-avatar-ai {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: white;
+  font-size: 12px;
+}
+
+.chat-content {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  color: #1a1a1a;
+  padding-top: 4px;
+}
+
+.chat-user-bubble .chat-content {
+  background: #f9fafb;
+  border-radius: 16px;
+  padding: 12px 16px;
+  color: #374151;
+}
+
+.chat-assistant-bubble .chat-content {
+  padding: 4px 0;
+}
+
+.streaming-cursor {
+  display: inline-block;
+  color: #7c3aed;
+  font-weight: 400;
+  animation: cursorBlink 0.8s infinite;
+}
+
+@keyframes cursorBlink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
 }
 </style>
