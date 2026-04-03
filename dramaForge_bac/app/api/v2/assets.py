@@ -27,6 +27,8 @@ from app.schemas.assets import (
     AssetsGenerateRequest,
 )
 from app.engines.assets_engine import assets_engine
+from app.core.security import CurrentUser, DbSession
+from app.core.billing_deps import require_credits
 
 router = APIRouter()
 
@@ -38,10 +40,15 @@ router = APIRouter()
 @router.post("/projects/{project_id}/assets/generate")
 async def generate_assets(
     project_id: int,
+    user: CurrentUser,
+    db: DbSession,
     body: AssetsGenerateRequest = AssetsGenerateRequest(),
-    db: AsyncSession = Depends(get_db),
 ):
     """Generate all character + scene assets from the approved script."""
+    # Each asset generation counts as image_default cost
+    # We charge once up-front; could be per-image in future
+    await require_credits(db, user.id, "image_default", description="素材批量生成")
+
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -121,10 +128,13 @@ async def update_character(
 async def regenerate_character(
     project_id: int,
     char_id: int,
+    user: CurrentUser,
+    db: DbSession,
     body: CharacterRegenerateRequest = CharacterRegenerateRequest(),
-    db: AsyncSession = Depends(get_db),
 ):
     """Regenerate a character's image."""
+    await require_credits(db, user.id, "image_default", description="角色图片重新生成")
+
     character = await db.get(Character, char_id)
     if not character or character.project_id != project_id:
         raise HTTPException(status_code=404, detail="Character not found")
@@ -177,10 +187,13 @@ async def update_scene(
 async def regenerate_scene(
     project_id: int,
     scene_id: int,
+    user: CurrentUser,
+    db: DbSession,
     body: SceneRegenerateRequest = SceneRegenerateRequest(),
-    db: AsyncSession = Depends(get_db),
 ):
     """Regenerate a scene's image."""
+    await require_credits(db, user.id, "image_default", description="场景图片重新生成")
+
     scene = await db.get(SceneLocation, scene_id)
     if not scene or scene.project_id != project_id:
         raise HTTPException(status_code=404, detail="Scene not found")

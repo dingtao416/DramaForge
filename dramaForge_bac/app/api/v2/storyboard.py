@@ -28,6 +28,8 @@ from app.schemas.storyboard import (
     SegmentDetail,
 )
 from app.engines.video_engine import video_engine
+from app.core.security import CurrentUser, DbSession
+from app.core.billing_deps import require_credits
 
 router = APIRouter()
 
@@ -59,10 +61,14 @@ async def _get_project_assets(project_id: int, db: AsyncSession):
 async def generate_storyboard(
     project_id: int,
     episode_id: int,
+    user: CurrentUser,
+    db: DbSession,
     body: StoryboardGenerateRequest = StoryboardGenerateRequest(),
-    db: AsyncSession = Depends(get_db),
 ):
     """Generate storyboard (segments + shots) for an episode via AI."""
+    # Consume credits for storyboard generation
+    await require_credits(db, user.id, "storyboard_gen", description="分镜自动生成")
+
     episode = await _get_episode(project_id, episode_id, db)
     characters, scenes = await _get_project_assets(project_id, db)
 
@@ -170,9 +176,13 @@ async def generate_segment(
     project_id: int,
     episode_id: int,
     segment_id: int,
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ):
     """Generate assets and video for a single segment."""
+    # Video generation: charge for 5s default video per segment
+    await require_credits(db, user.id, "video_default_5s", description="分镜视频生成")
+
     segment = await db.get(Segment, segment_id)
     if not segment:
         raise HTTPException(status_code=404, detail="Segment not found")
@@ -203,9 +213,12 @@ async def regenerate_segment(
     project_id: int,
     episode_id: int,
     segment_id: int,
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ):
     """Regenerate a segment (assets + video)."""
+    await require_credits(db, user.id, "video_default_5s", description="分镜视频重新生成")
+
     segment = await db.get(Segment, segment_id)
     if not segment:
         raise HTTPException(status_code=404, detail="Segment not found")
@@ -233,9 +246,13 @@ async def regenerate_segment(
 async def compose_episode(
     project_id: int,
     episode_id: int,
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ):
     """Compose all segments into a full episode video."""
+    # Compositing costs credits
+    await require_credits(db, user.id, "video_default_5s", description="剧集合成")
+
     episode = await _get_episode(project_id, episode_id, db)
 
     stmt = (

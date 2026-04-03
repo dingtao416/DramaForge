@@ -63,6 +63,9 @@ class UserResponse(BaseModel):
     avatar_url: str | None = None
     status: str
     created_at: datetime
+    # Billing quick summary
+    credits: int = 0
+    plan_code: str = "free"
 
     model_config = {"from_attributes": True}
 
@@ -211,8 +214,17 @@ async def logout(user: CurrentUser):
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(user: CurrentUser):
-    """Get current user information."""
+async def get_me(user: CurrentUser, db: DbSession):
+    """Get current user information (including billing summary)."""
+    from app.services.billing_service import get_balance, get_user_plan_code, grant_daily_credits_if_needed
+
+    # Auto-grant daily credits
+    await grant_daily_credits_if_needed(db, user.id)
+    await db.commit()
+
+    credits = await get_balance(db, user.id)
+    plan_code = await get_user_plan_code(db, user.id)
+
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -221,4 +233,6 @@ async def get_me(user: CurrentUser):
         avatar_url=user.avatar_url,
         status=user.status.value,
         created_at=user.created_at,
+        credits=credits,
+        plan_code=plan_code,
     )

@@ -25,6 +25,8 @@ from app.schemas.script import (
 )
 from app.engines.script_engine import script_engine
 from app.services.storage import storage
+from app.core.security import CurrentUser, DbSession
+from app.core.billing_deps import require_credits
 
 router = APIRouter()
 
@@ -53,9 +55,13 @@ async def _get_script(project_id: int, db: AsyncSession) -> Script:
 async def generate_script(
     project_id: int,
     body: ScriptGenerateRequest,
-    db: AsyncSession = Depends(get_db),
+    user: CurrentUser,
+    db: DbSession,
 ):
     """AI-generate a structured script from user input."""
+    # Consume credits for script generation
+    await require_credits(db, user.id, "script_gen", description="剧本 AI 生成")
+
     project = await _get_project(project_id, db)
 
     # Remove existing script if any

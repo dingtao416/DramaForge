@@ -7,12 +7,14 @@ import { VideoStyle } from '@/types/enums'
 import type { ProjectList } from '@/types/project'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
+import { useBillingStore } from '@/stores/billing'
 import BottomSheet from '@/components/common/BottomSheet.vue'
 import ModalOverlay from '@/components/common/ModalOverlay.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
+const billingStore = useBillingStore()
 const userInput = ref('')
 const loading = ref(false)
 const recentProjects = ref<ProjectList[]>([])
@@ -86,13 +88,14 @@ interface ModelOption {
   desc: string
   tag?: string                                       // '推荐' / '高质量' / '极速' 等
   modes: Mode[]                                      // 哪些前端模式下显示
+  premium?: boolean                                  // 是否需要付费会员
 }
 
 // ── Chat / LLM 模型 ──
 const chatModels: ModelOption[] = [
   { id: 'gpt-4.1-mini',              name: 'GPT-4.1 Mini',           desc: '快速低成本，日常对话首选',        tag: '推荐',   modes: ['agent', 'drama', 'clip', 'longvideo2', 'image', 'longvideo'] },
-  { id: 'gpt-4o',                    name: 'GPT-4o',                 desc: '多模态理解，创意能力最强',        tag: '创意',   modes: ['agent', 'drama', 'clip', 'longvideo2'] },
-  { id: 'claude-sonnet-4-20250514',  name: 'Claude Sonnet 4',        desc: '长文本输出质量最佳，深度编剧',    tag: '高质量', modes: ['agent', 'drama'] },
+  { id: 'gpt-4o',                    name: 'GPT-4o',                 desc: '多模态理解，创意能力最强',        tag: '创意',   modes: ['agent', 'drama', 'clip', 'longvideo2'], premium: true },
+  { id: 'claude-sonnet-4-20250514',  name: 'Claude Sonnet 4',        desc: '长文本输出质量最佳，深度编剧',    tag: '高质量', modes: ['agent', 'drama'], premium: true },
   { id: 'deepseek-v3.1',             name: 'DeepSeek V3.1',          desc: '中文理解好，性价比高',            tag: '性价比', modes: ['agent', 'drama', 'clip', 'longvideo2', 'image', 'longvideo'] },
   { id: 'glm-4.5-flash',             name: 'GLM-4.5 Flash',          desc: '极速回复，接近免费',              tag: '极速',   modes: ['agent', 'drama', 'clip', 'longvideo2', 'image', 'longvideo'] },
   { id: 'kimi-k2',                   name: 'Kimi K2',                desc: '联网搜索能力强，适合调研',                       modes: ['agent', 'drama'] },
@@ -103,8 +106,8 @@ const chatModels: ModelOption[] = [
 // ── 视频生成模型 ──
 const videoModels: ModelOption[] = [
   { id: 'seedance-2.0',   name: 'SeeDance 2.0',         desc: '火山引擎，高性价比，9:16竖版',     tag: '推荐',   modes: ['clip', 'longvideo2', 'longvideo'] },
-  { id: 'kling-v2.1',     name: 'Kling 可灵 V2.1',      desc: '最新版，效果最佳，Pro模式',        tag: '高质量', modes: ['clip', 'longvideo2', 'drama', 'longvideo'] },
-  { id: 'veo-3.1-fast',   name: 'VEO 3.1 Fast',         desc: 'Google 快速出片，按秒计费',        tag: '极速',   modes: ['clip', 'longvideo2', 'longvideo'] },
+  { id: 'kling-v2.1',     name: 'Kling 可灵 V2.1',      desc: '最新版，效果最佳，Pro模式',        tag: '高质量', modes: ['clip', 'longvideo2', 'drama', 'longvideo'], premium: true },
+  { id: 'veo-3.1-fast',   name: 'VEO 3.1 Fast',         desc: 'Google 快速出片，按秒计费',        tag: '极速',   modes: ['clip', 'longvideo2', 'longvideo'], premium: true },
   { id: 'wan-v2.1-i2v',   name: 'Wan 万象 图生视频',     desc: '阿里，图片驱动视频生成',                          modes: ['clip', 'longvideo2', 'longvideo'] },
   { id: 'hailuo-01',      name: 'Hailuo 海螺',           desc: 'MiniMax，支持1080p高分辨率',                      modes: ['clip', 'longvideo2'] },
   { id: 'runway-gen4',    name: 'Runway Gen-4',          desc: 'Runway 最新，运动控制优秀',                       modes: ['clip', 'longvideo2'] },
@@ -116,7 +119,7 @@ const videoModels: ModelOption[] = [
 const imageModels: ModelOption[] = [
   { id: 'gpt-image-1-mini', name: 'GPT Image Mini',     desc: 'OpenAI 原生，质量好成本低',       tag: '推荐',   modes: ['agent', 'image', 'drama'] },
   { id: 'gpt-image-1',      name: 'GPT Image 1',        desc: 'OpenAI 高质量图片生成',           tag: '高质量', modes: ['agent', 'image', 'drama'] },
-  { id: 'midjourney-imagine',name: 'Midjourney',         desc: '艺术质量最高，风格化出色',        tag: '艺术',   modes: ['agent', 'image'] },
+  { id: 'midjourney-imagine',name: 'Midjourney',         desc: '艺术质量最高，风格化出色',        tag: '艺术',   modes: ['agent', 'image'], premium: true },
   { id: 'ideogram-v3',      name: 'Ideogram V3',        desc: '文字渲染能力强，适合海报',        tag: '文字',   modes: ['agent', 'image'] },
 ]
 
@@ -201,10 +204,13 @@ const featureCards = [
   } catch {}
 })()
 
-// Load chat conversations on mount
+// Load chat conversations and billing on mount
 onMounted(async () => {
   if (authStore.isLoggedIn) {
-    await chatStore.fetchConversations()
+    await Promise.all([
+      chatStore.fetchConversations(),
+      billingStore.initialize(),
+    ])
   }
 })
 
@@ -222,6 +228,8 @@ watch(() => chatStore.streamingContent, () => {
   })
 })
 
+const showInsufficientCredits = ref(false)
+
 async function startCreation() {
   if (!userInput.value.trim() || chatStore.isStreaming) return
 
@@ -230,6 +238,16 @@ async function startCreation() {
   const model = modelAuto.value ? undefined : (selectedModel.value || undefined)
   userInput.value = ''
   await chatStore.sendMessage(input, { mode: agentMode, model })
+
+  // Check if the error was insufficient credits
+  if (chatStore.error === 'INSUFFICIENT_CREDITS') {
+    userInput.value = input // Restore user input
+    showInsufficientCredits.value = true
+    chatStore.error = null
+  } else {
+    // Refresh balance after successful sending (credits consumed)
+    billingStore.fetchBalance()
+  }
 }
 
 function fillTag(tag: string) {
@@ -248,6 +266,16 @@ async function handleLoadConversation(convId: number) {
 function handleLogout() {
   authStore.doLogout()
   router.push('/login')
+}
+
+async function handleSubscribe(planCode: string) {
+  const ok = await billingStore.doSubscribe(planCode)
+  if (ok) {
+    showSubscribeSheet.value = false
+  } else {
+    // Error is stored in billingStore.error, user sees it
+    alert(billingStore.error || '订阅失败，请稍后再试')
+  }
 }
 
 /** Group conversations by today / earlier */
@@ -394,7 +422,7 @@ function formatTime(isoStr: string): string {
           <!-- Credits + Subscribe (purple bg group) -->
           <div class="topbar-credits-group" @click="showSubscribeSheet = true">
             <span class="topbar-credits-icon">✦</span>
-            <span class="topbar-credits-num">16</span>
+            <span class="topbar-credits-num">{{ billingStore.credits }}</span>
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 4L5 6L7 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <div class="topbar-group-divider" />
             <span class="topbar-subscribe">订阅</span>
@@ -633,18 +661,20 @@ function formatTime(isoStr: string): string {
                       v-for="m in filteredChatModels"
                       :key="m.id"
                       class="model-item"
-                      :class="selectedModel === m.id ? 'model-item-active' : ''"
-                      @click="selectModel(m.id)"
+                      :class="[selectedModel === m.id ? 'model-item-active' : '', m.premium && billingStore.planCode === 'free' ? 'model-item-locked' : '']"
+                      @click="m.premium && billingStore.planCode === 'free' ? showSubscriptionModal = true : selectModel(m.id)"
                     >
                       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M9 6v6M6 9h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
                           <span class="model-name">{{ m.name }}</span>
                           <span v-if="m.tag" class="model-tag" :class="m.tag === '推荐' ? 'model-tag-rec' : ''">{{ m.tag }}</span>
+                          <span v-if="m.premium" class="model-tag-premium">PRO</span>
                         </div>
                         <div class="model-desc">{{ m.desc }}</div>
                       </div>
-                      <svg v-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <svg v-if="m.premium && billingStore.planCode === 'free'" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0 text-amber-500"><path d="M7 1.5l1.5 3H12l-2.5 2 1 3.5L7 8l-3.5 2 1-3.5L2 4.5h3.5z" fill="currentColor"/></svg>
+                      <svg v-else-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </div>
                   </template>
                   <!-- Video models -->
@@ -655,18 +685,20 @@ function formatTime(isoStr: string): string {
                       v-for="m in filteredVideoModels"
                       :key="m.id"
                       class="model-item"
-                      :class="selectedModel === m.id ? 'model-item-active' : ''"
-                      @click="selectModel(m.id)"
+                      :class="[selectedModel === m.id ? 'model-item-active' : '', m.premium && billingStore.planCode === 'free' ? 'model-item-locked' : '']"
+                      @click="m.premium && billingStore.planCode === 'free' ? showSubscriptionModal = true : selectModel(m.id)"
                     >
                       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><rect x="3" y="4" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 7.5l4 2.5-4 2.5z" fill="currentColor"/></svg>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
                           <span class="model-name">{{ m.name }}</span>
                           <span v-if="m.tag" class="model-tag" :class="m.tag === '推荐' ? 'model-tag-rec' : ''">{{ m.tag }}</span>
+                          <span v-if="m.premium" class="model-tag-premium">PRO</span>
                         </div>
                         <div class="model-desc">{{ m.desc }}</div>
                       </div>
-                      <svg v-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <svg v-if="m.premium && billingStore.planCode === 'free'" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0 text-amber-500"><path d="M7 1.5l1.5 3H12l-2.5 2 1 3.5L7 8l-3.5 2 1-3.5L2 4.5h3.5z" fill="currentColor"/></svg>
+                      <svg v-else-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </div>
                   </template>
                   <!-- Image models -->
@@ -677,18 +709,20 @@ function formatTime(isoStr: string): string {
                       v-for="m in filteredImageModels"
                       :key="m.id"
                       class="model-item"
-                      :class="selectedModel === m.id ? 'model-item-active' : ''"
-                      @click="selectModel(m.id)"
+                      :class="[selectedModel === m.id ? 'model-item-active' : '', m.premium && billingStore.planCode === 'free' ? 'model-item-locked' : '']"
+                      @click="m.premium && billingStore.planCode === 'free' ? showSubscriptionModal = true : selectModel(m.id)"
                     >
                       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="7.5" r="1.5" stroke="currentColor" stroke-width="1"/><path d="M3 13l3-4 2 2 3-3 4 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
                           <span class="model-name">{{ m.name }}</span>
                           <span v-if="m.tag" class="model-tag" :class="m.tag === '推荐' ? 'model-tag-rec' : ''">{{ m.tag }}</span>
+                          <span v-if="m.premium" class="model-tag-premium">PRO</span>
                         </div>
                         <div class="model-desc">{{ m.desc }}</div>
                       </div>
-                      <svg v-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <svg v-if="m.premium && billingStore.planCode === 'free'" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0 text-amber-500"><path d="M7 1.5l1.5 3H12l-2.5 2 1 3.5L7 8l-3.5 2 1-3.5L2 4.5h3.5z" fill="currentColor"/></svg>
+                      <svg v-else-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </div>
                   </template>
                 </div>
@@ -859,7 +893,11 @@ function formatTime(isoStr: string): string {
         <div class="plan-price-row">
           <span class="plan-price-big">永久免费</span>
         </div>
-        <button class="plan-action-btn plan-action-disabled" disabled>当前计划</button>
+        <button
+          class="plan-action-btn"
+          :class="billingStore.planCode === 'free' ? 'plan-action-disabled' : 'plan-action-dark'"
+          :disabled="billingStore.planCode === 'free'"
+        >{{ billingStore.planCode === 'free' ? '当前计划' : '降级' }}</button>
 
         <div class="plan-section-label">积分</div>
         <ul class="plan-list">
@@ -888,7 +926,11 @@ function formatTime(isoStr: string): string {
           <span class="plan-discount-tag">首年优惠</span>
         </div>
         <div class="plan-price-note">首年¥379，次年续费金额¥759，自动续订，可随时取消。</div>
-        <button class="plan-action-btn plan-action-primary">订阅包年套餐</button>
+        <button
+          class="plan-action-btn plan-action-primary"
+          :disabled="billingStore.isLoading"
+          @click="handleSubscribe('basic_yearly')"
+        >{{ billingStore.planCode === 'basic_yearly' ? '当前计划' : '订阅包年套餐' }}</button>
 
         <div class="plan-section-label">积分</div>
         <ul class="plan-list">
@@ -919,7 +961,11 @@ function formatTime(isoStr: string): string {
           <span class="plan-discount-tag">首月优惠</span>
         </div>
         <div class="plan-price-note">首月¥39，下月续费金额¥79，自动续订，可随时取消。</div>
-        <button class="plan-action-btn plan-action-dark">订阅包月套餐</button>
+        <button
+          class="plan-action-btn plan-action-dark"
+          :disabled="billingStore.isLoading"
+          @click="handleSubscribe('basic_monthly')"
+        >{{ billingStore.planCode === 'basic_monthly' ? '当前计划' : '订阅包月套餐' }}</button>
 
         <div class="plan-section-label">积分</div>
         <ul class="plan-list">
@@ -969,6 +1015,31 @@ function formatTime(isoStr: string): string {
       <span>收到的私信和系统消息将显示在这里</span>
     </div>
   </BottomSheet>
+
+  <!-- 积分不足弹窗 -->
+  <ModalOverlay :visible="showInsufficientCredits" title="积分不足" subtitle="当前积分余额不足以完成此操作" width="480px" @close="showInsufficientCredits = false">
+    <template #icon>
+      <div style="width:48px;height:48px;border-radius:50%;background:#FEF3C7;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:24px;">⚡</div>
+    </template>
+    <div style="text-align:center;padding:0 20px;">
+      <div style="display:flex;justify-content:center;align-items:baseline;gap:4px;margin-bottom:8px;">
+        <span style="font-size:14px;color:#999;">当前余额</span>
+        <span style="font-size:28px;font-weight:800;color:#7c3aed;">{{ billingStore.credits }}</span>
+        <span style="font-size:14px;color:#999;">积分</span>
+      </div>
+      <p style="font-size:13px;color:#999;margin:0 0 24px;">每次 AI 对话消耗 1-3 积分，升级会员可获得每月 1200 积分</p>
+      <div style="display:flex;gap:12px;justify-content:center;">
+        <button
+          style="flex:1;height:44px;border-radius:12px;border:1px solid #e5e5e5;background:#fff;color:#333;font-size:14px;font-weight:600;cursor:pointer;"
+          @click="showInsufficientCredits = false"
+        >稍后再说</button>
+        <button
+          style="flex:1;height:44px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:14px;font-weight:600;cursor:pointer;"
+          @click="showInsufficientCredits = false; showSubscribeSheet = true"
+        >升级套餐</button>
+      </div>
+    </div>
+  </ModalOverlay>
 </template>
 
 <style scoped>
@@ -1430,6 +1501,27 @@ function formatTime(isoStr: string): string {
 .model-tag-rec {
   background: #F3F0FF;
   color: #7C3AED;
+}
+
+.model-tag-premium {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.model-item-locked {
+  opacity: 0.65;
+  position: relative;
+}
+
+.model-item-locked:hover {
+  opacity: 0.8;
 }
 
 .model-desc {

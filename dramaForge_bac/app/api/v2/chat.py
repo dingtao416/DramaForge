@@ -21,6 +21,7 @@ from app.ai_hub import ChatMessage
 from app.core.security import CurrentUser, DbSession
 from app.engines.chat_engine import chat_engine
 from app.models.user import Conversation, Message, MessageRole
+from app.core.billing_deps import require_credits, require_premium_model_access
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -112,6 +113,21 @@ async def send_message(
         - `done`         — {message_id, finish_reason}
         - `error`        — {code, message}
     """
+
+    # ── Check premium model access for free users ─────────────
+    if request.model:
+        await require_premium_model_access(db, user.id, request.model)
+
+    # ── Determine service type & consume credits ──────────────
+    # Premium models: claude, gpt-4o, gpt-4.1 (non-mini)
+    model_name = (request.model or "").lower()
+    is_premium = any(k in model_name for k in ["claude", "gpt-4o", "gpt-4.1"]) and "mini" not in model_name
+    credit_service = "chat_premium" if is_premium else "chat_default"
+
+    await require_credits(
+        db, user.id, credit_service,
+        description=f"AI 对话 ({model_name or 'default'})",
+    )
 
     # ── Get or create conversation ────────────────────────────
     if request.conversation_id:

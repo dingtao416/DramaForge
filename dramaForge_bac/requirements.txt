@@ -32,5 +32,8 @@ redis>=5.0.0
 # Media Processing
 Pillow>=10.0.0
 
+# QR Code Generation (for payment)
+qrcode[pil]>=8.0
+
 # Logging
 loguru>=0.7.0

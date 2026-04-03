@@ -72,6 +72,27 @@ class Settings(BaseSettings):
     # ----- FFmpeg -----
     ffmpeg_path: str = "ffmpeg"
 
+    # ----- Payment: WeChat Pay -----
+    wechat_mch_id: str = ""
+    wechat_api_key_v3: str = ""
+    wechat_app_id: str = ""
+    wechat_serial_no: str = ""
+    wechat_cert_path: str = ""
+
+    # ----- Payment: Alipay -----
+    alipay_app_id: str = ""
+    alipay_private_key_path: str = ""
+    alipay_public_key_path: str = ""
+
+    # ----- Payment: Douyin Pay -----
+    douyin_app_id: str = ""
+    douyin_app_secret: str = ""
+    douyin_merchant_id: str = ""
+    douyin_salt: str = ""
+
+    # ----- Payment: General -----
+    payment_notify_base_url: str = "https://api.dramaforge.com"
+
     # ----- Storage -----
     storage_dir: str = "./storage"
 

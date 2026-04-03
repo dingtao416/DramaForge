@@ -115,11 +115,22 @@ export async function sendMessageStream(
 
   if (!response.ok) {
     let errorMsg = 'Failed to send message'
+    let errorData: any = null
     try {
-      const err = await response.json()
-      errorMsg = err.detail || err.message || errorMsg
+      errorData = await response.json()
+      // Handle structured detail (e.g. 402 insufficient credits)
+      if (typeof errorData?.detail === 'object') {
+        errorMsg = errorData.detail.message || errorMsg
+      } else {
+        errorMsg = errorData?.detail || errorData?.message || errorMsg
+      }
     } catch { /* ignore */ }
-    throw new Error(errorMsg)
+
+    // Special case: 402 Payment Required (insufficient credits)
+    const err: any = new Error(errorMsg)
+    err.status = response.status
+    err.data = errorData?.detail || errorData
+    throw err
   }
 
   const reader = response.body?.getReader()

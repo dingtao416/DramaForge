@@ -37,6 +37,9 @@ export interface UserInfo {
   avatar_url: string | null
   status: string
   created_at: string
+  // Billing summary
+  credits: number
+  plan_code: string
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -17,6 +17,8 @@ from app.models.scene import SceneLocation
 from app.models.segment import Segment
 from app.models.shot import Shot
 from app.models.user import User, Conversation, Message
+from app.models.billing import Plan, Subscription, CreditBalance, CreditTransaction
+from app.models.payment import PaymentOrder, UserAgreement
 
 # ── Enums (re-export from their home modules) ──
 from app.models.project import ProjectStep, VideoStyle, DramaGenre
@@ -24,6 +26,18 @@ from app.models.character import CharacterRole
 from app.models.segment import SegmentStatus
 from app.models.shot import CameraType, CameraMovement
 from app.models.user import UserStatus, MessageRole
+from app.models.billing import (
+    PlanInterval,
+    SubscriptionStatus,
+    TransactionType,
+    CREDIT_COSTS,
+)
+from app.models.payment import (
+    PaymentChannel,
+    OrderStatus,
+    OrderType,
+    CREDIT_PACKS,
+)
 
 __all__ = [
     # Models
@@ -37,6 +51,12 @@ __all__ = [
     "User",
     "Conversation",
     "Message",
+    "Plan",
+    "Subscription",
+    "CreditBalance",
+    "CreditTransaction",
+    "PaymentOrder",
+    "UserAgreement",
     # Enums
     "ProjectStep",
     "VideoStyle",
@@ -47,4 +67,12 @@ __all__ = [
     "CameraMovement",
     "UserStatus",
     "MessageRole",
+    "PlanInterval",
+    "SubscriptionStatus",
+    "TransactionType",
+    "CREDIT_COSTS",
+    "PaymentChannel",
+    "OrderStatus",
+    "OrderType",
+    "CREDIT_PACKS",
 ]

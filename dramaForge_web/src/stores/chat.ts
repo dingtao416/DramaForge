@@ -182,11 +182,18 @@ export const useChatStore = defineStore('chat', () => {
       )
     } catch (e: any) {
       if (e.name !== 'AbortError') {
-        error.value = e.message || '发送失败'
-        const last = messages.value[messages.value.length - 1]
-        if (last && last.role === 'assistant' && !last.content) {
-          last.content = '⚠️ ' + (error.value || '发送失败')
-          last.isStreaming = false
+        // Check for 402 insufficient credits
+        if (e.status === 402 || e.data?.code === 'INSUFFICIENT_CREDITS') {
+          error.value = 'INSUFFICIENT_CREDITS'
+          // Remove the optimistic user and assistant messages
+          messages.value = messages.value.slice(0, -2)
+        } else {
+          error.value = e.message || '发送失败'
+          const last = messages.value[messages.value.length - 1]
+          if (last && last.role === 'assistant' && !last.content) {
+            last.content = '⚠️ ' + (error.value || '发送失败')
+            last.isStreaming = false
+          }
         }
       }
     } finally {

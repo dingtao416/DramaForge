@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
-from app.api.v2 import projects, scripts, assets, episodes, storyboard, websocket, users, chat
+from app.api.v2 import projects, scripts, assets, episodes, storyboard, websocket, users, chat, billing, payment
 from app.core.config import settings
 
 
@@ -30,6 +30,13 @@ async def lifespan(app: FastAPI):
     # Create database tables
     await init_db()
     logger.info("Database initialized")
+
+    # Seed default billing plans
+    from app.services.billing_service import seed_plans
+    from app.core.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        await seed_plans(session)
+    logger.info("Billing plans seeded")
 
     yield  # ── Application running ──
 
@@ -68,6 +75,8 @@ def create_app() -> FastAPI:
     app.include_router(websocket.router,  prefix=prefix, tags=["WebSocket"])
     app.include_router(users.router,      prefix=prefix, tags=["User"])
     app.include_router(chat.router,       prefix=prefix, tags=["Chat"])
+    app.include_router(billing.router,    prefix=prefix, tags=["Billing"])
+    app.include_router(payment.router,    prefix=prefix, tags=["Payment"])
 
     # ── Static files (generated assets) ─────────────────────────
     storage_dir = Path(settings.storage_dir)
