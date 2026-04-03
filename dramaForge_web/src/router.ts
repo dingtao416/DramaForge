@@ -43,12 +43,12 @@ const router = createRouter({
           name: 'Episodes',
           component: () => import('@/views/EpisodesPage.vue'),
         },
-        {
-          path: 'episodes/:epId/storyboard',
-          name: 'StoryboardEditor',
-          component: () => import('@/views/StoryboardEditorPage.vue'),
-        },
       ],
+    },
+    {
+      path: '/projects/:id/episodes/:epId/storyboard',
+      name: 'StoryboardEditor',
+      component: () => import('@/views/StoryboardEditorPage.vue'),
     },
     {
       path: '/drama-workbench',
@@ -69,16 +69,10 @@ const router = createRouter({
 })
 
 // ── Navigation guard ──
-// TODO: 上线前取消注释，启用强制登录
 router.beforeEach((to, _from, next) => {
-  // Guest routes (login/register) — redirect to home if already logged in
   if (to.meta.guest && isAuthenticated()) {
     return next('/')
   }
-  // 开发阶段：不强制跳转登录，允许自由浏览
-  // if (!to.meta.guest && to.name !== 'Login' && !isAuthenticated()) {
-  //   return next('/login')
-  // }
   next()
 })
 

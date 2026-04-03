@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ProjectStep } from '@/types/enums'
 
 const props = defineProps<{
   currentStep: ProjectStep
 }>()
 
+const route = useRoute()
+const router = useRouter()
+const projectId = computed(() => route.params.id)
+
 const steps = [
-  { key: ProjectStep.SCRIPT, label: '剧本大纲', num: 1 },
-  { key: ProjectStep.ASSETS, label: '角色和场景', num: 2 },
-  { key: ProjectStep.STORYBOARD, label: '分集视频', num: 3 },
+  { key: ProjectStep.SCRIPT, label: '剧本大纲', num: 1, path: 'script' },
+  { key: ProjectStep.ASSETS, label: '角色和场景', num: 2, path: 'assets' },
+  { key: ProjectStep.STORYBOARD, label: '分集视频', num: 3, path: 'episodes' },
 ]
 
 const stepOrder = [ProjectStep.SCRIPT, ProjectStep.ASSETS, ProjectStep.STORYBOARD, ProjectStep.COMPLETED]
@@ -21,13 +26,20 @@ function getStepState(step: typeof steps[0]) {
   if (idx === currentIndex.value) return 'current'
   return 'upcoming'
 }
+
+function navigateToStep(step: typeof steps[0]) {
+  router.push(`/projects/${projectId.value}/${step.path}`)
+}
 </script>
 
 <template>
   <div class="flex items-center justify-center gap-0 py-1">
     <template v-for="(step, i) in steps" :key="step.key">
       <!-- Step indicator -->
-      <div class="flex items-center gap-2.5">
+      <div
+        class="flex items-center gap-2.5 cursor-pointer select-none"
+        @click="navigateToStep(step)"
+      >
         <!-- Circle / Checkmark -->
         <div
           class="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-semibold shrink-0 transition-all"

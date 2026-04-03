@@ -104,7 +104,7 @@ async function handleApprove() {
       <button class="btn btn-outline btn-sm" @click="router.push(`/projects/${projectId}/script`)">
         ← 上一步
       </button>
-      <button class="btn btn-primary btn-sm" :disabled="approving" @click="handleApprove">
+      <button class="btn btn-primary btn-sm" @click="router.push(`/projects/${projectId}/episodes`)">
         下一步 →
       </button>
     </div>

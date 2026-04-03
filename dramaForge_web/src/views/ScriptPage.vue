@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
 import { useScriptStore } from '@/stores/script'
-import { VideoStyleLabel } from '@/types/enums'
 import LoadingOverlay from '@/components/common/LoadingOverlay.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
@@ -13,23 +12,26 @@ const projectStore = useProjectStore()
 const scriptStore = useScriptStore()
 
 const projectId = Number(route.params.id)
-const approving = ref(false)
 const rewriting = ref(false)
 
 onMounted(() => {
   scriptStore.fetchScript(projectId)
 })
 
-async function handleApprove() {
-  approving.value = true
-  try {
-    await scriptStore.approveScript(projectId)
-    await projectStore.fetchProject(projectId)
-    router.push(`/projects/${projectId}/assets`)
-  } finally {
-    approving.value = false
-  }
+// Style tag mapping — expand single style to descriptive labels
+const styleTagsMap: Record<string, string> = {
+  realistic: '真人写实, 电视风格, 暖色调',
+  cinematic: '3D, CG动画, 废土末世',
+  anime: '日式动漫, 赛璐珞风格, 明亮色彩',
+  cartoon: '卡通, 扁平插画, 活泼配色',
+  watercolor: '水彩, 手绘质感, 柔和光影',
+  ink_wash: '水墨, 中国风, 古典意境',
 }
+
+const styleTags = computed(() => {
+  const style = projectStore.currentProject?.style
+  return style ? (styleTagsMap[style] || style) : ''
+})
 
 async function handleRewrite() {
   rewriting.value = true
@@ -55,22 +57,20 @@ async function handleRewrite() {
     />
 
     <template v-if="scriptStore.script">
-      <!-- Meta info -->
+      <!-- Meta info: two rows like target -->
       <div class="script-meta">
-        <div class="script-meta-item">
-          <span class="script-meta-label">视频风格:</span>
-          <span class="script-meta-value">
-            {{ projectStore.currentProject ? (VideoStyleLabel[projectStore.currentProject.style] || projectStore.currentProject.style) : '' }}
-          </span>
+        <div class="script-meta-row">
+          <span class="script-meta-label">视频风格：</span>
+          <span class="script-meta-value">{{ styleTags }}</span>
         </div>
-        <div class="script-meta-item">
-          <span class="script-meta-label">画面比例:</span>
+        <div class="script-meta-row">
+          <span class="script-meta-label">画面比例：</span>
           <span class="script-meta-value">{{ projectStore.currentProject?.aspect_ratio || '9:16' }}</span>
         </div>
       </div>
 
       <!-- Script summary card -->
-      <div class="mb-8">
+      <div class="script-section">
         <h2 class="script-section-title">剧本摘要</h2>
         <div class="script-summary-card">
           <div class="script-summary-list">
@@ -93,25 +93,33 @@ async function handleRewrite() {
         </div>
       </div>
 
-      <!-- Episodes accordion -->
-      <div class="mb-8">
-        <h2 class="script-section-title">剧本内容</h2>
-        <div class="space-y-3">
+      <!-- Script content: episodes with expand/collapse -->
+      <div class="script-section">
+        <div class="script-content-header">
+          <h2 class="script-section-title" style="margin-bottom:0">剧本内容:</h2>
+          <button
+            class="btn btn-outline btn-sm"
+            :disabled="rewriting"
+            @click="handleRewrite"
+          >
+            改写为旁白型剧本
+          </button>
+        </div>
+        <div class="script-episodes">
           <details
             v-for="ep in scriptStore.script.episodes"
             :key="ep.id"
-            class="card group"
-            :open="scriptStore.script.episodes.length <= 3"
+            class="script-episode"
           >
-            <summary class="px-6 py-4 cursor-pointer text-[15px] font-semibold text-gray-800 hover:bg-gray-50 rounded-[14px] select-none list-none flex items-center gap-3 transition-colors">
-              <svg width="14" height="14" viewBox="0 0 12 12" fill="none" class="text-gray-400 transition-transform group-open:rotate-90 shrink-0">
+            <summary class="script-episode-summary">
+              <svg class="script-episode-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M4.5 2.5L8 6L4.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              <span class="text-primary-500 text-[13px] font-medium mr-1">第 {{ ep.number }} 集</span>
-              {{ ep.title || '无标题' }}
+              <span class="script-episode-label">第{{ ep.number }}集</span>
+              <span class="script-episode-title">{{ ep.title || '无标题' }}</span>
             </summary>
-            <div class="px-6 pb-5 text-[15px] text-gray-600 whitespace-pre-wrap leading-[1.9] border-t border-gray-100 pt-4 mx-3">
-              {{ ep.title }}
+            <div class="script-episode-content">
+              {{ ep.content || ep.title }}
             </div>
           </details>
         </div>
@@ -123,52 +131,56 @@ async function handleRewrite() {
   <div v-if="scriptStore.script" class="bottom-action-bar">
     <div class="bar-hint">
       <div class="bar-icon">🤖</div>
-      <span v-if="scriptStore.script.is_approved">剧本内容整理完毕，可以进行下一步了</span>
-      <span v-else>请审核剧本内容，确认后进入资产生成</span>
+      <span>剧本内容整理完毕，可以进行下一步了</span>
     </div>
     <div class="bar-actions">
-      <button class="btn btn-outline btn-sm" :disabled="rewriting" @click="handleRewrite">
-        改写为旁白型
-      </button>
-      <button class="btn btn-primary btn-sm" :disabled="approving" @click="handleApprove">
-        {{ scriptStore.script.is_approved ? '下一步 →' : '确认并下一步 →' }}
+      <button class="btn btn-primary btn-sm" @click="router.push(`/projects/${projectId}/assets`)">
+        下一步
       </button>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* ── Script Meta (two rows) ── */
 .script-meta {
   display: flex;
-  align-items: center;
-  gap: 32px;
-  margin-bottom: 32px;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 28px;
   padding: 0 4px;
 }
-.script-meta-item {
+.script-meta-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
+  font-size: 14px;
 }
 .script-meta-label {
-  font-size: 14px;
   color: #999;
+  flex-shrink: 0;
 }
 .script-meta-value {
-  font-size: 14px;
   color: #333;
-  font-weight: 500;
+  font-weight: 400;
+}
+
+/* ── Section ── */
+.script-section {
+  margin-bottom: 32px;
 }
 .script-section-title {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   color: #1a1a1a;
   margin-bottom: 16px;
 }
+
+/* ── Summary card ── */
 .script-summary-card {
-  background: #f9f9fb;
-  border-radius: 14px;
-  padding: 32px 36px;
+  background: #f7f7f9;
+  border-radius: 12px;
+  padding: 28px 32px;
 }
 .script-summary-list {
   display: flex;
@@ -179,12 +191,69 @@ async function handleRewrite() {
   font-size: 14px;
   font-weight: 700;
   color: #1a1a1a;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 .script-summary-value {
-  font-size: 15px;
+  font-size: 14px;
   color: #444;
   line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+/* ── Script content header ── */
+.script-content-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+/* ── Episode accordions ── */
+.script-episodes {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-top: 1px solid #eee;
+}
+.script-episode {
+  border-bottom: 1px solid #eee;
+}
+.script-episode-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+  user-select: none;
+  list-style: none;
+}
+.script-episode-summary::-webkit-details-marker {
+  display: none;
+}
+.script-episode-arrow {
+  color: #bbb;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+details[open] > .script-episode-summary .script-episode-arrow {
+  transform: rotate(90deg);
+}
+.script-episode-label {
+  color: #7c3aed;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.script-episode-title {
+  font-weight: 500;
+  color: #1a1a1a;
+}
+.script-episode-content {
+  padding: 0 8px 16px 30px;
+  font-size: 14px;
+  color: #555;
+  line-height: 2;
   white-space: pre-wrap;
 }
 </style>
