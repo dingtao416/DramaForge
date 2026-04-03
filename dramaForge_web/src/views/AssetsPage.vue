@@ -40,22 +40,22 @@ async function handleApprove() {
 <template>
   <LoadingOverlay :visible="assetsStore.loading" message="正在加载资产..." />
 
-  <div class="max-w-[1200px] mx-auto px-8 py-8">
+  <div class="page-container-wide">
     <!-- Tabs -->
-    <div class="flex items-center gap-1 mb-8">
+    <div class="flex items-center gap-2 mb-8">
       <button
-        class="h-[40px] px-5 rounded-full text-[14px] font-medium transition-all cursor-pointer"
+        class="h-[38px] px-5 rounded-full text-[14px] font-medium transition-all cursor-pointer"
         :class="activeTab === 'characters'
-          ? 'bg-gray-900 text-white'
+          ? 'bg-gray-900 text-white shadow-[0_1px_4px_rgba(0,0,0,0.1)]'
           : 'bg-gray-100 text-gray-500 hover:bg-gray-200'"
         @click="activeTab = 'characters'"
       >
         全部角色 {{ charCount }}
       </button>
       <button
-        class="h-[40px] px-5 rounded-full text-[14px] font-medium transition-all cursor-pointer"
+        class="h-[38px] px-5 rounded-full text-[14px] font-medium transition-all cursor-pointer"
         :class="activeTab === 'scenes'
-          ? 'bg-gray-900 text-white'
+          ? 'bg-gray-900 text-white shadow-[0_1px_4px_rgba(0,0,0,0.1)]'
           : 'bg-gray-100 text-gray-500 hover:bg-gray-200'"
         @click="activeTab = 'scenes'"
       >
@@ -63,7 +63,7 @@ async function handleApprove() {
       </button>
     </div>
 
-    <!-- Characters grid — 7列 -->
+    <!-- Characters grid -->
     <div v-if="activeTab === 'characters'">
       <EmptyState
         v-if="!assetsStore.loading && !charCount"
@@ -80,7 +80,7 @@ async function handleApprove() {
       </div>
     </div>
 
-    <!-- Scenes grid — 4列 -->
+    <!-- Scenes grid -->
     <div v-if="activeTab === 'scenes'">
       <EmptyState
         v-if="!assetsStore.loading && !sceneCount"
@@ -99,17 +99,16 @@ async function handleApprove() {
   </div>
 
   <!-- Bottom bar -->
-  <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-8 py-4 flex items-center z-40">
-    <div class="flex items-center gap-3 text-[14px] text-gray-500">
-      <div class="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 text-[12px]">🤖</div>
-      <span>角色和场景设定会应用到整部剧集中，建议调整完毕后再继续哦</span>
+  <div class="bottom-action-bar">
+    <div class="bar-hint">
+      <div class="bar-icon">🤖</div>
+      <span>角色和场景设定会应用到整部剧集中，建议调整完毕后再继续</span>
     </div>
-    <div class="flex-1" />
-    <div class="flex items-center gap-3">
-      <button class="btn btn-outline" @click="router.push(`/projects/${projectId}/script`)">
+    <div class="bar-actions">
+      <button class="btn btn-outline btn-sm" @click="router.push(`/projects/${projectId}/script`)">
         ← 上一步
       </button>
-      <button class="btn btn-primary" :disabled="approving" @click="handleApprove">
+      <button class="btn btn-primary btn-sm" :disabled="approving" @click="handleApprove">
         下一步 →
       </button>
     </div>
