@@ -378,20 +378,36 @@ function formatTime(isoStr: string): string {
 
     <!-- ═══ Main Content ═══ -->
     <div class="flex-1 flex flex-col bg-white min-w-0">
-      <!-- Top bar (in document flow, not absolute) -->
-      <div class="h-[52px] flex items-center justify-end px-6 shrink-0">
-        <div class="flex items-center gap-4">
-          <button class="h-[34px] px-3.5 rounded-full border border-gray-200 flex items-center gap-1.5 text-[13px] text-gray-500 hover:bg-gray-50 cursor-pointer transition-colors bg-white">
-            <span class="text-primary-500 text-[14px]">✦</span>
-            <span>0</span>
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" class="text-gray-400 ml-0.5"><path d="M3 4L5 6L7 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <!-- Top bar -->
+      <div class="topbar">
+        <div class="topbar-actions">
+          <!-- Credits -->
+          <button class="topbar-credits">
+            <span class="topbar-credits-icon">✦</span>
+            <span class="topbar-credits-num">16</span>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 4L5 6L7 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
-          <button class="text-[13px] text-primary-600 font-semibold hover:text-primary-700 cursor-pointer transition-colors">订阅</button>
-          <button class="w-[34px] h-[34px] rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer transition-colors">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2a2.5 2.5 0 0 0-2.5 2.5v1.25a.5.5 0 0 1-.12.33l-.7.8A2 2 0 0 0 6 8.5V10c0 1.1-.4 2.1-1.07 2.9l-.43.5a1 1 0 0 0 .76 1.6h9.48a1 1 0 0 0 .76-1.6l-.43-.5A4.5 4.5 0 0 1 14 10V8.5a2 2 0 0 0-.68-1.5l-.7-.82a.5.5 0 0 1-.12-.33V4.5A2.5 2.5 0 0 0 10 2z" stroke="currentColor" stroke-width="1.3"/><path d="M8.5 15.5s.5 1.5 1.5 1.5 1.5-1.5 1.5-1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          <!-- Divider -->
+          <div class="topbar-divider" />
+          <!-- Subscribe -->
+          <button class="topbar-text-btn">订阅</button>
+          <!-- Divider -->
+          <div class="topbar-divider" />
+          <!-- Feedback / Chat -->
+          <button class="topbar-icon-btn" title="反馈">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 4.5A1.5 1.5 0 014.5 3h9A1.5 1.5 0 0115 4.5v7a1.5 1.5 0 01-1.5 1.5H7.5L5 15v-2H4.5A1.5 1.5 0 013 11.5v-7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6.5 7.5h5M6.5 10h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
           </button>
+          <!-- Notification -->
+          <button class="topbar-icon-btn" title="通知">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2.5a3.5 3.5 0 00-3.5 3.5v2.5c0 .83-.37 1.62-1 2.15l-.35.3A.75.75 0 004.65 12h8.7a.75.75 0 00.5-1.05l-.35-.3A3.25 3.25 0 0112.5 8.5V6A3.5 3.5 0 009 2.5z" stroke="currentColor" stroke-width="1.3"/><path d="M7.5 12.5s.5 2 1.5 2 1.5-2 1.5-2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          </button>
+          <!-- Messages -->
+          <button class="topbar-icon-btn" title="消息">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="4" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M3 5.5l6 4 6-4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <!-- Avatar -->
           <div
-            class="w-[34px] h-[34px] rounded-full bg-gray-800 flex items-center justify-center text-white text-[12px] font-medium cursor-pointer hover:bg-gray-900 transition-colors"
+            class="topbar-avatar"
             :title="authStore.isLoggedIn ? authStore.displayName : '未登录'"
             @click="authStore.isLoggedIn ? handleLogout() : router.push('/login')"
           >{{ authStore.isLoggedIn ? authStore.displayName.charAt(0).toUpperCase() : 'U' }}</div>
@@ -404,8 +420,8 @@ function formatTime(isoStr: string): string {
         <!-- ═══ Chat Messages (any mode, after first message) ═══ -->
         <template v-if="chatStore.hasMessages">
           <!-- Messages area (scrollable, takes all available space) -->
-          <div class="flex-1 overflow-y-auto">
-            <div class="w-full max-w-[860px] mx-auto px-8 py-4">
+          <div class="flex-1 overflow-y-auto flex justify-center">
+            <div class="w-full max-w-[860px] px-10 py-4" style="margin: 0 auto;">
               <div v-for="(msg, idx) in chatStore.messages" :key="idx" class="chat-message" :class="'chat-' + msg.role">
 
                 <!-- ── User message (right-aligned) ── -->
@@ -424,8 +440,8 @@ function formatTime(isoStr: string): string {
           </div>
 
           <!-- ── Bottom input bar (fixed to bottom) ── -->
-          <div class="chat-input-bar">
-            <div class="w-full max-w-[860px] mx-auto px-8">
+          <div class="chat-input-bar flex justify-center">
+            <div class="w-full max-w-[860px] px-10" style="margin: 0 auto;">
               <div class="chat-input-card">
                 <textarea
                   v-model="userInput"
@@ -500,6 +516,7 @@ function formatTime(isoStr: string): string {
               rows="1"
               class="input-textarea w-full pr-7 resize-none border-none outline-none text-[16px] text-gray-800 placeholder-gray-400 bg-transparent leading-[1.8]"
               :placeholder="currentModeOption.placeholder"
+              @keydown.enter.exact.prevent="startCreation"
             />
 
             <!-- Toolbar -->
@@ -1357,7 +1374,7 @@ function formatTime(isoStr: string): string {
   line-height: 1.7;
   padding: 12px 18px;
   border-radius: 18px 18px 4px 18px;
-  max-width: 75%;
+  max-width: 70%;
   word-break: break-word;
 }
 
@@ -1547,5 +1564,116 @@ function formatTime(isoStr: string): string {
 
 .sidebar-conv-active .sidebar-conv-icon {
   background: #ede9fe;
+}
+
+/* ─── Top Bar ─── */
+.topbar {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 20px;
+  flex-shrink: 0;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar-credits {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 20px;
+  border: 1px solid #e5e5e5;
+  background: #fff;
+  font-size: 13px;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.topbar-credits:hover {
+  background: #fafafa;
+  border-color: #ddd;
+}
+
+.topbar-credits-icon {
+  color: #7c3aed;
+  font-size: 14px;
+}
+
+.topbar-credits-num {
+  font-weight: 600;
+  color: #333;
+}
+
+.topbar-divider {
+  width: 1px;
+  height: 18px;
+  background: #e5e5e5;
+  margin: 0 6px;
+}
+
+.topbar-text-btn {
+  padding: 0 8px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #7c3aed;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+
+.topbar-text-btn:hover {
+  background: #f5f3ff;
+}
+
+.topbar-icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.topbar-icon-btn:hover {
+  background: #f5f5f5;
+  color: #333;
+}
+
+.topbar-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: 4px;
+}
+
+.topbar-avatar:hover {
+  background: #333;
 }
 </style>
