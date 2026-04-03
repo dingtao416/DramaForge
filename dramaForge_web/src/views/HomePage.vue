@@ -377,40 +377,35 @@ function formatTime(isoStr: string): string {
     </button>
 
     <!-- ═══ Main Content ═══ -->
-    <div class="flex-1 flex flex-col relative bg-white">
-      <!-- Floating top-right icons -->
-      <div class="absolute top-4 right-6 z-10 flex items-center gap-4">
-        <button class="h-[34px] px-3.5 rounded-full border border-gray-200 flex items-center gap-1.5 text-[13px] text-gray-500 hover:bg-gray-50 cursor-pointer transition-colors bg-white">
-          <span class="text-primary-500 text-[14px]">✦</span>
-          <span>0</span>
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" class="text-gray-400 ml-0.5"><path d="M3 4L5 6L7 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <button class="text-[13px] text-primary-600 font-semibold hover:text-primary-700 cursor-pointer transition-colors">订阅</button>
-        <button class="w-[34px] h-[34px] rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer transition-colors">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2a2.5 2.5 0 0 0-2.5 2.5v1.25a.5.5 0 0 1-.12.33l-.7.8A2 2 0 0 0 6 8.5V10c0 1.1-.4 2.1-1.07 2.9l-.43.5a1 1 0 0 0 .76 1.6h9.48a1 1 0 0 0 .76-1.6l-.43-.5A4.5 4.5 0 0 1 14 10V8.5a2 2 0 0 0-.68-1.5l-.7-.82a.5.5 0 0 1-.12-.33V4.5A2.5 2.5 0 0 0 10 2z" stroke="currentColor" stroke-width="1.3"/><path d="M8.5 15.5s.5 1.5 1.5 1.5 1.5-1.5 1.5-1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-        </button>
-        <div
-          class="w-[34px] h-[34px] rounded-full bg-gray-800 flex items-center justify-center text-white text-[12px] font-medium cursor-pointer hover:bg-gray-900 transition-colors"
-          :title="authStore.isLoggedIn ? authStore.displayName : '未登录'"
-          @click="authStore.isLoggedIn ? handleLogout() : router.push('/login')"
-        >{{ authStore.isLoggedIn ? authStore.displayName.charAt(0).toUpperCase() : 'U' }}</div>
+    <div class="flex-1 flex flex-col bg-white min-w-0">
+      <!-- Top bar (in document flow, not absolute) -->
+      <div class="h-[52px] flex items-center justify-end px-6 shrink-0">
+        <div class="flex items-center gap-4">
+          <button class="h-[34px] px-3.5 rounded-full border border-gray-200 flex items-center gap-1.5 text-[13px] text-gray-500 hover:bg-gray-50 cursor-pointer transition-colors bg-white">
+            <span class="text-primary-500 text-[14px]">✦</span>
+            <span>0</span>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" class="text-gray-400 ml-0.5"><path d="M3 4L5 6L7 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="text-[13px] text-primary-600 font-semibold hover:text-primary-700 cursor-pointer transition-colors">订阅</button>
+          <button class="w-[34px] h-[34px] rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer transition-colors">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2a2.5 2.5 0 0 0-2.5 2.5v1.25a.5.5 0 0 1-.12.33l-.7.8A2 2 0 0 0 6 8.5V10c0 1.1-.4 2.1-1.07 2.9l-.43.5a1 1 0 0 0 .76 1.6h9.48a1 1 0 0 0 .76-1.6l-.43-.5A4.5 4.5 0 0 1 14 10V8.5a2 2 0 0 0-.68-1.5l-.7-.82a.5.5 0 0 1-.12-.33V4.5A2.5 2.5 0 0 0 10 2z" stroke="currentColor" stroke-width="1.3"/><path d="M8.5 15.5s.5 1.5 1.5 1.5 1.5-1.5 1.5-1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          </button>
+          <div
+            class="w-[34px] h-[34px] rounded-full bg-gray-800 flex items-center justify-center text-white text-[12px] font-medium cursor-pointer hover:bg-gray-900 transition-colors"
+            :title="authStore.isLoggedIn ? authStore.displayName : '未登录'"
+            @click="authStore.isLoggedIn ? handleLogout() : router.push('/login')"
+          >{{ authStore.isLoggedIn ? authStore.displayName.charAt(0).toUpperCase() : 'U' }}</div>
+        </div>
       </div>
 
-      <!-- Center content -->
-      <div class="flex-1 flex flex-col overflow-y-auto">
+      <!-- Center content (takes remaining height) -->
+      <div class="flex-1 flex flex-col overflow-hidden">
 
         <!-- ═══ Chat Messages (any mode, after first message) ═══ -->
         <template v-if="chatStore.hasMessages">
-          <!-- Share button (top-right of content area) -->
-          <div class="flex justify-end px-8 pt-4 pb-0">
-            <button class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer transition-colors" title="分享">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 10V12a2 2 0 002 2h4a2 2 0 002-2V10M8 2v8M5 5l3-3 3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-          </div>
-
-          <!-- Messages area (scrollable) -->
+          <!-- Messages area (scrollable, takes all available space) -->
           <div class="flex-1 overflow-y-auto">
-            <div class="w-full max-w-[860px] mx-auto px-8 pb-4">
+            <div class="w-full max-w-[860px] mx-auto px-8 py-4">
               <div v-for="(msg, idx) in chatStore.messages" :key="idx" class="chat-message" :class="'chat-' + msg.role">
 
                 <!-- ── User message (right-aligned) ── -->
