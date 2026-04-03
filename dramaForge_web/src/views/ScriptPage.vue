@@ -56,32 +56,38 @@ async function handleRewrite() {
 
     <template v-if="scriptStore.script">
       <!-- Meta info -->
-      <div class="flex items-center gap-4 mb-8">
-        <span class="badge badge-primary">
-          {{ projectStore.currentProject ? VideoStyleLabel[projectStore.currentProject.style] : '' }}
-        </span>
-        <span class="text-[13px] text-gray-400">
-          画面比例 {{ projectStore.currentProject?.aspect_ratio || '9:16' }}
-        </span>
+      <div class="script-meta">
+        <div class="script-meta-item">
+          <span class="script-meta-label">视频风格:</span>
+          <span class="script-meta-value">
+            {{ projectStore.currentProject ? (VideoStyleLabel[projectStore.currentProject.style] || projectStore.currentProject.style) : '' }}
+          </span>
+        </div>
+        <div class="script-meta-item">
+          <span class="script-meta-label">画面比例:</span>
+          <span class="script-meta-value">{{ projectStore.currentProject?.aspect_ratio || '9:16' }}</span>
+        </div>
       </div>
 
       <!-- Script summary card -->
       <div class="mb-8">
-        <h2 class="text-[17px] font-bold text-gray-900 mb-4">剧本摘要</h2>
-        <div class="card px-8 py-7">
-          <div class="space-y-6">
-            <div v-for="item in [
-              { label: '主角', value: scriptStore.script.protagonist },
-              { label: '故事类型', value: scriptStore.script.genre },
-              { label: '故事梗概', value: scriptStore.script.synopsis },
-              { label: '故事背景', value: scriptStore.script.background },
-              { label: '故事设定', value: scriptStore.script.setting },
-              { label: '一句话故事', value: scriptStore.script.one_liner },
-            ]" :key="item.label">
-              <div>
-                <div class="text-[13px] font-semibold text-gray-500 mb-1.5">{{ item.label }}</div>
-                <div class="text-[15px] text-gray-800 leading-[1.8]">{{ item.value || '未设置' }}</div>
-              </div>
+        <h2 class="script-section-title">剧本摘要</h2>
+        <div class="script-summary-card">
+          <div class="script-summary-list">
+            <div
+              v-for="item in [
+                { label: '主角', value: scriptStore.script.protagonist },
+                { label: '故事类型', value: scriptStore.script.genre },
+                { label: '故事梗概', value: scriptStore.script.synopsis },
+                { label: '故事背景', value: scriptStore.script.background },
+                { label: '故事设定', value: scriptStore.script.setting },
+                { label: '一句话故事', value: scriptStore.script.one_liner },
+              ]"
+              :key="item.label"
+              class="script-summary-item"
+            >
+              <div class="script-summary-label">{{ item.label }}</div>
+              <div class="script-summary-value">{{ item.value || '未设置' }}</div>
             </div>
           </div>
         </div>
@@ -89,7 +95,7 @@ async function handleRewrite() {
 
       <!-- Episodes accordion -->
       <div class="mb-8">
-        <h2 class="text-[17px] font-bold text-gray-900 mb-4">剧本内容</h2>
+        <h2 class="script-section-title">剧本内容</h2>
         <div class="space-y-3">
           <details
             v-for="ep in scriptStore.script.episodes"
@@ -130,3 +136,55 @@ async function handleRewrite() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.script-meta {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  margin-bottom: 32px;
+  padding: 0 4px;
+}
+.script-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.script-meta-label {
+  font-size: 14px;
+  color: #999;
+}
+.script-meta-value {
+  font-size: 14px;
+  color: #333;
+  font-weight: 500;
+}
+.script-section-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 16px;
+}
+.script-summary-card {
+  background: #f9f9fb;
+  border-radius: 14px;
+  padding: 32px 36px;
+}
+.script-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.script-summary-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 6px;
+}
+.script-summary-value {
+  font-size: 15px;
+  color: #444;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+</style>

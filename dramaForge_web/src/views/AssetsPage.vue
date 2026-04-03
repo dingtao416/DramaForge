@@ -42,21 +42,17 @@ async function handleApprove() {
 
   <div class="page-container-wide">
     <!-- Tabs -->
-    <div class="flex items-center gap-2 mb-8">
+    <div class="assets-tabs">
       <button
-        class="h-[38px] px-5 rounded-full text-[14px] font-medium transition-all cursor-pointer"
-        :class="activeTab === 'characters'
-          ? 'bg-gray-900 text-white shadow-[0_1px_4px_rgba(0,0,0,0.1)]'
-          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'"
+        class="assets-tab"
+        :class="{ active: activeTab === 'characters' }"
         @click="activeTab = 'characters'"
       >
         全部角色 {{ charCount }}
       </button>
       <button
-        class="h-[38px] px-5 rounded-full text-[14px] font-medium transition-all cursor-pointer"
-        :class="activeTab === 'scenes'
-          ? 'bg-gray-900 text-white shadow-[0_1px_4px_rgba(0,0,0,0.1)]'
-          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'"
+        class="assets-tab"
+        :class="{ active: activeTab === 'scenes' }"
         @click="activeTab = 'scenes'"
       >
         全部场景 {{ sceneCount }}
@@ -114,3 +110,45 @@ async function handleApprove() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.assets-tabs {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.assets-tab {
+  position: relative;
+  padding: 10px 4px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #999;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.assets-tab:hover {
+  color: #555;
+}
+
+.assets-tab.active {
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.assets-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: #1a1a1a;
+  border-radius: 1px;
+}
+</style>
