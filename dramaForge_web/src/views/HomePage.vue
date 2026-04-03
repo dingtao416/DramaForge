@@ -65,18 +65,82 @@ const showRatioMenu = ref(false)
 const showPresetMenu = ref(false)
 
 const modelAuto = ref(true)
-const modelTab = ref<'video' | 'image'>('video')
+const modelTab = ref<'video' | 'image' | 'chat'>('chat')
 const selectedRatio = ref('auto')
 const presetSearch = ref('')
+const selectedModel = ref('')  // '' means auto
 
-const videoModels = [
-  { name: 'Seedance 2.0 Fast', desc: '更快更实惠的视频生成模型。' },
+interface ModelOption {
+  id: string
+  name: string
+  desc: string
+  tag?: string                                       // '推荐' / '高质量' / '极速' 等
+  modes: Mode[]                                      // 哪些前端模式下显示
+}
+
+// ── Chat / LLM 模型 ──
+const chatModels: ModelOption[] = [
+  { id: 'gpt-4.1-mini',              name: 'GPT-4.1 Mini',           desc: '快速低成本，日常对话首选',        tag: '推荐',   modes: ['agent', 'drama', 'clip', 'longvideo2', 'image', 'longvideo'] },
+  { id: 'gpt-4o',                    name: 'GPT-4o',                 desc: '多模态理解，创意能力最强',        tag: '创意',   modes: ['agent', 'drama', 'clip', 'longvideo2'] },
+  { id: 'claude-sonnet-4-20250514',  name: 'Claude Sonnet 4',        desc: '长文本输出质量最佳，深度编剧',    tag: '高质量', modes: ['agent', 'drama'] },
+  { id: 'deepseek-v3.1',             name: 'DeepSeek V3.1',          desc: '中文理解好，性价比高',            tag: '性价比', modes: ['agent', 'drama', 'clip', 'longvideo2', 'image', 'longvideo'] },
+  { id: 'glm-4.5-flash',             name: 'GLM-4.5 Flash',          desc: '极速回复，接近免费',              tag: '极速',   modes: ['agent', 'drama', 'clip', 'longvideo2', 'image', 'longvideo'] },
+  { id: 'kimi-k2',                   name: 'Kimi K2',                desc: '联网搜索能力强，适合调研',                       modes: ['agent', 'drama'] },
+  { id: 'gemini-3-flash-preview',    name: 'Gemini 3 Flash',         desc: 'Google 快速模型，多模态',                        modes: ['agent', 'image'] },
+  { id: 'qwen-max',                  name: 'Qwen Max',               desc: '阿里通义主力，中文顶级',                         modes: ['agent', 'drama'] },
 ]
-const imageModels = [
-  { name: 'Seedream 5.0 Lite', desc: '字节跳动最新图像生成模型，画质更强。' },
-  { name: 'Seedream 4.5', desc: '字节跳动图像生成模型。' },
-  { name: 'Seedream 4.1', desc: '字节跳动图像生成模型。' },
+
+// ── 视频生成模型 ──
+const videoModels: ModelOption[] = [
+  { id: 'seedance-2.0',   name: 'SeeDance 2.0',         desc: '火山引擎，高性价比，9:16竖版',     tag: '推荐',   modes: ['clip', 'longvideo2', 'longvideo'] },
+  { id: 'kling-v2.1',     name: 'Kling 可灵 V2.1',      desc: '最新版，效果最佳，Pro模式',        tag: '高质量', modes: ['clip', 'longvideo2', 'drama', 'longvideo'] },
+  { id: 'veo-3.1-fast',   name: 'VEO 3.1 Fast',         desc: 'Google 快速出片，按秒计费',        tag: '极速',   modes: ['clip', 'longvideo2', 'longvideo'] },
+  { id: 'wan-v2.1-i2v',   name: 'Wan 万象 图生视频',     desc: '阿里，图片驱动视频生成',                          modes: ['clip', 'longvideo2', 'longvideo'] },
+  { id: 'hailuo-01',      name: 'Hailuo 海螺',           desc: 'MiniMax，支持1080p高分辨率',                      modes: ['clip', 'longvideo2'] },
+  { id: 'runway-gen4',    name: 'Runway Gen-4',          desc: 'Runway 最新，运动控制优秀',                       modes: ['clip', 'longvideo2'] },
+  { id: 'vidu-2.5',       name: 'Vidu 2.5',              desc: '多分辨率支持，积分制计费',                         modes: ['clip', 'longvideo2', 'longvideo'] },
+  { id: 'sora-720p',      name: 'Sora 720p',             desc: 'OpenAI Sora，按秒计费',                           modes: ['clip', 'longvideo2'] },
 ]
+
+// ── 图片生成模型 ──
+const imageModels: ModelOption[] = [
+  { id: 'gpt-image-1-mini', name: 'GPT Image Mini',     desc: 'OpenAI 原生，质量好成本低',       tag: '推荐',   modes: ['agent', 'image', 'drama'] },
+  { id: 'gpt-image-1',      name: 'GPT Image 1',        desc: 'OpenAI 高质量图片生成',           tag: '高质量', modes: ['agent', 'image', 'drama'] },
+  { id: 'midjourney-imagine',name: 'Midjourney',         desc: '艺术质量最高，风格化出色',        tag: '艺术',   modes: ['agent', 'image'] },
+  { id: 'ideogram-v3',      name: 'Ideogram V3',        desc: '文字渲染能力强，适合海报',        tag: '文字',   modes: ['agent', 'image'] },
+]
+
+/** Get filtered models by current mode */
+const filteredChatModels = computed(() => chatModels.filter(m => m.modes.includes(currentMode.value)))
+const filteredVideoModels = computed(() => videoModels.filter(m => m.modes.includes(currentMode.value)))
+const filteredImageModels = computed(() => imageModels.filter(m => m.modes.includes(currentMode.value)))
+
+/** Current model display name */
+const selectedModelName = computed(() => {
+  if (!selectedModel.value) return '自动'
+  const all = [...chatModels, ...videoModels, ...imageModels]
+  return all.find(m => m.id === selectedModel.value)?.name || '自动'
+})
+
+function selectModel(id: string) {
+  selectedModel.value = id
+  modelAuto.value = false
+  closeAllMenus()
+}
+
+/** Auto-select appropriate default model tab based on mode */
+watch(currentMode, (mode) => {
+  if (['clip', 'longvideo2', 'longvideo'].includes(mode)) {
+    modelTab.value = 'video'
+  } else if (mode === 'image') {
+    modelTab.value = 'image'
+  } else {
+    modelTab.value = 'chat'
+  }
+  // Reset to auto for new mode
+  selectedModel.value = ''
+  modelAuto.value = true
+})
 const ratioOptions = [
   { value: 'auto', label: '自动', icon: '⊞' },
   { value: '16:9', label: '16:9 (横屏)', icon: '▭' },
@@ -152,10 +216,10 @@ async function startCreation() {
   if (!userInput.value.trim() || chatStore.isStreaming) return
 
   const input = userInput.value
-  // Each mode maps to a different backend agent/workflow
   const agentMode = modeAgentMap[currentMode.value] || 'general'
+  const model = modelAuto.value ? undefined : (selectedModel.value || undefined)
   userInput.value = ''
-  await chatStore.sendMessage(input, { mode: agentMode })
+  await chatStore.sendMessage(input, { mode: agentMode, model })
 }
 
 function fillTag(tag: string) {
@@ -512,49 +576,96 @@ function formatTime(isoStr: string): string {
               </div>
 
 
-              <!-- ④ 模型偏好（Agent / 生成图片 / 智能长视频） -->
-              <div v-if="['agent', 'image', 'longvideo'].includes(currentMode)" class="dropdown-wrapper">
+              <!-- ④ 模型偏好（所有模式均可用） -->
+              <div class="dropdown-wrapper">
                 <button
                   class="toolbar-btn-icon-text rounded-full flex items-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white"
                   @click="toggleMenu('model')"
                   title="模型偏好"
                 >
-                  <!-- 调节滑块图标 -->
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 4h4M10 4h4M2 8h8M12 8h2M2 12h2M6 12h8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="4" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="11" cy="8" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="5" cy="12" r="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
+                  <span v-if="!modelAuto" class="text-[12px] text-primary-600 font-medium ml-0.5">{{ selectedModelName }}</span>
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" class="text-gray-400"><path d="M3.5 4.5L6 7L8.5 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
                 <div v-if="showModelMenu" class="dropdown-menu dropdown-lg">
                   <div class="dropdown-header">
                     <span class="dropdown-header-title">模型偏好</span>
-                    <div class="auto-toggle" @click="modelAuto = !modelAuto">
+                    <div class="auto-toggle" @click="modelAuto = !modelAuto; if(modelAuto) selectedModel = ''">
                       <span class="auto-toggle-label">自动</span>
                       <div class="toggle-switch" :class="modelAuto ? 'toggle-on' : ''">
                         <div class="toggle-dot" />
                       </div>
                     </div>
                   </div>
+                  <!-- Tabs: 对话 / 视频 / 图片 -->
                   <div class="model-tabs">
+                    <button class="model-tab" :class="modelTab === 'chat' ? 'model-tab-active' : ''" @click="modelTab = 'chat'">对话</button>
                     <button class="model-tab" :class="modelTab === 'video' ? 'model-tab-active' : ''" @click="modelTab = 'video'">视频</button>
                     <button class="model-tab" :class="modelTab === 'image' ? 'model-tab-active' : ''" @click="modelTab = 'image'">图片</button>
                   </div>
-                  <template v-if="modelTab === 'video'">
-                    <div class="model-section-label">视频模型</div>
-                    <div v-for="m in videoModels" :key="m.name" class="model-item">
-                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><path d="M4 4l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 4l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                      <div>
-                        <div class="model-name">{{ m.name }}</div>
+                  <!-- Chat models -->
+                  <template v-if="modelTab === 'chat'">
+                    <div class="model-section-label">对话模型 · {{ currentModeOption.label }}</div>
+                    <div
+                      v-for="m in filteredChatModels"
+                      :key="m.id"
+                      class="model-item"
+                      :class="selectedModel === m.id ? 'model-item-active' : ''"
+                      @click="selectModel(m.id)"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M9 6v6M6 9h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                          <span class="model-name">{{ m.name }}</span>
+                          <span v-if="m.tag" class="model-tag" :class="m.tag === '推荐' ? 'model-tag-rec' : ''">{{ m.tag }}</span>
+                        </div>
                         <div class="model-desc">{{ m.desc }}</div>
                       </div>
+                      <svg v-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </div>
                   </template>
-                  <template v-else>
-                    <div class="model-section-label">图片模型</div>
-                    <div v-for="m in imageModels" :key="m.name" class="model-item">
-                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><path d="M4 4l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 4l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                      <div>
-                        <div class="model-name">{{ m.name }}</div>
+                  <!-- Video models -->
+                  <template v-if="modelTab === 'video'">
+                    <div class="model-section-label">视频模型 · {{ currentModeOption.label }}</div>
+                    <div v-if="!filteredVideoModels.length" class="text-center text-[13px] text-gray-400 py-4">当前模式无视频模型</div>
+                    <div
+                      v-for="m in filteredVideoModels"
+                      :key="m.id"
+                      class="model-item"
+                      :class="selectedModel === m.id ? 'model-item-active' : ''"
+                      @click="selectModel(m.id)"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><rect x="3" y="4" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 7.5l4 2.5-4 2.5z" fill="currentColor"/></svg>
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                          <span class="model-name">{{ m.name }}</span>
+                          <span v-if="m.tag" class="model-tag" :class="m.tag === '推荐' ? 'model-tag-rec' : ''">{{ m.tag }}</span>
+                        </div>
                         <div class="model-desc">{{ m.desc }}</div>
                       </div>
+                      <svg v-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </div>
+                  </template>
+                  <!-- Image models -->
+                  <template v-if="modelTab === 'image'">
+                    <div class="model-section-label">图片模型 · {{ currentModeOption.label }}</div>
+                    <div v-if="!filteredImageModels.length" class="text-center text-[13px] text-gray-400 py-4">当前模式无图片模型</div>
+                    <div
+                      v-for="m in filteredImageModels"
+                      :key="m.id"
+                      class="model-item"
+                      :class="selectedModel === m.id ? 'model-item-active' : ''"
+                      @click="selectModel(m.id)"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="7.5" r="1.5" stroke="currentColor" stroke-width="1"/><path d="M3 13l3-4 2 2 3-3 4 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                          <span class="model-name">{{ m.name }}</span>
+                          <span v-if="m.tag" class="model-tag" :class="m.tag === '推荐' ? 'model-tag-rec' : ''">{{ m.tag }}</span>
+                        </div>
+                        <div class="model-desc">{{ m.desc }}</div>
+                      </div>
+                      <svg v-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </div>
                   </template>
                 </div>
@@ -1110,17 +1221,23 @@ function formatTime(isoStr: string): string {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   cursor: pointer;
   transition: background 0.15s;
+  border-radius: 8px;
+  margin: 2px 6px;
 }
 
 .model-item:hover {
-  background: #FAFAFA;
+  background: #F5F5F5;
+}
+
+.model-item-active {
+  background: #F3F0FF !important;
 }
 
 .model-item:last-child {
-  border-radius: 0 0 14px 14px;
+  border-radius: 8px;
 }
 
 .model-icon {
@@ -1130,10 +1247,27 @@ function formatTime(isoStr: string): string {
 }
 
 .model-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: #1a1a1a;
   line-height: 1.3;
+}
+
+.model-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  background: #F5F5F5;
+  color: #888;
+  white-space: nowrap;
+}
+
+.model-tag-rec {
+  background: #F3F0FF;
+  color: #7C3AED;
 }
 
 .model-desc {

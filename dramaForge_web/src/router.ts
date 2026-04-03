@@ -63,16 +63,17 @@ const router = createRouter({
   ],
 })
 
-// ── Navigation guard: redirect to login if not authenticated ──
+// ── Navigation guard ──
+// TODO: 上线前取消注释，启用强制登录
 router.beforeEach((to, _from, next) => {
   // Guest routes (login/register) — redirect to home if already logged in
   if (to.meta.guest && isAuthenticated()) {
     return next('/')
   }
-  // Protected routes — redirect to login if not authenticated
-  if (!to.meta.guest && to.name !== 'Login' && !isAuthenticated()) {
-    return next('/login')
-  }
+  // 开发阶段：不强制跳转登录，允许自由浏览
+  // if (!to.meta.guest && to.name !== 'Login' && !isAuthenticated()) {
+  //   return next('/login')
+  // }
   next()
 })
 
