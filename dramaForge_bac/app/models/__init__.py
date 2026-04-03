@@ -16,12 +16,14 @@ from app.models.character import Character
 from app.models.scene import SceneLocation
 from app.models.segment import Segment
 from app.models.shot import Shot
+from app.models.user import User, Conversation, Message
 
 # ── Enums (re-export from their home modules) ──
 from app.models.project import ProjectStep, VideoStyle, DramaGenre
 from app.models.character import CharacterRole
 from app.models.segment import SegmentStatus
 from app.models.shot import CameraType, CameraMovement
+from app.models.user import UserStatus, MessageRole
 
 __all__ = [
     # Models
@@ -32,6 +34,9 @@ __all__ = [
     "SceneLocation",
     "Segment",
     "Shot",
+    "User",
+    "Conversation",
+    "Message",
     # Enums
     "ProjectStep",
     "VideoStyle",
@@ -40,4 +45,6 @@ __all__ = [
     "SegmentStatus",
     "CameraType",
     "CameraMovement",
+    "UserStatus",
+    "MessageRole",
 ]

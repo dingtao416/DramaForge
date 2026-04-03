@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     debug: bool = True
     secret_key: str = "change-me-in-production"
 
+    # ----- JWT Authentication -----
+    jwt_secret_key: str = "dramaforge-jwt-secret-change-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24  # 1 day
+    jwt_refresh_expire_days: int = 7
+
     # ----- Database -----
     database_url: str = "sqlite+aiosqlite:///./storage/dramaforge.db"
 
