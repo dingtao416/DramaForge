@@ -7,6 +7,8 @@ import { VideoStyle } from '@/types/enums'
 import type { ProjectList } from '@/types/project'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
+import BottomSheet from '@/components/common/BottomSheet.vue'
+import ModalOverlay from '@/components/common/ModalOverlay.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -16,6 +18,14 @@ const loading = ref(false)
 const recentProjects = ref<ProjectList[]>([])
 const sidebarCollapsed = ref(false)
 const messagesEndRef = ref<HTMLElement | null>(null)
+
+// ── Sheet / Panel states ──
+const showSubscribeSheet = ref(false)
+const showFeedbackSheet = ref(false)
+const showNotificationSheet = ref(false)
+const showMessageSheet = ref(false)
+const feedbackText = ref('')
+const feedbackType = ref('bug')
 
 /* ─── Mode definitions ─── */
 type Mode = 'agent' | 'drama' | 'clip' | 'longvideo2' | 'image' | 'longvideo'
@@ -381,29 +391,25 @@ function formatTime(isoStr: string): string {
       <!-- Top bar -->
       <div class="topbar">
         <div class="topbar-actions">
-          <!-- Credits -->
-          <button class="topbar-credits">
+          <!-- Credits + Subscribe (purple bg group) -->
+          <div class="topbar-credits-group" @click="showSubscribeSheet = true">
             <span class="topbar-credits-icon">✦</span>
             <span class="topbar-credits-num">16</span>
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 4L5 6L7 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <!-- Divider -->
-          <div class="topbar-divider" />
-          <!-- Subscribe -->
-          <button class="topbar-text-btn">订阅</button>
-          <!-- Divider -->
-          <div class="topbar-divider" />
-          <!-- Feedback / Chat -->
-          <button class="topbar-icon-btn" title="反馈">
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 4.5A1.5 1.5 0 014.5 3h9A1.5 1.5 0 0115 4.5v7a1.5 1.5 0 01-1.5 1.5H7.5L5 15v-2H4.5A1.5 1.5 0 013 11.5v-7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6.5 7.5h5M6.5 10h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            <div class="topbar-group-divider" />
+            <span class="topbar-subscribe">订阅</span>
+          </div>
+          <!-- Feedback -->
+          <button class="topbar-icon-btn" title="反馈" @click="showFeedbackSheet = true">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 5.5A1.5 1.5 0 015.5 4h9A1.5 1.5 0 0116 5.5v7a1.5 1.5 0 01-1.5 1.5H8.5L6 16v-3H5.5A1.5 1.5 0 014 11.5v-6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7.5 8h5M7.5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
           </button>
           <!-- Notification -->
-          <button class="topbar-icon-btn" title="通知">
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2.5a3.5 3.5 0 00-3.5 3.5v2.5c0 .83-.37 1.62-1 2.15l-.35.3A.75.75 0 004.65 12h8.7a.75.75 0 00.5-1.05l-.35-.3A3.25 3.25 0 0112.5 8.5V6A3.5 3.5 0 009 2.5z" stroke="currentColor" stroke-width="1.3"/><path d="M7.5 12.5s.5 2 1.5 2 1.5-2 1.5-2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          <button class="topbar-icon-btn" title="通知" @click="showNotificationSheet = true">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3a4 4 0 00-4 4v3c0 .9-.4 1.75-1.1 2.35l-.4.3a.75.75 0 00.5 1.35h10a.75.75 0 00.5-1.35l-.4-.3A3.5 3.5 0 0114 10V7a4 4 0 00-4-4z" stroke="currentColor" stroke-width="1.4"/><path d="M8 14s.5 2 2 2 2-2 2-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           </button>
           <!-- Messages -->
-          <button class="topbar-icon-btn" title="消息">
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="4" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M3 5.5l6 4 6-4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <button class="topbar-icon-btn" title="消息" @click="showMessageSheet = true">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="4.5" width="14" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 6l7 4.5L17 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
           <!-- Avatar -->
           <div
@@ -495,16 +501,21 @@ function formatTime(isoStr: string): string {
         <div class="flex-1 flex flex-col items-center justify-center py-10">
         <div class="w-full max-w-[880px] px-10 flex flex-col items-center">
 
-          <!-- Logo -->
-          <div class="w-[56px] h-[56px] bg-gradient-to-br from-primary-500 to-primary-700 rounded-[16px] flex items-center justify-center text-white text-[24px] font-bold shadow-[0_4px_16px_rgba(124,58,237,0.2)] mb-5">D</div>
+          <!-- Logo Avatar -->
+          <div class="home-avatar">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <rect x="4" y="4" width="16" height="16" rx="4" fill="white"/>
+              <rect x="8" y="8" width="4" height="4" rx="1" fill="#1a1a1a"/>
+            </svg>
+          </div>
 
           <!-- Greeting -->
-          <h1 class="greeting-title text-[32px] font-semibold text-gray-900 text-center leading-[1.2] tracking-[-0.5px] mb-0">
+          <h1 class="greeting-title text-[42px] font-bold text-gray-900 text-center leading-[1.2] tracking-[-0.5px] mb-0">
             Hi，DramaForge 助你爆款写剧一键成片
           </h1>
 
           <!-- ─── Input card ─── -->
-          <div class="input-card w-full max-w-[777px] mt-[56px] bg-white rounded-[24px] border border-[#E5E5E5] shadow-[0_1px_4px_rgba(0,0,0,0.03)] focus-within:border-[#C4B5FD] focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.06)] transition-all">
+          <div class="input-card w-full max-w-[777px] bg-white rounded-[24px] border border-[#E5E5E5] shadow-[0_1px_4px_rgba(0,0,0,0.03)] focus-within:border-[#C4B5FD] focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.06)] transition-all" style="margin-top: 35px;">
             <!-- Top hint bar (mode-specific) -->
             <div v-if="currentModeOption.topHint" class="top-hint-bar">
               {{ currentModeOption.topHint }}
@@ -831,6 +842,133 @@ function formatTime(isoStr: string): string {
       </div>
     </div>
   </div>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- Bottom Sheet Modals                                     -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+
+  <!-- 订阅 / 积分 -->
+  <ModalOverlay :visible="showSubscribeSheet" title="选择合适的计划，助力业务提升" @close="showSubscribeSheet = false">
+    <template #icon>
+      <div class="plan-logo">D</div>
+    </template>
+    <div class="plan-grid">
+      <!-- 免费版 -->
+      <div class="plan-card">
+        <h4 class="plan-card-title">免费版</h4>
+        <div class="plan-price-row">
+          <span class="plan-price-big">永久免费</span>
+        </div>
+        <button class="plan-action-btn plan-action-disabled" disabled>当前计划</button>
+
+        <div class="plan-section-label">积分</div>
+        <ul class="plan-list">
+          <li class="plan-check">每天赠送积分，当日清零</li>
+          <li class="plan-cross">购买更多积分</li>
+        </ul>
+
+        <div class="plan-section-label">可用功能：</div>
+        <ul class="plan-list">
+          <li class="plan-check">智能生视频（需要积分）</li>
+          <li class="plan-check">AI 图片设计（需要积分）</li>
+          <li class="plan-check">复刻爆款视频（需要积分）</li>
+        </ul>
+      </div>
+
+      <!-- 基础会员 - 包年 -->
+      <div class="plan-card plan-card-featured">
+        <div class="plan-card-header">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2l2.3 4.6L16 7.5l-3.5 3.4L13.4 16 9 13.6 4.6 16l.9-5.1L2 7.5l4.7-.9L9 2z" fill="#7c3aed" stroke="#7c3aed" stroke-width="1"/></svg>
+          <span>基础会员-包年</span>
+        </div>
+        <div class="plan-price-row">
+          <span class="plan-price-symbol">¥</span>
+          <span class="plan-price-big">379</span>
+          <span class="plan-price-unit">/年</span>
+          <span class="plan-discount-tag">首年优惠</span>
+        </div>
+        <div class="plan-price-note">首年¥379，次年续费金额¥759，自动续订，可随时取消。</div>
+        <button class="plan-action-btn plan-action-primary">订阅包年套餐</button>
+
+        <div class="plan-section-label">积分</div>
+        <ul class="plan-list">
+          <li class="plan-check">每月 1200 积分，首次支付后生效<br/><span class="plan-sub">每日赠送积分，当日清零</span></li>
+          <li class="plan-check">可充值积分</li>
+        </ul>
+
+        <div class="plan-section-label">免费版的所有功能，更有：</div>
+        <ul class="plan-list">
+          <li class="plan-check">去除品牌水印</li>
+          <li class="plan-check">快速生成</li>
+          <li class="plan-check">高阶模型</li>
+          <li class="plan-check">可使用全部AI功能</li>
+          <li class="plan-check">资产库无限量</li>
+        </ul>
+      </div>
+
+      <!-- 基础会员 - 包月 -->
+      <div class="plan-card plan-card-featured">
+        <div class="plan-card-header">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2l2.3 4.6L16 7.5l-3.5 3.4L13.4 16 9 13.6 4.6 16l.9-5.1L2 7.5l4.7-.9L9 2z" fill="#7c3aed" stroke="#7c3aed" stroke-width="1"/></svg>
+          <span>基础会员-包月</span>
+        </div>
+        <div class="plan-price-row">
+          <span class="plan-price-symbol">¥</span>
+          <span class="plan-price-big">39</span>
+          <span class="plan-price-unit">/月</span>
+          <span class="plan-discount-tag">首月优惠</span>
+        </div>
+        <div class="plan-price-note">首月¥39，下月续费金额¥79，自动续订，可随时取消。</div>
+        <button class="plan-action-btn plan-action-dark">订阅包月套餐</button>
+
+        <div class="plan-section-label">积分</div>
+        <ul class="plan-list">
+          <li class="plan-check">每月 1200 积分，首次支付后生效<br/><span class="plan-sub">每日赠送积分，当日清零</span></li>
+          <li class="plan-check">可充值积分</li>
+        </ul>
+
+        <div class="plan-section-label">免费版的所有功能，更有：</div>
+        <ul class="plan-list">
+          <li class="plan-check">去除品牌水印</li>
+          <li class="plan-check">快速生成</li>
+          <li class="plan-check">高阶模型</li>
+          <li class="plan-check">可使用全部AI功能</li>
+          <li class="plan-check">资产库无限量</li>
+        </ul>
+      </div>
+    </div>
+  </ModalOverlay>
+
+  <!-- 反馈 -->
+  <BottomSheet :visible="showFeedbackSheet" title="意见反馈" height="60vh" @close="showFeedbackSheet = false">
+    <div class="feedback-types">
+      <button v-for="t in [{id:'bug',label:'🐛 Bug'},{id:'feature',label:'💡 建议'},{id:'other',label:'💬 其他'}]" :key="t.id"
+        class="feedback-type-btn" :class="feedbackType === t.id ? 'feedback-type-active' : ''"
+        @click="feedbackType = t.id">{{ t.label }}</button>
+    </div>
+    <textarea v-model="feedbackText" class="feedback-textarea" rows="5" placeholder="请描述你遇到的问题或建议..." />
+    <button class="feedback-submit" :disabled="!feedbackText.trim()" @click="feedbackText = ''; showFeedbackSheet = false">
+      提交反馈
+    </button>
+  </BottomSheet>
+
+  <!-- 通知 -->
+  <BottomSheet :visible="showNotificationSheet" title="通知" height="60vh" @close="showNotificationSheet = false">
+    <div class="empty-sheet">
+      <div class="empty-sheet-icon">🔔</div>
+      <p>暂无通知</p>
+      <span>新的系统通知和项目动态将显示在这里</span>
+    </div>
+  </BottomSheet>
+
+  <!-- 消息 -->
+  <BottomSheet :visible="showMessageSheet" title="消息" height="60vh" @close="showMessageSheet = false">
+    <div class="empty-sheet">
+      <div class="empty-sheet-icon">✉️</div>
+      <p>暂无消息</p>
+      <span>收到的私信和系统消息将显示在这里</span>
+    </div>
+  </BottomSheet>
 </template>
 
 <style scoped>
@@ -873,6 +1011,18 @@ function formatTime(isoStr: string): string {
 }
 
 /* ─── Greeting ─── */
+.home-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
 .greeting-title {
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
 }
@@ -1568,84 +1718,76 @@ function formatTime(isoStr: string): string {
 
 /* ─── Top Bar ─── */
 .topbar {
-  height: 52px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   padding: 0 20px;
   flex-shrink: 0;
+  margin-top: 4px;
 }
 
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
 }
 
-.topbar-credits {
+/* Credits + Subscribe purple group */
+.topbar-credits-group {
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 34px;
-  padding: 0 12px;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
   border-radius: 20px;
-  border: 1px solid #e5e5e5;
-  background: #fff;
-  font-size: 13px;
-  color: #555;
+  background: #f3f0ff;
   cursor: pointer;
   transition: all 0.15s;
 }
 
-.topbar-credits:hover {
-  background: #fafafa;
-  border-color: #ddd;
+.topbar-credits-group:hover {
+  background: #ede9fe;
 }
 
 .topbar-credits-icon {
   color: #7c3aed;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .topbar-credits-num {
   font-weight: 600;
-  color: #333;
+  font-size: 14px;
+  color: #7c3aed;
 }
 
-.topbar-divider {
+.topbar-credits-group svg {
+  color: #7c3aed;
+  opacity: 0.6;
+}
+
+.topbar-group-divider {
   width: 1px;
-  height: 18px;
-  background: #e5e5e5;
-  margin: 0 6px;
+  height: 16px;
+  background: #d8ccf5;
+  margin: 0 4px;
 }
 
-.topbar-text-btn {
-  padding: 0 8px;
-  height: 34px;
-  display: flex;
-  align-items: center;
+.topbar-subscribe {
   font-size: 13px;
   font-weight: 600;
   color: #7c3aed;
-  background: none;
-  border: none;
-  cursor: pointer;
-  border-radius: 8px;
-  transition: all 0.15s;
 }
 
-.topbar-text-btn:hover {
-  background: #f5f3ff;
-}
-
+/* Icon buttons — black */
 .topbar-icon-btn {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #666;
+  color: #1a1a1a;
   background: none;
   border: none;
   cursor: pointer;
@@ -1654,12 +1796,13 @@ function formatTime(isoStr: string): string {
 
 .topbar-icon-btn:hover {
   background: #f5f5f5;
-  color: #333;
+  color: #000;
 }
 
+/* Avatar */
 .topbar-avatar {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: #1a1a1a;
   color: #fff;
@@ -1670,10 +1813,272 @@ function formatTime(isoStr: string): string {
   justify-content: center;
   cursor: pointer;
   transition: all 0.15s;
-  margin-left: 4px;
+  margin-left: 2px;
 }
 
 .topbar-avatar:hover {
   background: #333;
+}
+
+/* ─── Subscription Plans (reference style) ─── */
+.plan-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.plan-card {
+  border: 1px solid #e5e5e5;
+  border-radius: 16px;
+  padding: 28px 24px;
+}
+
+.plan-card-featured {
+  border: 2px solid #7c3aed;
+}
+
+.plan-card-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin: 0 0 12px;
+}
+
+.plan-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 12px;
+}
+
+.plan-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.plan-price-symbol {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.plan-price-big {
+  font-size: 36px;
+  font-weight: 800;
+  color: #1a1a1a;
+  letter-spacing: -1px;
+}
+
+.plan-price-unit {
+  font-size: 14px;
+  color: #999;
+  margin-left: 2px;
+}
+
+.plan-discount-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ef4444;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.plan-price-note {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.plan-action-btn {
+  width: 100%;
+  height: 44px;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: 20px;
+}
+
+.plan-action-disabled {
+  background: #f5f5f5;
+  color: #bbb;
+  cursor: default;
+}
+
+.plan-action-primary {
+  background: #7c3aed;
+  color: #fff;
+}
+
+.plan-action-primary:hover {
+  background: #6d28d9;
+}
+
+.plan-action-dark {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+.plan-action-dark:hover {
+  background: #333;
+}
+
+.plan-section-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 10px;
+}
+
+.plan-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: #444;
+}
+
+.plan-list li {
+  padding: 3px 0 3px 22px;
+  position: relative;
+  line-height: 1.7;
+}
+
+.plan-check::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #22c55e;
+  font-weight: 600;
+}
+
+.plan-cross::before {
+  content: '✗';
+  position: absolute;
+  left: 0;
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.plan-sub {
+  font-size: 12px;
+  color: #999;
+}
+
+/* ─── Feedback ─── */
+.feedback-types {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.feedback-type-btn {
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 1px solid #e5e5e5;
+  background: #fff;
+  font-size: 13px;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.feedback-type-btn:hover {
+  border-color: #ccc;
+}
+
+.feedback-type-active {
+  background: #f3f0ff;
+  border-color: #c4b5fd;
+  color: #7c3aed;
+}
+
+.feedback-textarea {
+  width: 100%;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: #333;
+  resize: none;
+  outline: none;
+  line-height: 1.6;
+  box-sizing: border-box;
+}
+
+.feedback-textarea:focus {
+  border-color: #c4b5fd;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.06);
+}
+
+.feedback-submit {
+  width: 100%;
+  height: 44px;
+  border-radius: 12px;
+  border: none;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 14px;
+  transition: all 0.15s;
+}
+
+.feedback-submit:hover:not(:disabled) {
+  background: #333;
+}
+
+.feedback-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ─── Empty Sheet ─── */
+.empty-sheet {
+  text-align: center;
+  padding: 40px 0;
+}
+
+.empty-sheet-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+
+.empty-sheet p {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 6px;
+}
+
+.empty-sheet span {
+  font-size: 13px;
+  color: #999;
 }
 </style>
