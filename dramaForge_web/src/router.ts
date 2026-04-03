@@ -51,6 +51,11 @@ const router = createRouter({
       ],
     },
     {
+      path: '/drama-workbench',
+      name: 'DramaWorkbench',
+      component: () => import('@/views/DramaWorkbenchPage.vue'),
+    },
+    {
       path: '/assets',
       name: 'AssetLibrary',
       component: () => import('@/views/AssetLibraryPage.vue'),

@@ -67,8 +67,72 @@ const modeAgentMap: Record<Mode, string> = {
 }
 
 function selectMode(mode: Mode) {
+  // 短剧 Agent 模式：跳转到独立创作工作台
+  if (mode === 'drama') {
+    router.push('/drama-workbench')
+    return
+  }
   currentMode.value = mode
   closeAllMenus()
+}
+
+// ── 优化提示词 ──
+const optimizing = ref(false)
+
+async function optimizePrompt() {
+  const raw = userInput.value.trim()
+  if (!raw || optimizing.value) return
+
+  optimizing.value = true
+  try {
+    const modeLabel = currentModeOption.value?.label || '通用'
+    const systemPrompt = `你是一位专业的 AI 提示词优化专家。用户正在使用「${modeLabel}」模式。
+请将用户输入的原始提示词优化为更详细、更专业、更能产出高质量结果的提示词。
+要求：
+1. 保留用户的核心意图
+2. 补充细节（风格、场景、情绪、镜头语言等）
+3. 使措辞更精准
+4. 直接输出优化后的提示词，不要解释
+5. 使用中文回复`
+
+    const { sendMessage } = await import('@/api/chat')
+    const resp = await sendMessage.sendMessage({
+      content: `请优化以下提示词:\n\n${raw}`,
+      model: selectedModel.value || 'gpt-4.1-mini',
+      system_prompt: systemPrompt,
+    })
+
+    if (resp?.data?.content) {
+      userInput.value = resp.data.content.trim()
+    }
+  } catch (e: any) {
+    // Fallback: use fetch directly to the chat API
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch('/api/v2/chat/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          content: `你是提示词优化专家。请将以下提示词优化为更专业详细的版本，直接输出优化结果，不要解释：\n\n${raw}`,
+          model: selectedModel.value || 'gpt-4.1-mini',
+          stream: false,
+        }),
+      })
+      const data = await res.json()
+      if (data?.content) {
+        userInput.value = data.content.trim()
+      } else if (data?.data?.content) {
+        userInput.value = data.data.content.trim()
+      }
+    } catch {
+      // Silent fail — user keeps original prompt
+    }
+  } finally {
+    optimizing.value = false
+  }
 }
 
 /* ─── Dropdown states ─── */
@@ -567,6 +631,18 @@ function formatTime(isoStr: string): string {
 
                   <div class="flex-1" />
 
+                  <!-- 优化提示词 -->
+                  <button
+                    class="chat-tool-btn"
+                    :class="{ 'chat-optimize-active': optimizing }"
+                    :disabled="!userInput.trim() || optimizing"
+                    title="一键优化提示词"
+                    @click="optimizePrompt"
+                  >
+                    <svg v-if="optimizing" class="animate-spin" width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" stroke-dasharray="26 12" stroke-linecap="round"/></svg>
+                    <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5l1 3.2L12.5 6l-3.5 1.3L8 10.5l-1-3.2L3.5 6l3.5-1.3L8 1.5z" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/><path d="M12.5 10.5l.4 1.3 1.4.4-1.4.4-.4 1.4-.4-1.4-1.4-.4 1.4-.4z" fill="currentColor"/></svg>
+                  </button>
+
                   <!-- Stop / Send -->
                   <button
                     v-if="chatStore.isStreaming"
@@ -881,17 +957,21 @@ function formatTime(isoStr: string): string {
 
               <div class="flex-1" />
 
-              <!-- 一键优化提示词（固定） -->
-              <button class="w-[36px] h-[36px] rounded-[8px] flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-primary-500 cursor-pointer transition-colors" title="一键优化提示词">
-                <!-- 魔法棒/星火图标 -->
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2l1.2 3.6L14 7l-3.8 1.4L9 12l-1.2-3.6L4 7l3.8-1.4L9 2z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><path d="M14 12l.5 1.5L16 14l-1.5.5L14 16l-.5-1.5L12 14l1.5-.5z" fill="currentColor"/><path d="M3 13l.4 1L4.5 14.5l-1.1.5-.4 1-.4-1-1.1-.5 1.1-.5z" fill="currentColor"/></svg>
+              <!-- 一键优化提示词 -->
+              <button
+                class="w-[36px] h-[36px] rounded-[8px] flex items-center justify-center transition-all cursor-pointer"
+                :class="optimizing ? 'text-purple-500 bg-purple-50 animate-pulse' : userInput.trim() ? 'text-gray-500 hover:bg-purple-50 hover:text-purple-500' : 'text-gray-300 cursor-not-allowed'"
+                :disabled="!userInput.trim() || optimizing"
+                title="一键优化提示词"
+                @click="optimizePrompt"
+              >
+                <svg v-if="optimizing" class="animate-spin" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.5" stroke-dasharray="30 14" stroke-linecap="round"/></svg>
+                <svg v-else width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2l1.2 3.6L14 7l-3.8 1.4L9 12l-1.2-3.6L4 7l3.8-1.4L9 2z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><path d="M14 12l.5 1.5L16 14l-1.5.5L14 16l-.5-1.5L12 14l1.5-.5z" fill="currentColor"/><path d="M3 13l.4 1L4.5 14.5l-1.1.5-.4 1-.4-1-1.1-.5 1.1-.5z" fill="currentColor"/></svg>
               </button>
               <!-- 发送 -->
               <button
-                class="w-[40px] h-[40px] rounded-full flex items-center justify-center transition-all cursor-pointer"
-                :class="userInput.trim()
-                  ? 'bg-gray-900 text-white hover:bg-black shadow-[0_2px_8px_rgba(0,0,0,0.15)]'
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'"
+                class="home-send-btn"
+                :class="{ active: userInput.trim() }"
                 :disabled="!userInput.trim() || loading"
                 @click="startCreation"
               >
@@ -922,6 +1002,7 @@ function formatTime(isoStr: string): string {
                 :key="card.title"
                 class="feature-card rounded-[14px] overflow-hidden relative cursor-pointer group hover:shadow-lg transition-shadow"
                 :style="{ background: card.bg }"
+                @click="card.title === '短剧 Agent' ? router.push('/drama-workbench') : undefined"
               >
                 <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
                 <span
@@ -2000,20 +2081,68 @@ function formatTime(isoStr: string): string {
   align-items: center;
   justify-content: center;
   background: #e5e5e5;
-  color: #999;
+  color: #bbb;
   cursor: not-allowed;
   transition: all 0.2s;
 }
 
+.chat-send-btn svg {
+  color: inherit;
+}
+
 .chat-send-active {
-  background: #0a0a0a;
-  color: #fff;
+  background: #000 !important;
+  color: #fff !important;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.chat-send-active svg {
+  color: #fff;
+  stroke: #fff;
 }
 
 .chat-send-active:hover {
-  background: #1a1a1a;
+  background: #222 !important;
+}
+
+.chat-optimize-active {
+  color: #7c3aed !important;
+  background: #F3F0FF !important;
+}
+
+/* ── Home page send button (scoped for proper specificity) ── */
+.home-send-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f0;
+  color: #ccc;
+  cursor: not-allowed;
+  transition: all 0.2s;
+}
+
+.home-send-btn.active {
+  background: #000;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.home-send-btn.active svg {
+  color: #fff;
+}
+
+.home-send-btn.active svg path {
+  stroke: #fff;
+}
+
+.home-send-btn.active:hover {
+  background: #222;
 }
 
 .chat-stop-btn {

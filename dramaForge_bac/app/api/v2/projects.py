@@ -79,6 +79,65 @@ async def update_project(
     return project
 
 
+@router.post("/projects/seed-examples", response_model=list[ProjectDetail])
+async def seed_example_projects(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create example projects for demonstration.
+    Idempotent: skips if example projects already exist.
+    """
+    # Check if examples already exist
+    result = await db.execute(
+        select(Project).where(Project.title.like("从弃女到巅峰%"))
+    )
+    if result.scalar_one_or_none():
+        # Return all existing projects
+        all_result = await db.execute(
+            select(Project).order_by(Project.updated_at.desc()).limit(10)
+        )
+        return all_result.scalars().all()
+
+    examples = [
+        Project(
+            title="从弃女到巅峰：苏家千金归来",
+            description="苏家千金被陷害沦为弃女，凭借智慧与毅力一步步重回巅峰，揭开惊天阴谋。",
+            style="realistic",
+            genre="revenge",
+            status="assets",
+            script_type="dialogue",
+            aspect_ratio="9:16",
+        ),
+        Project(
+            title="末世：我以为我是废柴，其实我是神",
+            description="末世来临，被所有人看不起的废柴觉醒了最强能力，逆天改命。",
+            style="cinematic",
+            genre="fantasy",
+            status="script",
+            script_type="dialogue",
+            aspect_ratio="9:16",
+        ),
+        Project(
+            title="都市大圣：战神觉醒",
+            description="退伍战神重回都市，面对家族危机和商业阴谋，以雷霆手段守护至亲。",
+            style="realistic",
+            genre="urban",
+            status="script",
+            script_type="dialogue",
+            aspect_ratio="9:16",
+        ),
+    ]
+
+    for proj in examples:
+        db.add(proj)
+    await db.flush()
+
+    for proj in examples:
+        await db.refresh(proj)
+
+    return examples
+
+
 @router.delete("/projects/{project_id}", status_code=204)
 async def delete_project(
     project_id: int,

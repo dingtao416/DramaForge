@@ -5,8 +5,10 @@ import { assetsApi } from '@/api/assets'
 import type { CharacterDetail } from '@/types/character'
 import EmptyState from '@/components/common/EmptyState.vue'
 import TopbarActions from '@/components/common/TopbarActions.vue'
+import { useBillingStore } from '@/stores/billing'
 
 const router = useRouter()
+const billingStore = useBillingStore()
 
 const assets = ref<CharacterDetail[]>([])
 const loading = ref(false)
@@ -70,6 +72,80 @@ const showSubscribeSheet = ref(false)
 function handleSubscribe() {
   showSubscribeSheet.value = true
 }
+
+// ── 新增下拉菜单 ──
+const showAddMenu = ref(false)
+
+function toggleAddMenu() {
+  showAddMenu.value = !showAddMenu.value
+}
+
+// ── 上传资产 ──
+const uploadInput = ref<HTMLInputElement | null>(null)
+
+function handleUploadAsset() {
+  showAddMenu.value = false
+  uploadInput.value?.click()
+}
+
+async function onAssetFileSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  input.value = ''
+  // TODO: call upload API
+  alert(`资产上传: ${file.name} (接口对接中)`)
+  await handleRefresh()
+}
+
+// ── 新建角色弹窗 ──
+const showCreateCharacter = ref(false)
+const charForm = ref({
+  name: '',
+  description: '',
+  gender: '',
+  age: '',
+})
+const charImage = ref<File | null>(null)
+const charImagePreview = ref('')
+const charCreating = ref(false)
+
+function openCreateCharacter() {
+  showAddMenu.value = false
+  charForm.value = { name: '', description: '', gender: '', age: '' }
+  charImage.value = null
+  charImagePreview.value = ''
+  showCreateCharacter.value = true
+}
+
+function onCharImageSelect(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  input.value = ''
+  charImage.value = file
+  charImagePreview.value = URL.createObjectURL(file)
+}
+
+async function handleCreateCharacter() {
+  if (!charForm.value.name.trim()) return
+  charCreating.value = true
+  try {
+    // TODO: call create character API with FormData
+    // const fd = new FormData()
+    // fd.append('name', charForm.value.name)
+    // fd.append('description', charForm.value.description)
+    // fd.append('gender', charForm.value.gender)
+    // fd.append('age', charForm.value.age)
+    // if (charImage.value) fd.append('image', charImage.value)
+    // await assetsApi.createCharacter(fd)
+    await new Promise(r => setTimeout(r, 1000))
+    showCreateCharacter.value = false
+    await handleRefresh()
+  } finally {
+    charCreating.value = false
+  }
+}
 </script>
 
 <template>
@@ -91,11 +167,26 @@ function handleSubscribe() {
       <div class="title-row">
         <div class="title-left">
           <h1 class="page-title">资产库</h1>
-          <button class="add-btn">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1.5v12M1.5 7.5h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-            新增
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" class="ml-0.5"><path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          <div class="add-wrapper">
+            <button class="add-btn" @click="toggleAddMenu">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              新增
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 4l2 2 2-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <!-- Dropdown -->
+            <div v-if="showAddMenu" class="add-dropdown">
+              <button class="add-dropdown-item" @click="handleUploadAsset">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 5l3-3 3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 10v3a1 1 0 001 1h10a1 1 0 001-1v-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                上传资产
+              </button>
+              <button class="add-dropdown-item" @click="openCreateCharacter">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5.5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M2.5 14c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                新建角色
+              </button>
+            </div>
+            <!-- Hidden file input for upload -->
+            <input ref="uploadInput" type="file" accept="image/*,video/*" hidden @change="onAssetFileSelected" />
+          </div>
         </div>
         <div class="title-right">
           <button class="action-btn" @click="handleRefresh">
@@ -248,6 +339,112 @@ function handleSubscribe() {
       <!-- Footer -->
       <div v-if="filteredAssets.length" class="page-footer">已加载全部</div>
     </main>
+
+    <!-- ═══════ 新建角色弹窗 ═══════ -->
+    <Teleport to="body">
+      <div v-if="showCreateCharacter" class="modal-overlay" @click.self="showCreateCharacter = false">
+        <div class="modal-box">
+          <!-- Header -->
+          <div class="modal-header">
+            <h2 class="modal-title">新建角色</h2>
+            <button class="modal-close" @click="showCreateCharacter = false">✕</button>
+          </div>
+
+          <!-- Body: two columns -->
+          <div class="modal-body">
+            <!-- Left: Form -->
+            <div class="modal-form">
+              <!-- 角色名称 -->
+              <div class="form-group">
+                <label class="form-label">角色名称</label>
+                <input
+                  v-model="charForm.name"
+                  type="text"
+                  class="form-input"
+                  placeholder="角色名称"
+                />
+              </div>
+
+              <!-- 角色描述 -->
+              <div class="form-group">
+                <label class="form-label">角色描述</label>
+                <div class="textarea-wrap">
+                  <textarea
+                    v-model="charForm.description"
+                    class="form-textarea"
+                    placeholder="描述角色特征或用途"
+                    maxlength="200"
+                    rows="4"
+                  />
+                  <span class="textarea-count">{{ charForm.description.length }}/200</span>
+                </div>
+                <span class="form-hint">用于标记和搜索角色，建议填写易于识别的描述</span>
+              </div>
+
+              <!-- 性别 -->
+              <div class="form-group">
+                <label class="form-label">性别</label>
+                <select v-model="charForm.gender" class="form-select">
+                  <option value="" disabled>选择性别</option>
+                  <option value="male">男</option>
+                  <option value="female">女</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+
+              <!-- 年龄 -->
+              <div class="form-group">
+                <label class="form-label">年龄</label>
+                <input
+                  v-model="charForm.age"
+                  type="text"
+                  class="form-input"
+                  placeholder="角色年龄"
+                />
+              </div>
+
+              <!-- 角色图片 -->
+              <div class="form-group">
+                <label class="form-label">角色图片</label>
+                <label class="form-upload-btn">
+                  选择图片
+                  <input type="file" accept="image/*" hidden @change="onCharImageSelect" />
+                </label>
+                <span class="form-hint">选择图片后可预览，提交时自动上传</span>
+              </div>
+            </div>
+
+            <!-- Right: Preview -->
+            <div class="modal-preview">
+              <div class="preview-label">新增预览</div>
+              <div class="preview-box">
+                <img v-if="charImagePreview" :src="charImagePreview" class="preview-img" />
+                <div v-else class="preview-empty">
+                  <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="3" y="3" width="22" height="22" rx="4" stroke="#d4d4d8" stroke-width="1.4"/><circle cx="10" cy="11" r="2.5" stroke="#d4d4d8" stroke-width="1.2"/><path d="M3 22l5-6 3.5 3 4.5-5.5L24 22" stroke="#d4d4d8" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span>暂无封面</span>
+                </div>
+              </div>
+              <div class="preview-hint">选择图片后实时查看角色素材预览</div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="modal-footer">
+            <button class="modal-btn-cancel" @click="showCreateCharacter = false">取消</button>
+            <button
+              class="modal-btn-submit"
+              :disabled="!charForm.name.trim() || charCreating"
+              @click="handleCreateCharacter"
+            >
+              {{ charCreating ? '创建中...' : '创建' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 点击其他区域关闭新增下拉 -->
+    <div v-if="showAddMenu" class="backdrop-close" @click="showAddMenu = false" />
   </div>
 </template>
 
@@ -335,6 +532,10 @@ function handleSubscribe() {
   margin: 0;
 }
 
+.add-wrapper {
+  position: relative;
+}
+
 .add-btn {
   display: flex;
   align-items: center;
@@ -351,6 +552,46 @@ function handleSubscribe() {
 }
 .add-btn:hover {
   background: #333;
+}
+
+.add-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+  padding: 6px;
+  z-index: 20;
+  min-width: 160px;
+}
+.add-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.add-dropdown-item:hover {
+  background: #f5f5f5;
+}
+.add-dropdown-item svg {
+  color: #888;
+}
+
+.backdrop-close {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
 }
 
 .title-right {
@@ -759,4 +1000,235 @@ function handleSubscribe() {
   margin-top: 48px;
   padding-bottom: 20px;
 }
+
+/* ══════════════════════════════════════════════════════
+   Create Character Modal
+   ══════════════════════════════════════════════════════ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.modal-box {
+  background: #fff;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 720px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 28px 0;
+}
+.modal-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #1a1a1a;
+  margin: 0;
+}
+.modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #999;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.modal-close:hover { background: #f5f5f5; color: #333; }
+
+.modal-body {
+  display: flex;
+  gap: 32px;
+  padding: 24px 28px;
+}
+
+.modal-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* ── Form Elements ── */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.form-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+.form-input {
+  height: 42px;
+  padding: 0 14px;
+  border: 1.5px solid #e5e5e5;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #333;
+  outline: none;
+  transition: border-color 0.15s;
+  font-family: inherit;
+}
+.form-input::placeholder { color: #ccc; }
+.form-input:focus { border-color: #4f46e5; }
+
+.textarea-wrap {
+  position: relative;
+}
+.form-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1.5px solid #e5e5e5;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #333;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+  transition: border-color 0.15s;
+}
+.form-textarea::placeholder { color: #ccc; }
+.form-textarea:focus { border-color: #4f46e5; }
+.textarea-count {
+  position: absolute;
+  bottom: 10px;
+  right: 14px;
+  font-size: 11px;
+  color: #ccc;
+}
+
+.form-hint {
+  font-size: 12px;
+  color: #bbb;
+}
+
+.form-select {
+  height: 42px;
+  padding: 0 14px;
+  border: 1.5px solid #e5e5e5;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #333;
+  outline: none;
+  background: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  appearance: auto;
+  transition: border-color 0.15s;
+}
+.form-select:focus { border-color: #4f46e5; }
+
+.form-upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+  border: 1.5px solid #e5e5e5;
+  border-radius: 10px;
+  background: #fafafa;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.form-upload-btn:hover { background: #f0f0f0; border-color: #ccc; }
+
+/* ── Preview Panel ── */
+.modal-preview {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.preview-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+.preview-box {
+  width: 220px;
+  height: 220px;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fafafa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.preview-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #ccc;
+  font-size: 13px;
+}
+.preview-hint {
+  font-size: 12px;
+  color: #bbb;
+  text-align: center;
+}
+
+/* ── Footer ── */
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 0 28px 24px;
+}
+.modal-btn-cancel {
+  padding: 10px 24px;
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.modal-btn-cancel:hover { background: #f5f5f5; }
+
+.modal-btn-submit {
+  padding: 10px 28px;
+  border: none;
+  border-radius: 10px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.modal-btn-submit:hover { background: #333; }
+.modal-btn-submit:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>

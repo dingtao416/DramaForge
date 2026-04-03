@@ -26,4 +26,9 @@ export const projectsApi = {
   delete(id: number) {
     return api.delete(`/projects/${id}`)
   },
+
+  /** 创建示例项目 */
+  seedExamples() {
+    return api.post<ProjectDetail[]>('/projects/seed-examples')
+  },
 }
