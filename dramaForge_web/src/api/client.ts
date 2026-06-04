@@ -43,8 +43,8 @@ export function isAuthenticated(): boolean {
 // ═══════════════════════════════════════════════════════════════════
 
 const apiClient: AxiosInstance = axios.create({
-  baseURL: '/api/v2',
-  timeout: 120_000,
+  baseURL: import.meta.env.VITE_API_BASE_URL,
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT) || 120_000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -76,7 +76,8 @@ apiClient.interceptors.response.use(
       if (refreshToken) {
         try {
           // Use raw axios to avoid interceptor loop
-          const response = await axios.post('/api/v2/user/refresh', {
+          const refreshUrl = `${import.meta.env.VITE_API_BASE_URL}/user/refresh`
+          const response = await axios.post(refreshUrl, {
             refresh_token: refreshToken,
           })
           const { access_token, refresh_token: newRefresh } = response.data
