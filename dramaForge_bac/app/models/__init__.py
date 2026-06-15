@@ -19,6 +19,7 @@ from app.models.shot import Shot
 from app.models.user import User, Conversation, Message
 from app.models.billing import Plan, Subscription, CreditBalance, CreditTransaction
 from app.models.payment import PaymentOrder, UserAgreement
+from app.models.user_ai_config import UserAPIKey, UserModelConfig
 
 # ── Enums (re-export from their home modules) ──
 from app.models.project import ProjectStep, VideoStyle, DramaGenre
@@ -57,6 +58,8 @@ __all__ = [
     "CreditTransaction",
     "PaymentOrder",
     "UserAgreement",
+    "UserAPIKey",
+    "UserModelConfig",
     # Enums
     "ProjectStep",
     "VideoStyle",

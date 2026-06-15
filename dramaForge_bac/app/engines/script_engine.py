@@ -40,6 +40,9 @@ class ScriptEngine:
         genre: str = None,
         total_episodes: int = 1,
         duration: int = 60,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
     ) -> dict:
         """
         AI-generate a structured script from user's creative input.
@@ -64,6 +67,9 @@ class ScriptEngine:
             messages=messages,
             temperature=0.7,
             max_tokens=8192,
+            model=chat_model,
+            api_key=chat_api_key,
+            base_url=chat_base_url,
         )
 
         return self._parse_script(raw_json, project.id)

@@ -68,10 +68,14 @@ class BaseClient:
     - Auto retry with exponential backoff (3 attempts)
     - Unified error classification
     - Request/response debug logging
+    - Support for custom user-provided API keys and base URLs
     """
 
     _openai: AsyncOpenAI | None = None
     _http: httpx.AsyncClient | None = None
+
+    # Custom client cache: {(api_key, base_url): AsyncOpenAI}
+    _custom_openai: dict[tuple[str, str], AsyncOpenAI] = {}
 
     # Retry config
     MAX_RETRIES = 3
@@ -82,14 +86,32 @@ class BaseClient:
     # ──────────── Singleton accessors ────────────
 
     @classmethod
-    def openai(cls) -> AsyncOpenAI:
-        """Get or create the shared AsyncOpenAI client."""
+    def openai(cls, api_key: str = None, base_url: str = None) -> AsyncOpenAI:
+        """
+        Get an AsyncOpenAI client.
+
+        If api_key and base_url are provided, returns a cached custom client.
+        Otherwise returns the system-default client from config.py.
+        """
+        if api_key and base_url:
+            cache_key = (api_key, base_url)
+            if cache_key not in cls._custom_openai:
+                cls._custom_openai[cache_key] = AsyncOpenAI(
+                    api_key=api_key,
+                    base_url=base_url,
+                    timeout=cls.DEFAULT_TIMEOUT,
+                    max_retries=0,
+                )
+                logger.info(f"Custom OpenAI client created | base_url={base_url}")
+            return cls._custom_openai[cache_key]
+
+        # System default
         if cls._openai is None:
             cls._openai = AsyncOpenAI(
                 api_key=settings.laozhang_api_key,
                 base_url=settings.laozhang_base_url,
                 timeout=cls.DEFAULT_TIMEOUT,
-                max_retries=0,  # We handle retries ourselves
+                max_retries=0,
             )
             logger.info(
                 f"AI Hub OpenAI client created | "
@@ -98,8 +120,24 @@ class BaseClient:
         return cls._openai
 
     @classmethod
-    def http(cls) -> httpx.AsyncClient:
-        """Get or create the shared httpx client (for raw HTTP calls)."""
+    def http(cls, api_key: str = None, base_url: str = None) -> httpx.AsyncClient:
+        """
+        Get an httpx client.
+
+        If api_key and base_url are provided, creates a new client.
+        Otherwise returns the system-default client from config.py.
+        """
+        if api_key and base_url:
+            return httpx.AsyncClient(
+                base_url=base_url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=cls.DEFAULT_TIMEOUT,
+            )
+
+        # System default
         if cls._http is None:
             cls._http = httpx.AsyncClient(
                 base_url=settings.laozhang_base_url,
@@ -123,6 +161,9 @@ class BaseClient:
         if cls._http is not None:
             await cls._http.aclose()
             cls._http = None
+        for key, client in cls._custom_openai.items():
+            await client.close()
+        cls._custom_openai.clear()
         logger.info("AI Hub clients closed")
 
     # ──────────── Retry wrapper ────────────

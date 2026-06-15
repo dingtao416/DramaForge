@@ -22,6 +22,7 @@ from app.core.security import CurrentUser, DbSession
 from app.engines.chat_engine import chat_engine
 from app.models.user import Conversation, Message, MessageRole
 from app.core.billing_deps import require_credits, require_premium_model_access
+from app.services.user_model_resolver import user_model_resolver
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -171,6 +172,9 @@ async def send_message(
 
     mode = request.mode or conversation.mode
 
+    # ── Resolve user's configured model & provider ─────────────
+    resolved = await user_model_resolver.resolve(db, user.id, "chat", model_hint=request.model)
+
     # ══════════════════════════════════════════════════════════
     # Streaming mode (SSE)
     # ══════════════════════════════════════════════════════════
@@ -193,8 +197,10 @@ async def send_message(
                     user_message=request.content,
                     mode=mode,
                     history=history,
-                    model=request.model,
+                    model=resolved.model_id,
                     temperature=request.temperature,
+                    api_key=resolved.api_key,
+                    base_url=resolved.base_url,
                 ):
                     event_type = event["type"]
                     event_data = event["data"]
@@ -249,8 +255,10 @@ async def send_message(
         user_message=request.content,
         mode=mode,
         history=history,
-        model=request.model,
+        model=resolved.model_id,
         temperature=request.temperature,
+        api_key=resolved.api_key,
+        base_url=resolved.base_url,
     )
 
     assistant_message = Message(

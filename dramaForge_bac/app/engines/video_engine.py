@@ -49,6 +49,9 @@ class VideoEngine:
         characters: list[Character],
         scenes: list[SceneLocation],
         shots_per_segment: int = 5,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
     ) -> list[dict]:
         """
         Use LLM to split an episode into structured segments and shots.
@@ -84,6 +87,9 @@ class VideoEngine:
             messages=messages,
             temperature=0.5,
             max_tokens=8192,
+            model=chat_model,
+            api_key=chat_api_key,
+            base_url=chat_base_url,
         )
 
         # Parse and resolve references
@@ -163,6 +169,12 @@ class VideoEngine:
         project_id: int,
         ep_num: int,
         style: str = "realistic",
+        image_model: str = None,
+        image_api_key: str = None,
+        image_base_url: str = None,
+        tts_model: str = None,
+        tts_api_key: str = None,
+        tts_base_url: str = None,
     ) -> Shot:
         """Generate image and audio for a single shot in parallel."""
         logger.info(f"VideoEngine: generating assets for shot={shot.id}")
@@ -198,13 +210,19 @@ class VideoEngine:
 
         # Image generation task
         image_path = storage.shot_image_path(project_id, ep_num, shot.index)
-        tasks.append(self._gen_image(image_prompt, str(image_path)))
+        tasks.append(self._gen_image(
+            image_prompt, str(image_path),
+            model=image_model, api_key=image_api_key, base_url=image_base_url,
+        ))
 
         # Audio generation task (if there's dialogue)
         audio_path = None
         if shot.dialogue:
             audio_path = storage.shot_audio_path(project_id, ep_num, shot.index)
-            tasks.append(self._gen_audio(shot.dialogue, str(audio_path), shot.voice_style))
+            tasks.append(self._gen_audio(
+                shot.dialogue, str(audio_path), shot.voice_style,
+                model=tts_model, api_key=tts_api_key, base_url=tts_base_url,
+            ))
         else:
             tasks.append(asyncio.sleep(0))  # placeholder
 
@@ -224,13 +242,21 @@ class VideoEngine:
 
         return shot
 
-    async def _gen_image(self, prompt: str, output_path: str):
+    async def _gen_image(self, prompt: str, output_path: str,
+                         model: str = None, api_key: str = None, base_url: str = None):
         """Generate an image."""
-        return await ai_hub.image.generate(prompt=prompt, output_path=output_path)
+        return await ai_hub.image.generate(
+            prompt=prompt, output_path=output_path,
+            model=model, api_key=api_key, base_url=base_url,
+        )
 
-    async def _gen_audio(self, text: str, output_path: str, voice_style: str = ""):
+    async def _gen_audio(self, text: str, output_path: str, voice_style: str = "",
+                         model: str = None, api_key: str = None, base_url: str = None):
         """Generate TTS audio."""
-        return await ai_hub.tts.speak(text=text, output_path=output_path)
+        return await ai_hub.tts.speak(
+            text=text, output_path=output_path,
+            model=model, api_key=api_key, base_url=base_url,
+        )
 
     # ═══════════════════════════════════════════════════════════════
     # Spec 24: Video strategy decision
@@ -264,6 +290,9 @@ class VideoEngine:
         segment: Segment,
         project_id: int,
         ep_num: int,
+        video_model: str = None,
+        video_api_key: str = None,
+        video_base_url: str = None,
     ) -> str:
         """Generate video for a segment based on strategy."""
         from app.services.ffmpeg import ffmpeg_service
@@ -304,6 +333,9 @@ class VideoEngine:
                     result = await ai_hub.video.generate(
                         prompt=video_prompt,
                         output_path=str(output_path),
+                        model=video_model,
+                        api_key=video_api_key,
+                        base_url=video_base_url,
                     )
 
         segment.video_url = storage.get_url(output_path)
@@ -322,6 +354,18 @@ class VideoEngine:
         project_id: int,
         style: str = "realistic",
         shots_per_segment: int = 5,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+        image_model: str = None,
+        image_api_key: str = None,
+        image_base_url: str = None,
+        tts_model: str = None,
+        tts_api_key: str = None,
+        tts_base_url: str = None,
+        video_model: str = None,
+        video_api_key: str = None,
+        video_base_url: str = None,
     ) -> list[Segment]:
         """
         Full pipeline: generate all segments and shots for an episode.
@@ -336,7 +380,8 @@ class VideoEngine:
 
         # Step 1: Split storyboard
         segments_data = await self.split_storyboard(
-            episode, characters, scenes, shots_per_segment
+            episode, characters, scenes, shots_per_segment,
+            chat_model=chat_model, chat_api_key=chat_api_key, chat_base_url=chat_base_url,
         )
 
         # Step 2: Create ORM objects (caller is responsible for DB session)
@@ -371,6 +416,12 @@ class VideoEngine:
         project_id: int,
         ep_num: int,
         style: str = "realistic",
+        image_model: str = None,
+        image_api_key: str = None,
+        image_base_url: str = None,
+        tts_model: str = None,
+        tts_api_key: str = None,
+        tts_base_url: str = None,
     ) -> Segment:
         """Generate all shot assets for a segment."""
         segment.status = SegmentStatus.GENERATING
@@ -378,7 +429,9 @@ class VideoEngine:
         for shot in segment.shots:
             try:
                 await self._generate_shot_assets(
-                    shot, characters, scenes, project_id, ep_num, style
+                    shot, characters, scenes, project_id, ep_num, style,
+                    image_model=image_model, image_api_key=image_api_key, image_base_url=image_base_url,
+                    tts_model=tts_model, tts_api_key=tts_api_key, tts_base_url=tts_base_url,
                 )
             except Exception as e:
                 logger.error(f"Shot asset generation failed: {e}")

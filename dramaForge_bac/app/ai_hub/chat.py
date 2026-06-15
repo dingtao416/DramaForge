@@ -29,6 +29,8 @@ class ChatService:
         temperature: float = None,
         max_tokens: int = None,
         response_format: dict = None,
+        api_key: str = None,
+        base_url: str = None,
         **kwargs,
     ) -> ChatResponse:
         """
@@ -66,7 +68,7 @@ class ChatService:
             params["response_format"] = response_format
         params.update(kwargs)
 
-        client = BaseClient.openai()
+        client = BaseClient.openai(api_key, base_url)
 
         resp = await BaseClient.with_retry(
             lambda: client.chat.completions.create(**params),
@@ -98,6 +100,8 @@ class ChatService:
         model: str = None,
         temperature: float = None,
         max_tokens: int = None,
+        api_key: str = None,
+        base_url: str = None,
         **kwargs,
     ) -> str:
         """
@@ -116,6 +120,8 @@ class ChatService:
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
+            api_key=api_key,
+            base_url=base_url,
             **kwargs,
         )
         return resp.content
@@ -128,6 +134,8 @@ class ChatService:
         model: str = None,
         temperature: float = 0.3,
         max_tokens: int = None,
+        api_key: str = None,
+        base_url: str = None,
         **kwargs,
     ) -> dict:
         """
@@ -147,6 +155,8 @@ class ChatService:
             temperature=temperature,
             max_tokens=max_tokens,
             response_format={"type": "json_object"},
+            api_key=api_key,
+            base_url=base_url,
             **kwargs,
         )
         return _parse_json(resp.content)
@@ -158,6 +168,8 @@ class ChatService:
         model: str = None,
         temperature: float = 0.3,
         max_tokens: int = None,
+        api_key: str = None,
+        base_url: str = None,
         **kwargs,
     ) -> dict:
         """
@@ -172,6 +184,8 @@ class ChatService:
             temperature=temperature,
             max_tokens=max_tokens,
             response_format={"type": "json_object"},
+            api_key=api_key,
+            base_url=base_url,
             **kwargs,
         )
         return _parse_json(resp.content)
@@ -183,6 +197,8 @@ class ChatService:
         model: str = None,
         temperature: float = None,
         max_tokens: int = None,
+        api_key: str = None,
+        base_url: str = None,
         **kwargs,
     ) -> AsyncIterator[str]:
         """
@@ -203,7 +219,7 @@ class ChatService:
 
         logger.info(f"chat.stream | model={use_model}")
 
-        client = BaseClient.openai()
+        client = BaseClient.openai(api_key, base_url)
         resp_stream = await client.chat.completions.create(
             model=use_model,
             messages=msg_dicts,
