@@ -32,6 +32,12 @@ class AssetsEngine:
         characters: list[Character],
         scenes: list[SceneLocation],
         project_id: int,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+        image_model: str = None,
+        image_api_key: str = None,
+        image_base_url: str = None,
     ) -> tuple[list[Character], list[SceneLocation]]:
         """
         Generate descriptions and images for all characters and scenes in parallel.
@@ -48,11 +54,19 @@ class AssetsEngine:
 
         # Generate descriptions & images concurrently
         char_tasks = [
-            self._generate_character(ch, synopsis, project_id)
+            self._generate_character(
+                ch, synopsis, project_id,
+                chat_model=chat_model, chat_api_key=chat_api_key, chat_base_url=chat_base_url,
+                image_model=image_model, image_api_key=image_api_key, image_base_url=image_base_url,
+            )
             for ch in characters
         ]
         scene_tasks = [
-            self._generate_scene(sc, script, project_id)
+            self._generate_scene(
+                sc, script, project_id,
+                chat_model=chat_model, chat_api_key=chat_api_key, chat_base_url=chat_base_url,
+                image_model=image_model, image_api_key=image_api_key, image_base_url=image_base_url,
+            )
             for sc in scenes
         ]
 
@@ -84,6 +98,12 @@ class AssetsEngine:
         character: Character,
         synopsis: str,
         project_id: int,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+        image_model: str = None,
+        image_api_key: str = None,
+        image_base_url: str = None,
     ) -> Character:
         """Generate description and image for a single character."""
         logger.info(f"AssetsEngine: generating character '{character.name}'")
@@ -98,6 +118,9 @@ class AssetsEngine:
         desc_data = await ai_hub.chat.complete_json(
             messages=messages,
             temperature=0.5,
+            model=chat_model,
+            api_key=chat_api_key,
+            base_url=chat_base_url,
         )
 
         # Update character fields
@@ -111,6 +134,9 @@ class AssetsEngine:
             result = await ai_hub.image.generate(
                 prompt=image_prompt,
                 output_path=str(image_path),
+                model=image_model,
+                api_key=image_api_key,
+                base_url=image_base_url,
             )
             character.reference_images = [storage.get_url(image_path)]
 
@@ -121,6 +147,12 @@ class AssetsEngine:
         scene: SceneLocation,
         script: Script,
         project_id: int,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+        image_model: str = None,
+        image_api_key: str = None,
+        image_base_url: str = None,
     ) -> SceneLocation:
         """Generate description and image for a single scene."""
         logger.info(f"AssetsEngine: generating scene '{scene.name}'")
@@ -137,6 +169,9 @@ class AssetsEngine:
         desc_data = await ai_hub.chat.complete_json(
             messages=messages,
             temperature=0.5,
+            model=chat_model,
+            api_key=chat_api_key,
+            base_url=chat_base_url,
         )
 
         # Update scene description
@@ -151,6 +186,9 @@ class AssetsEngine:
                 await ai_hub.image.generate(
                     prompt=prompt,
                     output_path=str(image_path),
+                    model=image_model,
+                    api_key=image_api_key,
+                    base_url=image_base_url,
                 )
                 urls.append(storage.get_url(image_path))
             except Exception as e:

@@ -86,6 +86,8 @@ class VideoService:
         seconds: str = None,
         use_async: bool = None,
         fallback: bool = True,
+        api_key: str = None,
+        base_url: str = None,
     ) -> VideoResponse:
         """
         Generate a video from a text prompt with auto-fallback.
@@ -110,7 +112,7 @@ class VideoService:
 
         # If explicit model given, just try that one
         if model:
-            return await self._try_model(prompt, out, model, size, seconds, use_async)
+            return await self._try_model(prompt, out, model, size, seconds, use_async, api_key, base_url)
 
         # Otherwise, walk the fallback chain
         models_to_try = self._fallback_chain if fallback else [self._fallback_chain[0]]
@@ -123,7 +125,7 @@ class VideoService:
                     f"model={try_model}"
                 )
                 result = await self._try_model(
-                    prompt, out, try_model, size, seconds, use_async
+                    prompt, out, try_model, size, seconds, use_async, api_key, base_url
                 )
                 if idx > 1:
                     logger.info(
@@ -197,6 +199,8 @@ class VideoService:
         size: str = None,
         seconds: str = None,
         use_async: bool = None,
+        api_key: str = None,
+        base_url: str = None,
     ) -> VideoResponse:
         """Try generating video with a single model."""
         is_async_model = model in ASYNC_MODELS
@@ -207,16 +211,18 @@ class VideoService:
                 prompt, out, model,
                 size or settings.video_size,
                 seconds or settings.video_seconds,
+                api_key, base_url,
             )
         else:
-            return await self._sync_generate(prompt, out, model)
+            return await self._sync_generate(prompt, out, model, api_key, base_url)
 
     async def _sync_generate(
-        self, prompt: str, out: Path, model: str
+        self, prompt: str, out: Path, model: str,
+        api_key: str = None, base_url: str = None,
     ) -> VideoResponse:
         """Sync video gen via chat completions endpoint."""
         logger.info(f"video sync | model={model}")
-        client = BaseClient.openai()
+        client = BaseClient.openai(api_key, base_url)
 
         resp = await BaseClient.with_retry(
             lambda: client.chat.completions.create(
@@ -246,10 +252,11 @@ class VideoService:
             )
 
     async def _async_generate(
-        self, prompt: str, out: Path, model: str, size: str, seconds: str
+        self, prompt: str, out: Path, model: str, size: str, seconds: str,
+        api_key: str = None, base_url: str = None,
     ) -> VideoResponse:
         """Async video gen: submit -> poll -> download."""
-        http = BaseClient.http()
+        http = BaseClient.http(api_key, base_url)
 
         logger.info(f"video async submit | model={model}")
         submit_resp = await BaseClient.with_retry(

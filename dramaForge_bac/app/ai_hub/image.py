@@ -37,6 +37,8 @@ class ImageService:
         *,
         model: str = None,
         size: str = None,
+        api_key: str = None,
+        base_url: str = None,
         **kwargs,
     ) -> ImageResponse:
         """
@@ -64,10 +66,10 @@ class ImageService:
 
         # Try b64_json first (works for most models)
         try:
-            return await self._generate_b64(prompt, out, use_model, use_size)
+            return await self._generate_b64(prompt, out, use_model, use_size, api_key, base_url)
         except Exception as e:
             logger.warning(f"b64_json not supported, falling back to url: {e}")
-            return await self._generate_url(prompt, out, use_model, use_size)
+            return await self._generate_url(prompt, out, use_model, use_size, api_key, base_url)
 
     async def generate_batch(
         self,
@@ -77,6 +79,8 @@ class ImageService:
         model: str = None,
         size: str = None,
         prefix: str = "img",
+        api_key: str = None,
+        base_url: str = None,
     ) -> list[ImageResponse | dict]:
         """
         Generate multiple images. Failures are logged but don't stop the batch.
@@ -93,7 +97,8 @@ class ImageService:
             path = str(out_dir / f"{prefix}_{idx:03d}.png")
             try:
                 result = await self.generate(
-                    prompt=prompt, output_path=path, model=model, size=size
+                    prompt=prompt, output_path=path, model=model, size=size,
+                    api_key=api_key, base_url=base_url,
                 )
                 results.append(result)
                 logger.info(f"image batch [{idx}/{total}] OK")
@@ -106,10 +111,11 @@ class ImageService:
     # ──────────── Internal ────────────
 
     async def _generate_b64(
-        self, prompt: str, out: Path, model: str, size: str
+        self, prompt: str, out: Path, model: str, size: str,
+        api_key: str = None, base_url: str = None,
     ) -> ImageResponse:
         """Generate with base64 response - decode & save."""
-        client = BaseClient.openai()
+        client = BaseClient.openai(api_key, base_url)
 
         resp = await BaseClient.with_retry(
             lambda: client.images.generate(
@@ -135,10 +141,11 @@ class ImageService:
         )
 
     async def _generate_url(
-        self, prompt: str, out: Path, model: str, size: str
+        self, prompt: str, out: Path, model: str, size: str,
+        api_key: str = None, base_url: str = None,
     ) -> ImageResponse:
         """Generate with URL response - download & save."""
-        client = BaseClient.openai()
+        client = BaseClient.openai(api_key, base_url)
 
         resp = await BaseClient.with_retry(
             lambda: client.images.generate(

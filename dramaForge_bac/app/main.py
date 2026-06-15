@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
-from app.api.v2 import projects, scripts, assets, episodes, storyboard, websocket, users, chat, billing, payment
+from app.api.v2 import projects, scripts, assets, episodes, storyboard, websocket, users, chat, billing, payment, user_ai_config
 from app.core.config import settings
 
 
@@ -76,7 +76,8 @@ def create_app() -> FastAPI:
     app.include_router(users.router,      prefix=prefix, tags=["User"])
     app.include_router(chat.router,       prefix=prefix, tags=["Chat"])
     app.include_router(billing.router,    prefix=prefix, tags=["Billing"])
-    app.include_router(payment.router,    prefix=prefix, tags=["Payment"])
+    app.include_router(payment.router,       prefix=prefix, tags=["Payment"])
+    app.include_router(user_ai_config.router, prefix=prefix, tags=["User AI Config"])
 
     # ── Static files (generated assets) ─────────────────────────
     storage_dir = Path(settings.storage_dir)

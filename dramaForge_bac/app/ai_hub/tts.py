@@ -45,6 +45,8 @@ class TTSService:
         voice: str = None,
         speed: float = None,
         response_format: str = "mp3",
+        api_key: str = None,
+        base_url: str = None,
     ) -> TTSResponse:
         """
         Convert text to speech audio file.
@@ -72,7 +74,7 @@ class TTSService:
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
 
-        client = BaseClient.openai()
+        client = BaseClient.openai(api_key, base_url)
 
         resp = await BaseClient.with_retry(
             lambda: client.audio.speech.create(
@@ -112,6 +114,8 @@ class TTSService:
         model: str = None,
         voice: str = None,
         prefix: str = "audio",
+        api_key: str = None,
+        base_url: str = None,
     ) -> list[TTSResponse | dict]:
         """
         Batch TTS generation.
@@ -145,6 +149,8 @@ class TTSService:
                     output_path=path,
                     model=model,
                     voice=item_voice,
+                    api_key=api_key,
+                    base_url=base_url,
                 )
                 results.append(result)
                 logger.info(f"tts batch [{idx}/{total}] OK")

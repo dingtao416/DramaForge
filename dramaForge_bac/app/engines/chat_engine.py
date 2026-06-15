@@ -112,6 +112,8 @@ class ChatEngine:
         mode: str | None = None,
         history: list[ChatMessage] | None = None,
         project_context: str | None = None,
+        api_key: str = None,
+        base_url: str = None,
         model: str | None = None,
         temperature: float | None = None,
     ) -> str:
@@ -131,6 +133,8 @@ class ChatEngine:
             messages=messages,
             model=model,
             temperature=temperature,
+            api_key=api_key,
+            base_url=base_url,
         )
         return resp.content
 
@@ -141,6 +145,8 @@ class ChatEngine:
         mode: str | None = None,
         history: list[ChatMessage] | None = None,
         project_context: str | None = None,
+        api_key: str = None,
+        base_url: str = None,
         model: str | None = None,
         temperature: float | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
@@ -166,6 +172,8 @@ class ChatEngine:
                 messages=messages,
                 model=model,
                 temperature=temperature,
+                api_key=api_key,
+                base_url=base_url,
             ):
                 yield {"type": "content", "data": chunk}
 
