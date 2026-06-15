@@ -12,7 +12,7 @@ from typing import Any, AsyncIterator, Optional
 from loguru import logger
 
 from app.core.config import settings
-from app.ai_hub._client import BaseClient
+from app.ai_hub._client import BaseClient, HubClientError
 from app.ai_hub._models import ChatMessage, ChatResponse
 
 
@@ -75,12 +75,18 @@ class ChatService:
             label=f"chat:{use_model}",
         )
 
+        if not resp.choices:
+            raise HubClientError(
+                f"API returned empty choices for model '{use_model}'. "
+                f"The model may not be available at this endpoint.",
+                status_code=0,
+            )
         result = ChatResponse(
             content=resp.choices[0].message.content or "",
             model=resp.model,
-            prompt_tokens=resp.usage.prompt_tokens,
-            completion_tokens=resp.usage.completion_tokens,
-            total_tokens=resp.usage.total_tokens,
+            prompt_tokens=resp.usage.prompt_tokens if resp.usage else 0,
+            completion_tokens=resp.usage.completion_tokens if resp.usage else 0,
+            total_tokens=resp.usage.total_tokens if resp.usage else 0,
             finish_reason=resp.choices[0].finish_reason or "",
         )
 
@@ -230,6 +236,8 @@ class ChatService:
         )
 
         async for chunk in resp_stream:
+            if not chunk.choices:
+                continue
             delta = chunk.choices[0].delta.content
             if delta:
                 yield delta

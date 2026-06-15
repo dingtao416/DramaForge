@@ -233,6 +233,12 @@ class VideoService:
             label=f"video-sync:{model}",
         )
 
+        if not resp.choices:
+            raise HubClientError(
+                f"API returned empty choices for video model '{model}'. "
+                f"The model may not support video generation at this endpoint.",
+                status_code=0,
+            )
         content = resp.choices[0].message.content
         video_url = self._extract_video_url(content)
 

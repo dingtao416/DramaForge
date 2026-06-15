@@ -8,6 +8,7 @@ import type { ProjectList } from '@/types/project'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 import { useBillingStore } from '@/stores/billing'
+import { useUserAIConfigStore } from '@/stores/user-ai-config'
 import BottomSheet from '@/components/common/BottomSheet.vue'
         import ModalOverlay from '@/components/common/ModalOverlay.vue'
         import TopbarActions from '@/components/common/TopbarActions.vue'
@@ -16,6 +17,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 const billingStore = useBillingStore()
+const aiStore = useUserAIConfigStore()
 const userInput = ref('')
 const loading = ref(false)
 const recentProjects = ref<ProjectList[]>([])
@@ -156,48 +158,54 @@ interface ModelOption {
   premium?: boolean                                  // 是否需要付费会员
 }
 
-// ── Chat / LLM 模型 ──
-const chatModels: ModelOption[] = [
-  { id: 'gpt-4.1-mini',              name: 'GPT-4.1 Mini',           desc: '快速低成本，日常对话首选',        tag: '推荐',   modes: ['agent', 'drama', 'clip', 'longvideo2', 'image', 'longvideo'] },
-  { id: 'gpt-4o',                    name: 'GPT-4o',                 desc: '多模态理解，创意能力最强',        tag: '创意',   modes: ['agent', 'drama', 'clip', 'longvideo2'], premium: true },
-  { id: 'claude-sonnet-4-20250514',  name: 'Claude Sonnet 4',        desc: '长文本输出质量最佳，深度编剧',    tag: '高质量', modes: ['agent', 'drama'], premium: true },
-  { id: 'deepseek-v3.1',             name: 'DeepSeek V3.1',          desc: '中文理解好，性价比高',            tag: '性价比', modes: ['agent', 'drama', 'clip', 'longvideo2', 'image', 'longvideo'] },
-  { id: 'glm-4.5-flash',             name: 'GLM-4.5 Flash',          desc: '极速回复，接近免费',              tag: '极速',   modes: ['agent', 'drama', 'clip', 'longvideo2', 'image', 'longvideo'] },
-  { id: 'kimi-k2',                   name: 'Kimi K2',                desc: '联网搜索能力强，适合调研',                       modes: ['agent', 'drama'] },
-  { id: 'gemini-3-flash-preview',    name: 'Gemini 3 Flash',         desc: 'Google 快速模型，多模态',                        modes: ['agent', 'image'] },
-  { id: 'qwen-max',                  name: 'Qwen Max',               desc: '阿里通义主力，中文顶级',                         modes: ['agent', 'drama'] },
-]
+// ── 用户已配置的模型（从 AI 配置 Store 读取）──
+const userChatModels = computed<ModelOption[]>(() =>
+  aiStore.modelsByType.chat.map(m => ({
+    id: m.model_id,
+    name: m.display_name,
+    desc: `来自 ${m.provider_name}`,
+    tag: m.is_default ? '默认' : undefined,
+    modes: ['agent', 'drama', 'clip', 'longvideo2', 'image', 'longvideo'] as Mode[],
+  }))
+)
 
-// ── 视频生成模型 ──
-const videoModels: ModelOption[] = [
-  { id: 'seedance-2.0',   name: 'SeeDance 2.0',         desc: '火山引擎，高性价比，9:16竖版',     tag: '推荐',   modes: ['clip', 'longvideo2', 'longvideo'] },
-  { id: 'kling-v2.1',     name: 'Kling 可灵 V2.1',      desc: '最新版，效果最佳，Pro模式',        tag: '高质量', modes: ['clip', 'longvideo2', 'drama', 'longvideo'], premium: true },
-  { id: 'veo-3.1-fast',   name: 'VEO 3.1 Fast',         desc: 'Google 快速出片，按秒计费',        tag: '极速',   modes: ['clip', 'longvideo2', 'longvideo'], premium: true },
-  { id: 'wan-v2.1-i2v',   name: 'Wan 万象 图生视频',     desc: '阿里，图片驱动视频生成',                          modes: ['clip', 'longvideo2', 'longvideo'] },
-  { id: 'hailuo-01',      name: 'Hailuo 海螺',           desc: 'MiniMax，支持1080p高分辨率',                      modes: ['clip', 'longvideo2'] },
-  { id: 'runway-gen4',    name: 'Runway Gen-4',          desc: 'Runway 最新，运动控制优秀',                       modes: ['clip', 'longvideo2'] },
-  { id: 'vidu-2.5',       name: 'Vidu 2.5',              desc: '多分辨率支持，积分制计费',                         modes: ['clip', 'longvideo2', 'longvideo'] },
-  { id: 'sora-720p',      name: 'Sora 720p',             desc: 'OpenAI Sora，按秒计费',                           modes: ['clip', 'longvideo2'] },
-]
+const userVideoModels = computed<ModelOption[]>(() =>
+  aiStore.modelsByType.video.map(m => ({
+    id: m.model_id,
+    name: m.display_name,
+    desc: `来自 ${m.provider_name}`,
+    tag: m.is_default ? '默认' : undefined,
+    modes: ['agent', 'clip', 'longvideo2', 'drama', 'longvideo'] as Mode[],
+  }))
+)
 
-// ── 图片生成模型 ──
-const imageModels: ModelOption[] = [
-  { id: 'gpt-image-1-mini', name: 'GPT Image Mini',     desc: 'OpenAI 原生，质量好成本低',       tag: '推荐',   modes: ['agent', 'image', 'drama'] },
-  { id: 'gpt-image-1',      name: 'GPT Image 1',        desc: 'OpenAI 高质量图片生成',           tag: '高质量', modes: ['agent', 'image', 'drama'] },
-  { id: 'midjourney-imagine',name: 'Midjourney',         desc: '艺术质量最高，风格化出色',        tag: '艺术',   modes: ['agent', 'image'], premium: true },
-  { id: 'ideogram-v3',      name: 'Ideogram V3',        desc: '文字渲染能力强，适合海报',        tag: '文字',   modes: ['agent', 'image'] },
-]
+const userImageModels = computed<ModelOption[]>(() =>
+  aiStore.modelsByType.image.map(m => ({
+    id: m.model_id,
+    name: m.display_name,
+    desc: `来自 ${m.provider_name}`,
+    tag: m.is_default ? '默认' : undefined,
+    modes: ['agent', 'image', 'drama'] as Mode[],
+  }))
+)
 
-/** Get filtered models by current mode */
-const filteredChatModels = computed(() => chatModels.filter(m => m.modes.includes(currentMode.value)))
-const filteredVideoModels = computed(() => videoModels.filter(m => m.modes.includes(currentMode.value)))
-const filteredImageModels = computed(() => imageModels.filter(m => m.modes.includes(currentMode.value)))
+/** Get user-configured models (no mode filtering — user models available for all modes) */
+const filteredChatModels = computed(() => userChatModels.value)
+const filteredVideoModels = computed(() => userVideoModels.value)
+const filteredImageModels = computed(() => userImageModels.value)
+
+/** Whether user has any models configured at all */
+const hasAnyUserModels = computed(() =>
+  filteredChatModels.value.length > 0 ||
+  filteredVideoModels.value.length > 0 ||
+  filteredImageModels.value.length > 0
+)
 
 /** Current model display name */
 const selectedModelName = computed(() => {
   if (!selectedModel.value) return '自动'
-  const all = [...chatModels, ...videoModels, ...imageModels]
-  return all.find(m => m.id === selectedModel.value)?.name || '自动'
+  const all = [...userChatModels.value, ...userVideoModels.value, ...userImageModels.value]
+  return all.find(m => m.id === selectedModel.value)?.name || selectedModel.value
 })
 
 function selectModel(id: string) {
@@ -269,12 +277,14 @@ const featureCards = [
   } catch {}
 })()
 
-// Load chat conversations and billing on mount
+// Load chat conversations, billing, and AI config on mount
 onMounted(async () => {
   if (authStore.isLoggedIn) {
     await Promise.all([
       chatStore.fetchConversations(),
       billingStore.initialize(),
+      aiStore.fetchKeys(),
+      aiStore.fetchDefaults(),
     ])
   }
 })
@@ -799,73 +809,80 @@ function formatTime(isoStr: string): string {
                   </div>
                   <!-- Chat models -->
                   <template v-if="modelTab === 'chat'">
-                    <div class="model-section-label">对话模型 · {{ currentModeOption.label }}</div>
+                    <div class="model-section-label">对话模型 · 用户已配置</div>
+                    <div v-if="!filteredChatModels.length" class="text-center text-[13px] text-gray-400 py-6">
+                      <div class="text-[28px] mb-2">💬</div>
+                      暂未配置对话模型<br/>
+                      <span class="text-gray-300 text-[11px]">前往 设置 → AI 模型配置 添加</span>
+                    </div>
                     <div
                       v-for="m in filteredChatModels"
                       :key="m.id"
                       class="model-item"
-                      :class="[selectedModel === m.id ? 'model-item-active' : '', m.premium && billingStore.planCode === 'free' ? 'model-item-locked' : '']"
-                      @click="m.premium && billingStore.planCode === 'free' ? showSubscribeSheet = true : selectModel(m.id)"
+                      :class="selectedModel === m.id ? 'model-item-active' : ''"
+                      @click="selectModel(m.id)"
                     >
                       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M9 6v6M6 9h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
                           <span class="model-name">{{ m.name }}</span>
-                          <span v-if="m.tag" class="model-tag" :class="m.tag === '推荐' ? 'model-tag-rec' : ''">{{ m.tag }}</span>
-                          <span v-if="m.premium" class="model-tag-premium">PRO</span>
+                          <span v-if="m.tag" class="model-tag model-tag-rec">{{ m.tag }}</span>
                         </div>
                         <div class="model-desc">{{ m.desc }}</div>
                       </div>
-                      <svg v-if="m.premium && billingStore.planCode === 'free'" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0 text-amber-500"><path d="M7 1.5l1.5 3H12l-2.5 2 1 3.5L7 8l-3.5 2 1-3.5L2 4.5h3.5z" fill="currentColor"/></svg>
-                      <svg v-else-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <svg v-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </div>
                   </template>
                   <!-- Video models -->
                   <template v-if="modelTab === 'video'">
-                    <div class="model-section-label">视频模型 · {{ currentModeOption.label }}</div>
-                    <div v-if="!filteredVideoModels.length" class="text-center text-[13px] text-gray-400 py-4">当前模式无视频模型</div>
+                    <div class="model-section-label">视频模型 · 用户已配置</div>
+                    <div v-if="!filteredVideoModels.length" class="text-center text-[13px] text-gray-400 py-6">
+                      <div class="text-[28px] mb-2">🎬</div>
+                      暂未配置视频模型<br/>
+                      <span class="text-gray-300 text-[11px]">前往 设置 → AI 模型配置 添加</span>
+                    </div>
                     <div
                       v-for="m in filteredVideoModels"
                       :key="m.id"
                       class="model-item"
-                      :class="[selectedModel === m.id ? 'model-item-active' : '', m.premium && billingStore.planCode === 'free' ? 'model-item-locked' : '']"
-                      @click="m.premium && billingStore.planCode === 'free' ? showSubscribeSheet = true : selectModel(m.id)"
+                      :class="selectedModel === m.id ? 'model-item-active' : ''"
+                      @click="selectModel(m.id)"
                     >
                       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><rect x="3" y="4" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 7.5l4 2.5-4 2.5z" fill="currentColor"/></svg>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
                           <span class="model-name">{{ m.name }}</span>
-                          <span v-if="m.tag" class="model-tag" :class="m.tag === '推荐' ? 'model-tag-rec' : ''">{{ m.tag }}</span>
-                          <span v-if="m.premium" class="model-tag-premium">PRO</span>
+                          <span v-if="m.tag" class="model-tag model-tag-rec">{{ m.tag }}</span>
                         </div>
                         <div class="model-desc">{{ m.desc }}</div>
                       </div>
-                      <svg v-if="m.premium && billingStore.planCode === 'free'" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0 text-amber-500"><path d="M7 1.5l1.5 3H12l-2.5 2 1 3.5L7 8l-3.5 2 1-3.5L2 4.5h3.5z" fill="currentColor"/></svg>
-                      <svg v-else-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <svg v-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </div>
                   </template>
                   <!-- Image models -->
                   <template v-if="modelTab === 'image'">
-                    <div class="model-section-label">图片模型 · {{ currentModeOption.label }}</div>
-                    <div v-if="!filteredImageModels.length" class="text-center text-[13px] text-gray-400 py-4">当前模式无图片模型</div>
+                    <div class="model-section-label">图片模型 · 用户已配置</div>
+                    <div v-if="!filteredImageModels.length" class="text-center text-[13px] text-gray-400 py-6">
+                      <div class="text-[28px] mb-2">🎨</div>
+                      暂未配置图片模型<br/>
+                      <span class="text-gray-300 text-[11px]">前往 设置 → AI 模型配置 添加</span>
+                    </div>
                     <div
                       v-for="m in filteredImageModels"
                       :key="m.id"
                       class="model-item"
-                      :class="[selectedModel === m.id ? 'model-item-active' : '', m.premium && billingStore.planCode === 'free' ? 'model-item-locked' : '']"
-                      @click="m.premium && billingStore.planCode === 'free' ? showSubscribeSheet = true : selectModel(m.id)"
+                      :class="selectedModel === m.id ? 'model-item-active' : ''"
+                      @click="selectModel(m.id)"
                     >
                       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="model-icon"><rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="7.5" r="1.5" stroke="currentColor" stroke-width="1"/><path d="M3 13l3-4 2 2 3-3 4 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
                           <span class="model-name">{{ m.name }}</span>
-                          <span v-if="m.tag" class="model-tag" :class="m.tag === '推荐' ? 'model-tag-rec' : ''">{{ m.tag }}</span>
-                          <span v-if="m.premium" class="model-tag-premium">PRO</span>
+                          <span v-if="m.tag" class="model-tag model-tag-rec">{{ m.tag }}</span>
                         </div>
                         <div class="model-desc">{{ m.desc }}</div>
                       </div>
-                      <svg v-if="m.premium && billingStore.planCode === 'free'" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0 text-amber-500"><path d="M7 1.5l1.5 3H12l-2.5 2 1 3.5L7 8l-3.5 2 1-3.5L2 4.5h3.5z" fill="currentColor"/></svg>
-                      <svg v-else-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <svg v-if="selectedModel === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" class="shrink-0"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </div>
                   </template>
                 </div>

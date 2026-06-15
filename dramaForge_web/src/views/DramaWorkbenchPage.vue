@@ -6,9 +6,11 @@
   - 我的项目 (网格卡片)
 -->
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { projectsApi } from '@/api/projects'
+import { scriptsApi } from '@/api/scripts'
+import type { ScriptParseResult } from '@/api/scripts'
 import type { ProjectList } from '@/types/project'
 import TopbarActions from '@/components/common/TopbarActions.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -23,8 +25,13 @@ const activeTab = ref<'upload' | 'ai'>('upload')
 // ── Upload state ──
 const isDragging = ref(false)
 const uploadFile = ref<File | null>(null)
-const uploading = ref(false)
 const uploadError = ref('')
+
+// ── Preview state ──
+const parsedResult = ref<ScriptParseResult | null>(null)
+const parsing = ref(false)
+const creating = ref(false)
+const showFullPreview = ref(false)
 
 // ── AI generate state ──
 const aiPrompt = ref('')
@@ -32,6 +39,11 @@ const aiGenre = ref('都市')
 const aiEpisodes = ref(5)
 const generating = ref(false)
 const genreOptions = ['都市', '古装', '仙侠', '悬疑', '甜宠', '末世', '穿越', '逆袭', '复仇', '豪门']
+const genreMap: Record<string, string> = {
+  都市: 'urban', 古装: 'historical', 仙侠: 'fantasy', 悬疑: 'suspense',
+  甜宠: 'romance', 末世: 'other', 穿越: 'other', 逆袭: 'revenge',
+  复仇: 'revenge', 豪门: 'other',
+}
 
 // ── Projects ──
 const projects = ref<ProjectList[]>([])
@@ -91,6 +103,7 @@ function handleFileSelect(e: Event) {
 }
 function validateAndSetFile(file: File) {
   uploadError.value = ''
+  parsedResult.value = null
   const ext = file.name.split('.').pop()?.toLowerCase()
   if (!['docx', 'doc', 'txt'].includes(ext || '')) {
     uploadError.value = '仅支持 .docx / .doc / .txt 格式'
@@ -105,36 +118,115 @@ function validateAndSetFile(file: File) {
 function clearFile() {
   uploadFile.value = null
   uploadError.value = ''
+  parsedResult.value = null
 }
 
-async function handleUpload() {
+// ── Parse file (preview) ──
+async function handleParse() {
   if (!uploadFile.value) return
-  uploading.value = true
+  parsing.value = true
+  uploadError.value = ''
   try {
-    // TODO: call upload API → creates project → navigate
-    // const { data } = await projectsApi.uploadScript(uploadFile.value)
-    // router.push(`/projects/${data.id}/script`)
-    await new Promise(r => setTimeout(r, 1500)) // Simulate
-    alert('剧本上传成功！(接口对接中)')
+    const { data } = await scriptsApi.parse(uploadFile.value)
+    parsedResult.value = data
   } catch (e: any) {
-    uploadError.value = e.message || '上传失败'
+    uploadError.value = e?.response?.data?.detail || e.message || '解析失败，请检查文件格式'
   } finally {
-    uploading.value = false
+    parsing.value = false
   }
 }
+
+// ── Create project from parsed script ──
+async function handleCreateProject() {
+  if (!uploadFile.value || !parsedResult.value) return
+  creating.value = true
+  uploadError.value = ''
+  try {
+    // Step 1: Create a new project
+    const title = uploadFile.value.name.replace(/\.(docx|doc|txt)$/i, '').slice(0, 50)
+    const { data: project } = await projectsApi.create({
+      title,
+      genre: 'other',
+      style: '写实',
+    })
+    // Step 2: Upload script to the project
+    await scriptsApi.upload(project.id, uploadFile.value, 1)
+    // Step 3: Navigate to script page
+    router.push(`/projects/${project.id}/script`)
+  } catch (e: any) {
+    uploadError.value = e?.response?.data?.detail || e.message || '创建项目失败'
+  } finally {
+    creating.value = false
+  }
+}
+
+// ── Format text for preview ──
+interface FormattedLine {
+  type: 'scene' | 'dialogue' | 'action' | 'normal'
+  text: string
+  character?: string
+}
+
+const formattedPreview = computed<FormattedLine[]>(() => {
+  if (!parsedResult.value) return []
+  const lines = parsedResult.value.full_text.split('\n')
+  const result: FormattedLine[] = []
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      result.push({ type: 'normal', text: '' })
+      continue
+    }
+    // Scene header: 场景X：... or 【场景】
+    if (/^(场景\d*[：:]|第\d+[场景集幕场]|【场景|[Ss]cene\s*\d)/.test(trimmed)) {
+      result.push({ type: 'scene', text: trimmed })
+    }
+    // Dialogue: 角色名：对白
+    else if (/^[^\s:：]{1,10}[：:](?!\s*$)/.test(trimmed)) {
+      const match = trimmed.match(/^([^\s:：]{1,10})[：:](.*)/)
+      result.push({
+        type: 'dialogue',
+        text: match![2].trim(),
+        character: match![1].trim(),
+      })
+    }
+    // Action description
+    else if (/^[（(].*[）)]$|^\(|^（/.test(trimmed) || /动作|旁白|镜头|画面/.test(trimmed)) {
+      result.push({ type: 'action', text: trimmed })
+    }
+    // Default
+    else {
+      result.push({ type: 'normal', text: trimmed })
+    }
+  }
+  return result
+})
+
+const previewLines = computed(() => {
+  if (showFullPreview.value) return formattedPreview.value
+  return formattedPreview.value.slice(0, 80)
+})
 
 // ── AI Generate ──
 async function handleGenerate() {
   if (!aiPrompt.value.trim()) return
   generating.value = true
   try {
-    // TODO: call AI script gen API → creates project → navigate
-    // const { data } = await projectsApi.generateScript({ prompt, genre, episodes })
-    // router.push(`/projects/${data.id}/script`)
-    await new Promise(r => setTimeout(r, 2000))
-    alert('剧本生成成功！(接口对接中)')
+    const title = aiPrompt.value.slice(0, 30)
+    const { data: project } = await projectsApi.create({
+      title,
+      genre: aiGenre.value,
+      style: '写实',
+    })
+    await scriptsApi.generate(project.id, {
+      user_input: aiPrompt.value,
+      genre: genreMap[aiGenre.value] || 'other',
+      total_episodes: aiEpisodes.value,
+      duration_per_episode: 60,
+    })
+    router.push(`/projects/${project.id}/script`)
   } catch (e: any) {
-    uploadError.value = e.message || '生成失败'
+    uploadError.value = e?.response?.data?.detail || e.message || '生成失败'
   } finally {
     generating.value = false
   }
@@ -157,7 +249,6 @@ function getStepLabel(status: string) {
   return map[status] || '示例'
 }
 
-
 function getGenreLabel(genre: string) {
   const map: Record<string, string> = {
     romance: '甜宠', suspense: '悬疑', comedy: '搞笑',
@@ -166,6 +257,11 @@ function getGenreLabel(genre: string) {
   }
   return map[genre] || '短剧'
 }
+
+// Reset preview when file changes
+watch(uploadFile, () => {
+  parsedResult.value = null
+})
 </script>
 
 <template>
@@ -226,36 +322,111 @@ function getGenreLabel(genre: string) {
             @drop="handleDrop"
           >
             <template v-if="!uploadFile">
-              <p class="wb-upload-hint">支持 docx 格式，剧本字数不超过 10 万字，可拖拽至此处上传</p>
-              <label class="wb-upload-btn">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 5l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 10v3a1 1 0 001 1h10a1 1 0 001-1v-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                上传
-                <input type="file" accept=".docx,.doc,.txt" hidden @change="handleFileSelect" />
-              </label>
+              <div class="wb-upload-icon-area">
+                <svg width="48" height="48" viewBox="0 0 48 48" fill="none" class="wb-upload-cloud">
+                  <path d="M32 38h6a8 8 0 10-1.5-15.8A12 12 0 1012 30h20" stroke="#d4d4d8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M24 20v14M18 28l6-6 6 6" stroke="#d4d4d8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <p class="wb-upload-hint">支持 .docx / .doc / .txt 格式<br/>剧本字数不超过 10 万字，可拖拽至此处上传</p>
+                <label class="wb-upload-btn">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 5l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 10v3a1 1 0 001 1h10a1 1 0 001-1v-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                  选择文件
+                  <input type="file" accept=".docx,.doc,.txt" hidden @change="handleFileSelect" />
+                </label>
+              </div>
             </template>
             <template v-else>
+              <!-- File selected, not yet parsed -->
               <div class="wb-file-info">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><rect x="4" y="2" width="16" height="20" rx="2" stroke="#7c3aed" stroke-width="1.5"/><path d="M8 7h8M8 11h6M8 15h4" stroke="#7c3aed" stroke-width="1.3" stroke-linecap="round"/></svg>
+                <div class="wb-file-icon-box">
+                  <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="5" y="2" width="18" height="24" rx="3" stroke="#7c3aed" stroke-width="1.6"/><path d="M9 8h10M9 13h8M9 18h6" stroke="#7c3aed" stroke-width="1.4" stroke-linecap="round"/></svg>
+                </div>
                 <div class="wb-file-detail">
                   <span class="wb-file-name">{{ uploadFile.name }}</span>
                   <span class="wb-file-size">{{ (uploadFile.size / 1024).toFixed(1) }} KB</span>
                 </div>
-                <button class="wb-file-remove" @click="clearFile">✕</button>
+                <button class="wb-file-remove" @click="clearFile" :disabled="parsing || creating">✕</button>
               </div>
-              <button
-                class="wb-submit-btn"
-                :disabled="uploading"
-                @click="handleUpload"
-              >
-                <template v-if="uploading">
-                  <div class="wb-spinner" />
-                  上传中...
-                </template>
-                <template v-else>开始创作</template>
-              </button>
+              <div class="wb-upload-actions">
+                <button class="wb-submit-btn" :disabled="parsing" @click="handleParse">
+                  <template v-if="parsing">
+                    <div class="wb-spinner" />
+                    解析中...
+                  </template>
+                  <template v-else>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h4M10 4h4M2 8h8M13 8h1M2 12h2M7 12h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                    解析预览
+                  </template>
+                </button>
+              </div>
             </template>
           </div>
           <p v-if="uploadError" class="wb-error">{{ uploadError }}</p>
+
+          <!-- ═══ Parsed Preview ═══ -->
+          <div v-if="parsedResult" class="wb-preview-panel">
+            <!-- Preview Header -->
+            <div class="wb-preview-header">
+              <div class="wb-preview-title-row">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="1" width="14" height="18" rx="2" stroke="#10B981" stroke-width="1.4"/><path d="M7 6h6M7 9.5h5M7 13h3" stroke="#10B981" stroke-width="1.2" stroke-linecap="round"/></svg>
+                <span class="wb-preview-title">剧本预览</span>
+                <span class="wb-preview-badge">{{ parsedResult.file_type.toUpperCase() }}</span>
+              </div>
+              <div class="wb-preview-meta">
+                <span>{{ parsedResult.filename }}</span>
+                <span class="wb-meta-dot">·</span>
+                <span>{{ parsedResult.char_count.toLocaleString() }} 字</span>
+              </div>
+            </div>
+
+            <!-- Preview Content -->
+            <div class="wb-preview-content" :class="{ expanded: showFullPreview }">
+              <div v-for="(line, idx) in previewLines" :key="idx" class="wb-script-line" :class="'wb-line-' + line.type">
+                <!-- Scene header -->
+                <template v-if="line.type === 'scene'">
+                  <span class="wb-scene-marker">🎬 场景</span>
+                  <span class="wb-scene-text">{{ line.text }}</span>
+                </template>
+                <!-- Dialogue -->
+                <template v-else-if="line.type === 'dialogue'">
+                  <span class="wb-char-name">{{ line.character }}</span>
+                  <span class="wb-dialogue-sep">：</span>
+                  <span class="wb-dialogue-text">{{ line.text }}</span>
+                </template>
+                <!-- Action -->
+                <template v-else-if="line.type === 'action'">
+                  <span class="wb-action-text">{{ line.text }}</span>
+                </template>
+                <!-- Normal / Empty -->
+                <template v-else>
+                  <span v-if="line.text" class="wb-normal-text">{{ line.text }}</span>
+                  <span v-else class="wb-empty-line">&nbsp;</span>
+                </template>
+              </div>
+            </div>
+
+            <!-- Expand / Collapse -->
+            <div v-if="formattedPreview.length > 80" class="wb-preview-expand">
+              <button class="wb-expand-btn" @click="showFullPreview = !showFullPreview">
+                {{ showFullPreview ? '收起预览' : `展开全部（共 ${formattedPreview.length} 行）` }}
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" :class="{ rotated: showFullPreview }"><path d="M3.5 5L7 8.5L10.5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+
+            <!-- Create Project Button -->
+            <div class="wb-preview-footer">
+              <button class="wb-create-btn" :disabled="creating" @click="handleCreateProject">
+                <template v-if="creating">
+                  <div class="wb-spinner" />
+                  创建项目中...
+                </template>
+                <template v-else>
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2l2.3 4.6L16 7.5l-3.5 3.4L13.4 16 9 13.6 4.6 16l.9-5.1L2 7.5l4.7-.9L9 2z" fill="currentColor"/></svg>
+                  确认创建项目
+                </template>
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- AI Generate Panel -->
@@ -897,5 +1068,240 @@ function getGenreLabel(genre: string) {
 }
 @keyframes wbspin {
   to { transform: rotate(360deg); }
+}
+
+/* ══════════════════════════════════════════════════════
+   Upload Icon Area
+   ══════════════════════════════════════════════════════ */
+.wb-upload-icon-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.wb-upload-cloud {
+  opacity: 0.5;
+}
+
+/* Upload Actions */
+.wb-upload-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+/* File Icon Box */
+.wb-file-icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #F3F0FF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════════════
+   Preview Panel
+   ══════════════════════════════════════════════════════ */
+.wb-preview-panel {
+  margin-top: 24px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+
+/* Preview Header */
+.wb-preview-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #f3f4f6;
+  background: #fafbfc;
+}
+.wb-preview-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.wb-preview-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+}
+.wb-preview-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #059669;
+  background: #ECFDF5;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+.wb-preview-meta {
+  font-size: 13px;
+  color: #9ca3af;
+  padding-left: 30px;
+}
+.wb-meta-dot {
+  margin: 0 6px;
+  color: #d1d5db;
+}
+
+/* Preview Content */
+.wb-preview-content {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 20px 24px;
+  background: #fefefe;
+  border-bottom: 1px solid #f3f4f6;
+  line-height: 1.9;
+  font-size: 14px;
+}
+.wb-preview-content.expanded {
+  max-height: none;
+}
+
+/* Script Line Styles */
+.wb-script-line {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-height: 1.5em;
+}
+.wb-script-line + .wb-script-line {
+  margin-top: 2px;
+}
+
+/* Scene line */
+.wb-line-scene {
+  background: #FFFBEB;
+  margin: 12px 0 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border-left: 3px solid #F59E0B;
+  font-weight: 600;
+}
+.wb-scene-marker {
+  font-size: 12px;
+  color: #D97706;
+  margin-right: 8px;
+  flex-shrink: 0;
+  font-weight: 700;
+}
+.wb-scene-text {
+  color: #92400E;
+  font-size: 14px;
+}
+
+/* Dialogue line */
+.wb-line-dialogue {
+  padding: 3px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.wb-line-dialogue:hover {
+  background: #F5F3FF;
+}
+.wb-char-name {
+  color: #7C3AED;
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+  min-width: 3em;
+  text-align: right;
+}
+.wb-dialogue-sep {
+  color: #d1d5db;
+  margin: 0 2px;
+}
+.wb-dialogue-text {
+  color: #1f2937;
+  line-height: 1.7;
+}
+
+/* Action line */
+.wb-line-action {
+  padding: 3px 8px;
+  color: #6B7280;
+  font-style: italic;
+  font-size: 13px;
+}
+.wb-action-text {
+  color: #6B7280;
+}
+
+/* Normal line */
+.wb-normal-text {
+  color: #374151;
+}
+
+.wb-empty-line {
+  color: transparent;
+}
+
+/* Expand button */
+.wb-preview-expand {
+  text-align: center;
+  padding: 10px;
+  border-bottom: 1px solid #f3f4f6;
+}
+.wb-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
+  background: #fff;
+  font-size: 13px;
+  color: #6B7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.wb-expand-btn:hover {
+  background: #f9fafb;
+  color: #374151;
+  border-color: #d1d5db;
+}
+.wb-expand-btn svg {
+  transition: transform 0.2s;
+}
+.wb-expand-btn svg.rotated {
+  transform: rotate(180deg);
+}
+
+/* Preview Footer */
+.wb-preview-footer {
+  padding: 16px 24px;
+  display: flex;
+  justify-content: center;
+}
+.wb-create-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 48px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #7C3AED, #6D28D9);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(124,58,237,0.25);
+}
+.wb-create-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(124,58,237,0.35);
+}
+.wb-create-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 </style>

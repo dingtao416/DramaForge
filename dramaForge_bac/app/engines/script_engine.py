@@ -74,6 +74,50 @@ class ScriptEngine:
 
         return self._parse_script(raw_json, project.id)
 
+    async def parse_uploaded_file(self, file_path: str | Path) -> str:
+        """
+        Extract plain text from an uploaded file (.docx / .doc / .txt).
+
+        Returns:
+            Full text content of the file.
+        """
+        path = Path(file_path)
+        ext = path.suffix.lower()
+
+        if ext == ".txt":
+            return path.read_text(encoding="utf-8")
+
+        if ext in (".docx", ".doc"):
+            try:
+                from docx import Document
+            except ImportError:
+                raise ImportError("python-docx is required for document parsing")
+
+            try:
+                doc = Document(str(path))
+                full_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+                if not full_text:
+                    raise ValueError("No text extracted from document")
+                return full_text
+            except Exception:
+                # Fallback for .doc or unparseable files: try basic text extraction
+                try:
+                    raw = path.read_bytes()
+                    # Filter printable ASCII and common CJK from binary
+                    text = raw.decode("utf-8", errors="ignore")
+                    # Remove excessive non-text characters
+                    import re
+                    text = re.sub(r'[^一-鿿　-〿＀-￯a-zA-Z0-9\s\n\r,.;:!?、。；：！？…—""''（）【】《》\-\+]', '', text)
+                    text = re.sub(r'\n{3,}', '\n\n', text)
+                    text = re.sub(r' {3,}', '  ', text)
+                    if len(text.strip()) > 100:
+                        return text.strip()
+                except Exception:
+                    pass
+                raise ValueError("无法解析该文件，请转换为 .docx 或 .txt 格式后重试")
+
+        raise ValueError(f"不支持的文件格式: {ext}")
+
     async def create_from_docx(
         self,
         file_path: str | Path,
@@ -81,18 +125,12 @@ class ScriptEngine:
         total_episodes: int = 1,
     ) -> dict:
         """
-        Parse an uploaded .docx file into structured script data.
+        Parse an uploaded file (.docx/.doc/.txt) into structured script data.
 
         Returns:
             dict with keys: script, episodes, characters, scenes
         """
-        try:
-            from docx import Document
-        except ImportError:
-            raise ImportError("python-docx is required for docx parsing")
-
-        doc = Document(str(file_path))
-        full_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        full_text = await self.parse_uploaded_file(file_path)
 
         logger.info(f"ScriptEngine: parsing docx ({len(full_text)} chars)")
 

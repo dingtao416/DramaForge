@@ -23,7 +23,7 @@ import httpx
 from loguru import logger
 
 from app.core.config import settings
-from app.ai_hub._client import BaseClient
+from app.ai_hub._client import BaseClient, HubClientError
 from app.ai_hub._models import ImageResponse
 
 
@@ -128,6 +128,12 @@ class ImageService:
             label=f"image:{model}",
         )
 
+        if not resp.data:
+            raise HubClientError(
+                f"API returned empty data for image model '{model}'. "
+                f"The model may not support image generation at this endpoint.",
+                status_code=0,
+            )
         b64 = resp.data[0].b64_json
         image_bytes = base64.b64decode(b64)
         out.write_bytes(image_bytes)
@@ -158,6 +164,12 @@ class ImageService:
             label=f"image:{model}",
         )
 
+        if not resp.data:
+            raise HubClientError(
+                f"API returned empty data for image model '{model}'. "
+                f"The model may not support image generation at this endpoint.",
+                status_code=0,
+            )
         url = resp.data[0].url
         revised = getattr(resp.data[0], "revised_prompt", None)
 

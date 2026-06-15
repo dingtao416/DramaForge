@@ -25,6 +25,7 @@ from app.schemas.script import (
 )
 from app.engines.script_engine import script_engine
 from app.services.storage import storage
+from app.services.user_model_resolver import user_model_resolver
 from app.core.security import CurrentUser, DbSession
 from app.core.billing_deps import require_credits
 
@@ -73,6 +74,9 @@ async def generate_script(
         await db.delete(old_script)
         await db.flush()
 
+    # Resolve user's configured chat model
+    resolved = await user_model_resolver.resolve(db, user.id, "chat")
+
     # Generate via ScriptEngine
     result = await script_engine.create_from_text(
         user_input=body.user_input,
@@ -80,6 +84,9 @@ async def generate_script(
         genre=body.genre,
         total_episodes=body.total_episodes,
         duration=body.duration_per_episode,
+        chat_model=resolved.model_id,
+        chat_api_key=resolved.api_key,
+        chat_base_url=resolved.base_url,
     )
 
     # Create Script ORM object
@@ -116,6 +123,52 @@ async def generate_script(
     return script
 
 
+from pydantic import BaseModel, Field
+
+
+class ScriptParseResponse(BaseModel):
+    filename: str
+    file_type: str
+    char_count: int
+    full_text: str
+    preview: str = Field("", description="First 500 chars for display")
+
+
+@router.post("/scripts/parse", response_model=ScriptParseResponse)
+async def parse_script_file(
+    file: UploadFile = File(...),
+):
+    """
+    Parse an uploaded script file (.docx / .doc / .txt) and return its text content.
+
+    This is a preview-only endpoint — no project is created.
+    Use this to let users review the parsed content before creating a project.
+    """
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in ("docx", "doc", "txt"):
+        raise HTTPException(status_code=400, detail="仅支持 .docx / .doc / .txt 格式")
+
+    # Save to temp file
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+
+    try:
+        full_text = await script_engine.parse_uploaded_file(tmp_path)
+    finally:
+        import os
+        os.unlink(tmp_path)
+
+    return ScriptParseResponse(
+        filename=file.filename,
+        file_type=ext,
+        char_count=len(full_text),
+        full_text=full_text,
+        preview=full_text[:500],
+    )
+
+
 @router.post("/projects/{project_id}/script/upload", response_model=ScriptDetail)
 async def upload_script(
     project_id: int,
@@ -123,11 +176,12 @@ async def upload_script(
     total_episodes: int = 1,
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload a .docx script file."""
+    """Upload a .docx/.doc/.txt script file."""
     project = await _get_project(project_id, db)
 
-    if not file.filename.endswith(".docx"):
-        raise HTTPException(status_code=400, detail="Only .docx files are supported")
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in ("docx", "doc", "txt"):
+        raise HTTPException(status_code=400, detail="仅支持 .docx / .doc / .txt 格式")
 
     # Save uploaded file
     dest = storage.upload_path(project_id, file.filename)
