@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Any, AsyncIterator, Optional
 
 from loguru import logger
 
@@ -63,16 +63,78 @@ class ScriptEngine:
 
         logger.info(f"ScriptEngine: generating script for project={project.id}")
 
-        raw_json = await ai_hub.chat.complete_json(
+        # Dynamic max_tokens: base 6000 + 2500 per episode (Chinese ~1.5 tokens/char)
+        max_tokens = 6000 + total_episodes * 2500
+
+        # Use complete + manual JSON parse instead of complete_json
+        # to avoid response_format constraint that some API endpoints don't support
+        resp = await ai_hub.chat.complete(
             messages=messages,
             temperature=0.7,
-            max_tokens=8192,
+            max_tokens=max_tokens,
             model=chat_model,
             api_key=chat_api_key,
             base_url=chat_base_url,
         )
 
+        raw_json = self._parse_json_from_text(resp.content)
         return self._parse_script(raw_json, project.id)
+
+    async def create_from_text_stream(
+        self,
+        user_input: str,
+        project: Project,
+        *,
+        genre: str = None,
+        total_episodes: int = 1,
+        duration: int = 60,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """
+        AI-generate a structured script with streaming progress.
+
+        Yields:
+            {"type": "content", "data": "chunk..."}
+            {"type": "done", "data": {script, episodes, characters, scenes}}
+            {"type": "error", "data": "error message"}
+        """
+        genre = genre or project.genre.value if project.genre else "其他"
+        style = project.style.value if project.style else "写实"
+
+        messages = build_structured_prompt(
+            user_input=user_input,
+            genre=genre,
+            total_episodes=total_episodes,
+            duration=duration,
+            style=style,
+        )
+
+        max_tokens = 6000 + total_episodes * 2500
+
+        logger.info(f"ScriptEngine: generating script (stream) for project={project.id}")
+
+        try:
+            full_content = ""
+            async for chunk in ai_hub.chat.stream(
+                messages=messages,
+                temperature=0.7,
+                max_tokens=max_tokens,
+                model=chat_model,
+                api_key=chat_api_key,
+                base_url=chat_base_url,
+            ):
+                full_content += chunk
+                yield {"type": "content", "data": chunk}
+
+            raw_json = self._parse_json_from_text(full_content)
+            result = self._parse_script(raw_json, project.id)
+            yield {"type": "done", "data": result}
+
+        except Exception as exc:
+            logger.error(f"ScriptEngine stream error: {exc}")
+            yield {"type": "error", "data": str(exc)}
 
     async def parse_uploaded_file(self, file_path: str | Path) -> str:
         """
@@ -193,7 +255,76 @@ class ScriptEngine:
         )
         return result
 
+    async def rewrite_to_narration_stream(
+        self, script_content: str,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """
+        Rewrite a dialogue-style script into narration style with streaming.
+
+        Yields:
+            {"type": "content", "data": "chunk..."}
+            {"type": "done", "data": "full narration text"}
+            {"type": "error", "data": "error message"}
+        """
+        prompt = NARRATION_REWRITE_PROMPT.format(script_content=script_content)
+
+        logger.info("ScriptEngine: rewriting to narration style (stream)")
+
+        messages = [
+            {"role": "system", "content": SCRIPT_STRUCTURED_SYSTEM.replace("JSON", "纯文本")},
+            {"role": "user", "content": prompt},
+        ]
+
+        try:
+            full_content = ""
+            async for chunk in ai_hub.chat.stream(
+                messages=messages,
+                temperature=0.5,
+                max_tokens=4096,
+            ):
+                full_content += chunk
+                yield {"type": "content", "data": chunk}
+
+            yield {"type": "done", "data": full_content}
+
+        except Exception as exc:
+            logger.error(f"ScriptEngine rewrite stream error: {exc}")
+            yield {"type": "error", "data": str(exc)}
+
     # ── Internal Helpers ──────────────────────────────────────────
+
+    @staticmethod
+    def _parse_json_from_text(text: str) -> dict:
+        """Extract and parse JSON from LLM output, with fallback strategies."""
+        import json as _json
+
+        # Strategy 1: Direct parse
+        try:
+            return _json.loads(text)
+        except _json.JSONDecodeError:
+            pass
+
+        # Strategy 2: Extract from ```json ... ``` block
+        for fence in ("```json", "```"):
+            if fence in text:
+                inner = text.split(fence, 1)[1]
+                if "```" in inner:
+                    inner = inner.split("```", 1)[0]
+                try:
+                    return _json.loads(inner.strip())
+                except _json.JSONDecodeError:
+                    continue
+
+        # Strategy 3: Find first { to last }
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                return _json.loads(text[start:end + 1])
+            except _json.JSONDecodeError:
+                pass
+
+        raise ValueError(f"Cannot parse JSON from LLM output (length={len(text)})")
 
     def _parse_script(self, raw_json: dict, project_id: int) -> dict:
         """

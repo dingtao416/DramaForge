@@ -1,7 +1,7 @@
 /**
  * DramaForge — Chat Store (Pinia)
  * Manages conversations, messages, and SSE streaming state.
- * Designed for the HomePage inline chat experience.
+ * Features typewriter-effect text rendering for polished AI responses.
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
@@ -22,24 +22,75 @@ export interface UIMessage {
   created_at: string
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Typewriter config
+// ═══════════════════════════════════════════════════════════════════
+const TYPEWRITER_TICK = 35        // ms between ticks
+const BURST_CHARS = 3             // chars per tick during initial burst
+const NORMAL_CHARS = 1            // chars per tick during normal pace
+const BURST_THRESHOLD = 20        // chars shown before switching to normal pace
+
 export const useChatStore = defineStore('chat', () => {
   // ═══════ State ═══════
   const conversations = ref<Conversation[]>([])
   const currentConversationId = ref<number | null>(null)
   const messages = ref<UIMessage[]>([])
   const isStreaming = ref(false)
-  const streamingContent = ref('')       // accumulates chunks during SSE
+  const isThinking = ref(false)          // waiting for first content chunk
+  const streamingContent = ref('')       // raw SSE accumulation
+  const displayContent = ref('')         // typewriter-smoothed display content
   const error = ref<string | null>(null)
   const isLoadingConversations = ref(false)
 
-  // AbortController for cancelling streams
+  // AbortController + typewriter timer
   let abortController: AbortController | null = null
+  let typewriterTimer: ReturnType<typeof setInterval> | null = null
+  let charBuffer = ''
 
   // ═══════ Getters ═══════
   const currentConversation = computed(() =>
     conversations.value.find(c => c.id === currentConversationId.value) ?? null
   )
   const hasMessages = computed(() => messages.value.length > 0)
+
+  // ═══════ Typewriter Engine ═══════
+
+  function startTypewriter() {
+    stopTypewriter(false)
+    isThinking.value = true
+    typewriterTimer = setInterval(() => {
+      if (charBuffer.length === 0) return
+
+      const shown = displayContent.value.length
+      const charsPerTick = shown < BURST_THRESHOLD ? BURST_CHARS : NORMAL_CHARS
+      const take = Math.min(charsPerTick, charBuffer.length)
+
+      displayContent.value += charBuffer.slice(0, take)
+      charBuffer = charBuffer.slice(take)
+
+      // Update last assistant message in place
+      const last = messages.value[messages.value.length - 1]
+      if (last && last.role === 'assistant') {
+        last.content = displayContent.value
+      }
+    }, TYPEWRITER_TICK)
+  }
+
+  function stopTypewriter(flush: boolean) {
+    if (typewriterTimer) {
+      clearInterval(typewriterTimer)
+      typewriterTimer = null
+    }
+    if (flush && charBuffer.length > 0) {
+      displayContent.value += charBuffer
+      charBuffer = ''
+      const last = messages.value[messages.value.length - 1]
+      if (last && last.role === 'assistant') {
+        last.content = displayContent.value
+      }
+    }
+    isThinking.value = false
+  }
 
   // ═══════ Actions ═══════
 
@@ -77,12 +128,15 @@ export const useChatStore = defineStore('chat', () => {
     currentConversationId.value = null
     messages.value = []
     streamingContent.value = ''
+    displayContent.value = ''
+    charBuffer = ''
     error.value = null
   }
 
   /**
-   * Send a message with SSE streaming.
-   * This is the core function for the HomePage chat experience.
+   * Send a message with SSE streaming + typewriter effect.
+   * Raw chunks accumulate in streamingContent, typewriter smoothly
+   * releases characters into displayContent → last message content.
    */
   async function sendMessage(
     content: string,
@@ -105,7 +159,7 @@ export const useChatStore = defineStore('chat', () => {
     }
     messages.value.push(userMsg)
 
-    // Add placeholder assistant message
+    // Add placeholder assistant message (empty — thinking dots will show)
     const assistantMsg: UIMessage = {
       id: null,
       role: 'assistant',
@@ -116,7 +170,13 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push(assistantMsg)
 
     isStreaming.value = true
+    isThinking.value = true
     streamingContent.value = ''
+    displayContent.value = ''
+    charBuffer = ''
+
+    // Start the typewriter engine
+    startTypewriter()
 
     // Create AbortController
     abortController = new AbortController()
@@ -136,7 +196,6 @@ export const useChatStore = defineStore('chat', () => {
         {
           onStart: (conversationId: number, title: string) => {
             currentConversationId.value = conversationId
-            // Update or add to conversation list
             const existing = conversations.value.find(c => c.id === conversationId)
             if (!existing) {
               conversations.value.unshift({
@@ -152,23 +211,25 @@ export const useChatStore = defineStore('chat', () => {
           },
           onContent: (chunk: string) => {
             streamingContent.value += chunk
-            // Update the last (assistant) message in place
-            const last = messages.value[messages.value.length - 1]
-            if (last && last.role === 'assistant') {
-              last.content = streamingContent.value
+            charBuffer += chunk
+            // Thinking ends as soon as we get first content
+            if (isThinking.value) {
+              isThinking.value = false
             }
           },
           onDone: (messageId: number) => {
-            // Finalize assistant message
+            // Flush remaining buffer immediately
+            stopTypewriter(true)
             const last = messages.value[messages.value.length - 1]
             if (last && last.role === 'assistant') {
               last.id = messageId
               last.isStreaming = false
+              last.content = displayContent.value
             }
           },
           onError: (errMsg: string) => {
+            stopTypewriter(true)
             error.value = errMsg
-            // Remove streaming indicator
             const last = messages.value[messages.value.length - 1]
             if (last && last.role === 'assistant') {
               last.isStreaming = false
@@ -182,10 +243,9 @@ export const useChatStore = defineStore('chat', () => {
       )
     } catch (e: any) {
       if (e.name !== 'AbortError') {
-        // Check for 402 insufficient credits
+        stopTypewriter(true)
         if (e.status === 402 || e.data?.code === 'INSUFFICIENT_CREDITS') {
           error.value = 'INSUFFICIENT_CREDITS'
-          // Remove the optimistic user and assistant messages
           messages.value = messages.value.slice(0, -2)
         } else {
           error.value = e.message || '发送失败'
@@ -198,7 +258,9 @@ export const useChatStore = defineStore('chat', () => {
       }
     } finally {
       isStreaming.value = false
+      isThinking.value = false
       streamingContent.value = ''
+      stopTypewriter(false)
       abortController = null
     }
   }
@@ -209,6 +271,7 @@ export const useChatStore = defineStore('chat', () => {
       abortController.abort()
       abortController = null
     }
+    stopTypewriter(true)
     isStreaming.value = false
     const last = messages.value[messages.value.length - 1]
     if (last && last.role === 'assistant') {
@@ -235,7 +298,9 @@ export const useChatStore = defineStore('chat', () => {
     currentConversationId,
     messages,
     isStreaming,
+    isThinking,
     streamingContent,
+    displayContent,
     error,
     isLoadingConversations,
     // Getters

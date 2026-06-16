@@ -24,7 +24,7 @@ watch(() => props.visible, (val) => {
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="visible" class="modal-overlay" @click.self="emit('close')">
+      <div v-if="visible" class="modal-overlay" >
         <div class="modal-panel" :style="{ maxWidth: width || '960px' }">
           <!-- Close button (top-right) -->
           <button class="modal-close" @click="emit('close')">

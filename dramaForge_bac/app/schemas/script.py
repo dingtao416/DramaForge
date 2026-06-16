@@ -46,6 +46,7 @@ class EpisodeBrief(BaseModel):
     id: int
     number: int
     title: Optional[str] = ""
+    content: Optional[str] = ""
     is_approved: bool = False
 
     model_config = {"from_attributes": True}

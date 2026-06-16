@@ -6,12 +6,16 @@ Endpoints for script generation, upload, editing, and approval.
 
 from __future__ import annotations
 
+import asyncio as _asyncio
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.database import get_db
+from app.core.database import AsyncSessionLocal as _AsyncSessionLocal, get_db
 from app.models.project import Project, ProjectStep
 from app.models.script import Script
 from app.models.episode import Episode
@@ -30,6 +34,12 @@ from app.core.security import CurrentUser, DbSession
 from app.core.billing_deps import require_credits
 
 router = APIRouter()
+
+
+def _sse_event(event: str, data: dict | str | None) -> str:
+    """Format a Server-Sent Event string."""
+    payload = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
+    return f"event: {event}\ndata: {payload}\n\n"
 
 
 async def _get_project(project_id: int, db: AsyncSession) -> Project:
@@ -121,6 +131,236 @@ async def generate_script(
     await db.flush()
     await db.refresh(script, attribute_names=["episodes"])
     return script
+
+
+# ── Background Generation Registry ──────────────────────────────────
+# Maps project_id → {queue, task, status, content_preview}
+# Survives SSE disconnects so generation continues even if user navigates away.
+
+_gen_registry: dict[int, dict] = {}
+
+
+async def _save_script_result(project_id: int, result: dict) -> int:
+    """Save generated script to DB using a fresh session. Returns script_id."""
+    async with _AsyncSessionLocal() as sess:
+        script = Script(project_id=project_id, **result["script"])
+        sess.add(script)
+        await sess.flush()
+
+        for ep_data in result["episodes"]:
+            episode = Episode(script_id=script.id, **ep_data)
+            sess.add(episode)
+
+        for ch_data in result["characters"]:
+            role_str = ch_data.pop("role", "supporting")
+            try:
+                role = CharacterRole(role_str)
+            except ValueError:
+                role = CharacterRole.SUPPORTING
+            character = Character(
+                project_id=project_id,
+                role=role,
+                **ch_data,
+            )
+            sess.add(character)
+
+        for sc_data in result["scenes"]:
+            scene = SceneLocation(project_id=project_id, **sc_data)
+            sess.add(scene)
+
+        await sess.commit()
+        await sess.refresh(script, attribute_names=["episodes"])
+        return script.id
+
+
+@router.get("/projects/{project_id}/script/generate-status")
+async def get_generate_status(project_id: int, user: CurrentUser):
+    """
+    Check if script generation is in progress for a project.
+    Returns: {status: "idle"|"generating"|"complete"|"error", content_length?: int, ...}
+    """
+    entry = _gen_registry.get(project_id)
+    if not entry:
+        return {"status": "idle"}
+    return {
+        "status": entry["status"],
+        "content_length": len(entry.get("content_preview", "")),
+    }
+
+
+@router.post("/projects/{project_id}/script/generate-stream")
+async def generate_script_stream(
+    project_id: int,
+    body: ScriptGenerateRequest,
+    user: CurrentUser,
+    db: DbSession,
+):
+    """
+    AI-generate a structured script with SSE streaming progress.
+
+    Generation runs as a background task — it survives page navigation.
+    Reconnect by calling this endpoint again or check status at /generate-status.
+
+    SSE events:
+        - delta      → {content: "chunk..."}
+        - done       → {script_id, episode_count, character_count, scene_count}
+        - error      → {message: "..."}
+        - heartbeat  → {} (every 15s to keep connection alive)
+    """
+    await require_credits(db, user.id, "script_gen", description="剧本 AI 生成(流式)")
+
+    project = await _get_project(project_id, db)
+
+    # Resolve user's configured chat model
+    resolved = await user_model_resolver.resolve(db, user.id, "chat")
+
+    # ── Check for existing generation ──
+    existing_entry = _gen_registry.get(project_id)
+    if existing_entry and existing_entry["status"] == "generating":
+        # Reconnect: replay accumulated content then continue streaming
+        queue = existing_entry["queue"]
+        accumulated = existing_entry.get("content_preview", "")
+
+        async def replay_generator():
+            # Send accumulated content as a single delta first
+            if accumulated:
+                yield _sse_event("delta", {"content": accumulated})
+            # Then continue reading from the live queue
+            try:
+                while True:
+                    try:
+                        event = await _asyncio.wait_for(queue.get(), timeout=15.0)
+                    except _asyncio.TimeoutError:
+                        yield _sse_event("heartbeat", {})
+                        continue
+                    if event["type"] == "content":
+                        yield _sse_event("delta", {"content": event["data"]})
+                    elif event["type"] == "done":
+                        yield _sse_event("done", {
+                            "script_id": event.get("script_id"),
+                            "episode_count": event.get("episode_count", 0),
+                            "character_count": event.get("character_count", 0),
+                            "scene_count": event.get("scene_count", 0),
+                        })
+                        break
+                    elif event["type"] == "error":
+                        yield _sse_event("error", {"message": event["data"]})
+                        break
+            except _asyncio.CancelledError:
+                pass
+
+        return StreamingResponse(
+            replay_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    # ── Start a new background generation ──
+    # Remove existing script if any
+    existing = await db.execute(
+        select(Script).where(Script.project_id == project_id)
+    )
+    old_script = existing.scalar_one_or_none()
+    if old_script:
+        await db.delete(old_script)
+        await db.flush()
+    # Commit now so background task's DB session won't be blocked by write lock
+    await db.commit()
+
+    queue: _asyncio.Queue = _asyncio.Queue()
+    entry = {
+        "queue": queue,
+        "status": "generating",
+        "content_preview": "",
+        "task": None,
+        "result": None,
+    }
+    _gen_registry[project_id] = entry
+
+    async def background_generator():
+        """Runs in background — survives SSE disconnect."""
+        content_buf = ""
+        try:
+            async for event in script_engine.create_from_text_stream(
+                user_input=body.user_input,
+                project=project,
+                genre=body.genre,
+                total_episodes=body.total_episodes,
+                duration=body.duration_per_episode,
+                chat_model=resolved.model_id,
+                chat_api_key=resolved.api_key,
+                chat_base_url=resolved.base_url,
+            ):
+                if event["type"] == "content":
+                    content_buf += event["data"]
+                    entry["content_preview"] = content_buf
+                    await queue.put(event)
+                elif event["type"] == "error":
+                    await queue.put(event)
+                    entry["status"] = "error"
+                    return
+                elif event["type"] == "done":
+                    # Save to DB with fresh session
+                    try:
+                        script_id = await _save_script_result(project_id, event["data"])
+                        event["data"]["script_id"] = script_id
+                        event["data"]["episode_count"] = len(event["data"].get("episodes", []))
+                        event["data"]["character_count"] = len(event["data"].get("characters", []))
+                        event["data"]["scene_count"] = len(event["data"].get("scenes", []))
+                    except Exception as exc:
+                        await queue.put({"type": "error", "data": f"DB save failed: {exc}"})
+                        entry["status"] = "error"
+                        return
+                    entry["result"] = event["data"]
+                    await queue.put(event)
+                    entry["status"] = "complete"
+                    return
+        except Exception as exc:
+            await queue.put({"type": "error", "data": str(exc)})
+            entry["status"] = "error"
+
+    task = _asyncio.create_task(background_generator())
+    entry["task"] = task
+
+    async def event_generator():
+        try:
+            while True:
+                try:
+                    event = await _asyncio.wait_for(queue.get(), timeout=15.0)
+                except _asyncio.TimeoutError:
+                    yield _sse_event("heartbeat", {})
+                    continue
+
+                if event["type"] == "content":
+                    yield _sse_event("delta", {"content": event["data"]})
+                elif event["type"] == "error":
+                    yield _sse_event("error", {"message": event["data"]})
+                    break
+                elif event["type"] == "done":
+                    yield _sse_event("done", {
+                        "script_id": event.get("script_id"),
+                        "episode_count": event.get("episode_count", 0),
+                        "character_count": event.get("character_count", 0),
+                        "scene_count": event.get("scene_count", 0),
+                    })
+                    break
+        except _asyncio.CancelledError:
+            # Client disconnected — background task keeps running
+            pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 from pydantic import BaseModel, Field
@@ -302,6 +542,67 @@ async def rewrite_narration(
     await db.flush()
     await db.refresh(script, attribute_names=["episodes"])
     return script
+
+
+@router.post("/projects/{project_id}/script/rewrite-narration-stream")
+async def rewrite_narration_stream(
+    project_id: int,
+    db: DbSession,
+    user: CurrentUser,
+):
+    """
+    Rewrite script from dialogue to narration style with SSE streaming.
+
+    SSE events:
+        - delta   → {content: "chunk..."}
+        - done    → {content: "full narration text"}
+        - error   → {message: "..."}
+    """
+    script = await _get_script(project_id, db)
+
+    # Collect all episode content
+    all_content = "\n\n".join(
+        ep.content for ep in script.episodes if ep.content
+    )
+    if not all_content:
+        raise HTTPException(status_code=400, detail="No script content to rewrite")
+
+    async def event_generator():
+        try:
+            async for event in script_engine.rewrite_to_narration_stream(all_content):
+                event_type = event["type"]
+                event_data = event["data"]
+
+                if event_type == "content":
+                    yield _sse_event("delta", {"content": event_data})
+                elif event_type == "error":
+                    yield _sse_event("error", {"message": event_data})
+                    return
+                elif event_type == "done":
+                    narration = event_data
+
+                    # Update script
+                    if len(script.episodes) == 1:
+                        script.episodes[0].content = narration
+                    else:
+                        script.raw_content = narration
+
+                    await db.commit()
+
+                    yield _sse_event("done", {"content": narration})
+
+        except Exception as exc:
+            yield _sse_event("error", {"message": str(exc)})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/projects/{project_id}/script/approve", response_model=ScriptDetail)

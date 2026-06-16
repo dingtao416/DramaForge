@@ -1,4 +1,5 @@
 import api from './client'
+import { getToken } from './client'
 import type { ScriptGenerateRequest, ScriptUpdate, ScriptDetail, EpisodeUpdate } from '@/types/script'
 
 export interface ScriptParseResult {
@@ -7,6 +8,13 @@ export interface ScriptParseResult {
   char_count: number
   full_text: string
   preview: string
+}
+
+export interface ScriptGenerateStreamResult {
+  script_id: number
+  episode_count: number
+  character_count: number
+  scene_count: number
 }
 
 export const scriptsApi = {
@@ -19,9 +27,11 @@ export const scriptsApi = {
     })
   },
 
-  /** AI 生成剧本 */
+  /** AI 生成剧本（超时 10 分钟，生成多集内容耗时较长） */
   generate(projectId: number, data: ScriptGenerateRequest) {
-    return api.post<ScriptDetail>(`/projects/${projectId}/script/generate`, data)
+    return api.post<ScriptDetail>(`/projects/${projectId}/script/generate`, data, {
+      timeout: 600_000, // 10 minutes for AI script generation
+    })
   },
 
   /** 上传剧本文件（需要先创建项目） */
@@ -57,5 +67,181 @@ export const scriptsApi = {
   /** 审核通过 */
   approve(projectId: number) {
     return api.post<ScriptDetail>(`/projects/${projectId}/script/approve`)
+  },
+
+  /**
+   * AI 生成剧本（SSE 流式）
+   * SSE events: delta → {content}, done → {script_id, episode_count, ...}, error → {message}
+   */
+  async generateStream(
+    projectId: number,
+    data: ScriptGenerateRequest,
+    handlers: {
+      onContent?: (chunk: string) => void
+      onDone?: (result: ScriptGenerateStreamResult) => void
+      onError?: (error: string) => void
+    },
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const token = getToken()
+
+    const response = await fetch(`/api/v2/projects/${projectId}/script/generate-stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: token ? `Bearer ${token}` : '',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify(data),
+      signal,
+    })
+
+    if (!response.ok) {
+      let errorMsg = '生成失败'
+      try {
+        const errorData = await response.json()
+        errorMsg = errorData?.detail || errorMsg
+      } catch { /* ignore */ }
+      throw new Error(errorMsg)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('Response body is not readable')
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const messages = buffer.split('\n\n')
+        buffer = messages.pop() ?? ''
+
+        for (const message of messages) {
+          let eventName = ''
+          let dataStr = ''
+
+          for (const line of message.split('\n')) {
+            if (line.startsWith('event: ')) {
+              eventName = line.slice(7).trim()
+            } else if (line.startsWith('data: ')) {
+              dataStr = line.slice(6).trim()
+            }
+          }
+
+          if (!dataStr || dataStr === '[DONE]') continue
+
+          try {
+            const payload = JSON.parse(dataStr)
+
+            switch (eventName) {
+              case 'delta':
+                handlers.onContent?.(payload.content ?? '')
+                break
+              case 'done':
+                handlers.onDone?.(payload)
+                break
+              case 'error':
+                handlers.onError?.(payload.message ?? '生成失败')
+                break
+            }
+          } catch (e) {
+            console.warn('[SSE] Failed to parse event:', eventName, dataStr)
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  },
+
+  /**
+   * 改写为旁白型（SSE 流式）
+   * SSE events: delta → {content}, done → {content}, error → {message}
+   */
+  async rewriteNarrationStream(
+    projectId: number,
+    handlers: {
+      onContent?: (chunk: string) => void
+      onDone?: (content: string) => void
+      onError?: (error: string) => void
+    },
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const token = getToken()
+
+    const response = await fetch(`/api/v2/projects/${projectId}/script/rewrite-narration-stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: token ? `Bearer ${token}` : '',
+        Accept: 'text/event-stream',
+      },
+      signal,
+    })
+
+    if (!response.ok) {
+      let errorMsg = '改写失败'
+      try {
+        const errorData = await response.json()
+        errorMsg = errorData?.detail || errorMsg
+      } catch { /* ignore */ }
+      throw new Error(errorMsg)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('Response body is not readable')
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const messages = buffer.split('\n\n')
+        buffer = messages.pop() ?? ''
+
+        for (const message of messages) {
+          let eventName = ''
+          let dataStr = ''
+
+          for (const line of message.split('\n')) {
+            if (line.startsWith('event: ')) {
+              eventName = line.slice(7).trim()
+            } else if (line.startsWith('data: ')) {
+              dataStr = line.slice(6).trim()
+            }
+          }
+
+          if (!dataStr || dataStr === '[DONE]') continue
+
+          try {
+            const payload = JSON.parse(dataStr)
+
+            switch (eventName) {
+              case 'delta':
+                handlers.onContent?.(payload.content ?? '')
+                break
+              case 'done':
+                handlers.onDone?.(payload.content ?? '')
+                break
+              case 'error':
+                handlers.onError?.(payload.message ?? '改写失败')
+                break
+            }
+          } catch (e) {
+            console.warn('[SSE] Failed to parse event:', eventName, dataStr)
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
   },
 }

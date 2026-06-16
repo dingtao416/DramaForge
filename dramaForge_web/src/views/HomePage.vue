@@ -80,60 +80,61 @@ function selectMode(mode: Mode) {
 
 // ── 优化提示词 ──
 const optimizing = ref(false)
+let optimizeAbortController: AbortController | null = null
 
 async function optimizePrompt() {
   const raw = userInput.value.trim()
   if (!raw || optimizing.value) return
 
   optimizing.value = true
-  try {
-    const modeLabel = currentModeOption.value?.label || '通用'
-    const systemPrompt = `你是一位专业的 AI 提示词优化专家。用户正在使用「${modeLabel}」模式。
+  userInput.value = ''
+
+  const modeLabel = currentModeOption.value?.label || '通用'
+  const fullMessage = `你是一位专业的 AI 提示词优化专家。用户正在使用「${modeLabel}」模式。
 请将用户输入的原始提示词优化为更详细、更专业、更能产出高质量结果的提示词。
 要求：
 1. 保留用户的核心意图
 2. 补充细节（风格、场景、情绪、镜头语言等）
 3. 使措辞更精准
 4. 直接输出优化后的提示词，不要解释
-5. 使用中文回复`
+5. 使用中文回复
 
-    const { sendMessage } = await import('@/api/chat')
-    const resp = await sendMessage.sendMessage({
-      content: `请优化以下提示词:\n\n${raw}`,
-      model: selectedModel.value || 'gpt-4.1-mini',
-      system_prompt: systemPrompt,
-    })
+原始提示词：
+${raw}`
 
-    if (resp?.data?.content) {
-      userInput.value = resp.data.content.trim()
-    }
-  } catch (e: any) {
-    // Fallback: use fetch directly to the chat API
-    try {
-      const token = localStorage.getItem('token')
-      const res = await fetch('/api/v2/chat/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  optimizeAbortController = new AbortController()
+
+  try {
+    const { sendMessageStream } = await import('@/api/chat')
+    let accumulated = ''
+
+    await sendMessageStream(
+      {
+        content: fullMessage,
+        mode: 'general',
+        model: selectedModel.value || undefined,
+      },
+      {
+        onContent: (chunk: string) => {
+          accumulated += chunk
+          userInput.value = accumulated
         },
-        body: JSON.stringify({
-          content: `你是提示词优化专家。请将以下提示词优化为更专业详细的版本，直接输出优化结果，不要解释：\n\n${raw}`,
-          model: selectedModel.value || 'gpt-4.1-mini',
-          stream: false,
-        }),
-      })
-      const data = await res.json()
-      if (data?.content) {
-        userInput.value = data.content.trim()
-      } else if (data?.data?.content) {
-        userInput.value = data.data.content.trim()
-      }
-    } catch {
-      // Silent fail — user keeps original prompt
+        onDone: () => {
+          userInput.value = accumulated.trim()
+        },
+        onError: (errMsg: string) => {
+          userInput.value = raw
+        },
+      },
+      optimizeAbortController.signal,
+    )
+  } catch (e: any) {
+    if (e.name !== 'AbortError') {
+      userInput.value = raw
     }
   } finally {
     optimizing.value = false
+    optimizeAbortController = null
   }
 }
 
@@ -296,8 +297,8 @@ watch(() => chatStore.messages.length, () => {
   })
 })
 
-// Also scroll during streaming content updates
-watch(() => chatStore.streamingContent, () => {
+// Also scroll during streaming content updates (typewriter-paced)
+watch(() => chatStore.displayContent, () => {
   nextTick(() => {
     messagesEndRef.value?.scrollIntoView({ behavior: 'smooth' })
   })
@@ -605,9 +606,18 @@ function formatTime(isoStr: string): string {
                   <div class="chat-time">{{ formatTime(msg.created_at) }}</div>
                 </div>
 
-                <!-- ── Assistant message (left-aligned, with tool calls) ── -->
+                <!-- ── Assistant message (left-aligned, with thinking/typing animation) ── -->
                 <div v-else class="chat-row-assistant">
-                  <div class="chat-assistant-text whitespace-pre-wrap">{{ msg.content }}<span v-if="msg.isStreaming" class="streaming-cursor">▍</span></div>
+                  <!-- Thinking dots: streaming but no content yet -->
+                  <div v-if="msg.isStreaming && !msg.content" class="chat-thinking">
+                    <span class="thinking-dot" />
+                    <span class="thinking-dot" />
+                    <span class="thinking-dot" />
+                  </div>
+                  <!-- Streaming content with cursor -->
+                  <div class="chat-assistant-text whitespace-pre-wrap">
+                    {{ msg.content }}<span v-if="msg.isStreaming && msg.content" class="streaming-cursor">|</span>
+                  </div>
                 </div>
               </div>
               <div ref="messagesEndRef" />
@@ -1988,22 +1998,54 @@ function formatTime(isoStr: string): string {
   word-break: break-word;
 }
 
-/* Streaming cursor */
+/* ── Thinking dots animation ── */
+.chat-thinking {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 0;
+}
+
+.thinking-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #c4b5fd;
+  animation: thinkingBounce 1.4s ease-in-out infinite both;
+}
+
+.thinking-dot:nth-child(1) { animation-delay: 0s; }
+.thinking-dot:nth-child(2) { animation-delay: 0.16s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.32s; }
+
+@keyframes thinkingBounce {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+    background: #c4b5fd;
+  }
+  40% {
+    transform: scale(1.15);
+    opacity: 1;
+    background: #7c3aed;
+  }
+}
+
+/* ── Streaming cursor ── */
 .streaming-cursor {
   display: inline-block;
   color: #7c3aed;
-  font-weight: 400;
-  animation: cursorBlink 0.8s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.2); }
+  font-weight: 500;
+  font-size: 16px;
+  line-height: 1;
+  vertical-align: text-bottom;
+  margin-left: 1px;
+  animation: cursorBlink 0.7s infinite;
 }
 
 @keyframes cursorBlink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
 }
 
 /* ─── Bottom Chat Input Bar ─── */

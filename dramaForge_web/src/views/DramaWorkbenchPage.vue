@@ -10,14 +10,16 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { projectsApi } from '@/api/projects'
 import { scriptsApi } from '@/api/scripts'
-import type { ScriptParseResult } from '@/api/scripts'
+import type { ScriptParseResult, ScriptGenerateStreamResult } from '@/api/scripts'
 import type { ProjectList } from '@/types/project'
 import TopbarActions from '@/components/common/TopbarActions.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useBillingStore } from '@/stores/billing'
+import { useGenerationStore } from '@/stores/generation'
 
 const router = useRouter()
 const billingStore = useBillingStore()
+const genStore = useGenerationStore()
 
 // ── Tab state ──
 const activeTab = ref<'upload' | 'ai'>('upload')
@@ -33,11 +35,58 @@ const parsing = ref(false)
 const creating = ref(false)
 const showFullPreview = ref(false)
 
-// ── AI generate state ──
+// ── AI generate state (local UI) ──
 const aiPrompt = ref('')
 const aiGenre = ref('都市')
 const aiEpisodes = ref(5)
-const generating = ref(false)
+
+// ── Generation progress (global store — survives navigation) ──
+const generating = computed(() => genStore.isGenerating)
+const genStreamContent = computed(() => genStore.streamContent)
+
+/** Extract human-readable fields from partial streaming JSON */
+interface GenPreview {
+  protagonist: string
+  genre: string
+  synopsis: string
+  oneLiner: string
+  episodeCount: number
+  characterCount: number
+  sceneCount: number
+}
+const genPreview = computed<GenPreview>(() => {
+  const text = genStreamContent.value
+  const extract = (key: string): string => {
+    // Match "key": "value" or "key": "value" (partial)
+    const re = new RegExp(`"${key}"\\s*:\\s*"([^"]*(?:\\\\.[^"]*)*)"?`, 's')
+    const m = text.match(re)
+    return m ? m[1].replace(/\\"/g, '"').replace(/\\n/g, '\n') : ''
+  }
+  const countArray = (key: string): number => {
+    // Count opening braces in the array
+    const re = new RegExp(`"${key}"\\s*:\\s*\\[`, 's')
+    const m = text.match(re)
+    if (!m) return 0
+    const idx = m.index! + m[0].length
+    const slice = text.slice(idx)
+    let count = 0; let depth = 1; let i = 0
+    while (i < slice.length && depth > 0) {
+      if (slice[i] === '{') { depth++; count++ }
+      else if (slice[i] === '}') { depth-- }
+      i++
+    }
+    return count
+  }
+  return {
+    protagonist: extract('protagonist'),
+    genre: extract('genre'),
+    synopsis: extract('synopsis'),
+    oneLiner: extract('one_liner'),
+    episodeCount: countArray('episodes'),
+    characterCount: countArray('characters'),
+    sceneCount: countArray('scenes'),
+  }
+})
 const genreOptions = ['都市', '古装', '仙侠', '悬疑', '甜宠', '末世', '穿越', '逆袭', '复仇', '豪门']
 const genreMap: Record<string, string> = {
   都市: 'urban', 古装: 'historical', 仙侠: 'fantasy', 悬疑: 'suspense',
@@ -55,6 +104,21 @@ const showSubscribeSheet = ref(false)
 onMounted(async () => {
   billingStore.fetchBalance()
   await loadProjects()
+
+  // If generation is already running (e.g. navigated back mid-generation),
+  // watch for completion to auto-navigate to the script page
+  if (genStore.isGenerating && genStore.projectId) {
+    const genPid = genStore.projectId
+    const unwatch = watch(
+      () => genStore.status,
+      (newStatus) => {
+        if (newStatus === 'complete') {
+          unwatch()
+          router.push(`/projects/${genPid}/script`)
+        }
+      },
+    )
+  }
 })
 
 async function loadProjects() {
@@ -147,7 +211,7 @@ async function handleCreateProject() {
     const { data: project } = await projectsApi.create({
       title,
       genre: 'other',
-      style: '写实',
+      style: 'realistic',
     })
     // Step 2: Upload script to the project
     await scriptsApi.upload(project.id, uploadFile.value, 1)
@@ -209,27 +273,45 @@ const previewLines = computed(() => {
 
 // ── AI Generate ──
 async function handleGenerate() {
-  if (!aiPrompt.value.trim()) return
-  generating.value = true
+  if (!aiPrompt.value.trim() || genStore.isGenerating) return
+  uploadError.value = ''
+
   try {
     const title = aiPrompt.value.slice(0, 30)
     const { data: project } = await projectsApi.create({
       title,
-      genre: aiGenre.value,
-      style: '写实',
+      genre: genreMap[aiGenre.value] || 'other',
+      style: 'realistic',
     })
-    await scriptsApi.generate(project.id, {
+
+    // Start generation in global store (survives navigation)
+    genStore.startGeneration(project.id, {
       user_input: aiPrompt.value,
       genre: genreMap[aiGenre.value] || 'other',
       total_episodes: aiEpisodes.value,
       duration_per_episode: 60,
     })
-    router.push(`/projects/${project.id}/script`)
+
+    // Wait for completion by watching the store
+    const unwatch = watch(
+      () => genStore.status,
+      (newStatus) => {
+        if (newStatus === 'complete' && genStore.result) {
+          unwatch()
+          router.push(`/projects/${project.id}/script`)
+        } else if (newStatus === 'error') {
+          unwatch()
+          uploadError.value = genStore.error || '生成失败'
+        }
+      },
+    )
   } catch (e: any) {
     uploadError.value = e?.response?.data?.detail || e.message || '生成失败'
-  } finally {
-    generating.value = false
   }
+}
+
+function cancelGeneration() {
+  genStore.stopGeneration()
 }
 
 // ── Helpers ──
@@ -469,19 +551,67 @@ watch(uploadFile, () => {
             </div>
 
             <button
+              v-if="!generating"
               class="wb-submit-btn full"
-              :disabled="generating || !aiPrompt.trim()"
+              :disabled="!aiPrompt.trim()"
               @click="handleGenerate"
             >
-              <template v-if="generating">
-                <div class="wb-spinner" />
-                AI 正在创作...
-              </template>
-              <template v-else>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 2.5l-5 5M8.5 2.5h5v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 3H3.5a1 1 0 00-1 1v8.5a1 1 0 001 1H12a1 1 0 001-1V10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-                AI 一键生成剧本
-              </template>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 2.5l-5 5M8.5 2.5h5v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 3H3.5a1 1 0 00-1 1v8.5a1 1 0 001 1H12a1 1 0 001-1V10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              AI 一键生成剧本
             </button>
+            <button
+              v-else
+              class="wb-submit-btn full wb-cancel-btn"
+              @click="cancelGeneration"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>
+              停止生成
+            </button>
+            <div v-if="generating" class="wb-stream-box">
+              <div class="wb-stream-label">
+                <div class="wb-spinner" />
+                <span>AI 正在创作中...（{{ genStreamContent.length }} 字）</span>
+                <span class="wb-stream-phase">{{ genStreamContent.length < 200 ? '构思故事框架...' : genStreamContent.length < 1000 ? '展开情节...' : genStreamContent.length < 3000 ? '细化场景对白...' : '完善角色设定...' }}</span>
+              </div>
+              <!-- Live preview card -->
+              <div v-if="genStreamContent.length > 0" class="wb-gen-preview">
+                <div v-if="genPreview.protagonist" class="wb-gen-item">
+                  <span class="wb-gen-item-label">👤 主角</span>
+                  <span class="wb-gen-item-value">{{ genPreview.protagonist }}</span>
+                </div>
+                <div v-if="genPreview.genre" class="wb-gen-item">
+                  <span class="wb-gen-item-label">🎭 类型</span>
+                  <span class="wb-gen-item-value">{{ genPreview.genre }}</span>
+                </div>
+                <div v-if="genPreview.oneLiner" class="wb-gen-item">
+                  <span class="wb-gen-item-label">💡 一句话</span>
+                  <span class="wb-gen-item-value">{{ genPreview.oneLiner }}</span>
+                </div>
+                <div class="wb-gen-stats">
+                  <div class="wb-gen-stat" :class="{ active: genPreview.episodeCount > 0 }">
+                    <span class="wb-gen-stat-num">{{ genPreview.episodeCount || '—' }}</span>
+                    <span class="wb-gen-stat-label">集</span>
+                  </div>
+                  <div class="wb-gen-stat" :class="{ active: genPreview.characterCount > 0 }">
+                    <span class="wb-gen-stat-num">{{ genPreview.characterCount || '—' }}</span>
+                    <span class="wb-gen-stat-label">角色</span>
+                  </div>
+                  <div class="wb-gen-stat" :class="{ active: genPreview.sceneCount > 0 }">
+                    <span class="wb-gen-stat-num">{{ genPreview.sceneCount || '—' }}</span>
+                    <span class="wb-gen-stat-label">场景</span>
+                  </div>
+                </div>
+                <div v-if="genPreview.synopsis" class="wb-gen-synopsis">
+                  <div class="wb-gen-synopsis-label">📖 故事梗概</div>
+                  <div class="wb-gen-synopsis-text">{{ genPreview.synopsis }}</div>
+                </div>
+                <!-- Progress bar -->
+                <div class="wb-gen-progress-bar">
+                  <div class="wb-gen-progress-fill" :style="{ width: Math.min(95, genStreamContent.length / 50) + '%' }" />
+                </div>
+              </div>
+            </div>
+            <p v-if="uploadError" class="wb-error">{{ uploadError }}</p>
           </div>
         </div>
 
@@ -874,6 +1004,120 @@ watch(uploadFile, () => {
 }
 .wb-textarea::placeholder { color: #ccc; }
 .wb-textarea:focus { border-color: #7c3aed; }
+
+/* ── Stream Preview ── */
+.wb-cancel-btn {
+  background: #FEF2F2 !important;
+  color: #DC2626 !important;
+}
+.wb-cancel-btn:hover {
+  background: #FEE2E2 !important;
+}
+.wb-stream-box {
+  margin-top: 16px;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #FAFAFA;
+}
+.wb-stream-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7C3AED;
+  background: #F5F3FF;
+  border-bottom: 1px solid #EDE9FE;
+}
+.wb-stream-phase {
+  font-weight: 400;
+  color: #A78BFA;
+  font-size: 11px;
+  margin-left: auto;
+}
+
+/* ── Live generation preview card ── */
+.wb-gen-preview {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wb-gen-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.wb-gen-item-label {
+  font-size: 12px;
+  color: #9CA3AF;
+  flex-shrink: 0;
+}
+.wb-gen-item-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1F2937;
+}
+.wb-gen-stats {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+}
+.wb-gen-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 6px 14px;
+  border-radius: 10px;
+  background: #F3F4F6;
+  transition: all 0.3s;
+}
+.wb-gen-stat.active {
+  background: #EDE9FE;
+}
+.wb-gen-stat-num {
+  font-size: 18px;
+  font-weight: 700;
+  color: #9CA3AF;
+}
+.wb-gen-stat.active .wb-gen-stat-num {
+  color: #7C3AED;
+}
+.wb-gen-stat-label {
+  font-size: 11px;
+  color: #9CA3AF;
+}
+.wb-gen-synopsis {
+  background: #fff;
+  border: 1px solid #F3F4F6;
+  border-radius: 10px;
+  padding: 12px;
+}
+.wb-gen-synopsis-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9CA3AF;
+  margin-bottom: 6px;
+}
+.wb-gen-synopsis-text {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #4B5563;
+}
+.wb-gen-progress-bar {
+  height: 3px;
+  background: #EDE9FE;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.wb-gen-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #A78BFA, #7C3AED);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
 
 /* ══════════════════════════════════════════════════════
    My Projects

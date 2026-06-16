@@ -81,7 +81,7 @@ class BaseClient:
     MAX_RETRIES = 3
     RETRY_BASE_DELAY = 1.0    # seconds
     RETRY_MAX_DELAY = 30.0
-    DEFAULT_TIMEOUT = 300      # seconds (video gen needs longer)
+    DEFAULT_TIMEOUT = 600      # seconds (script/video gen can take several minutes)
 
     # ──────────── Singleton accessors ────────────
 

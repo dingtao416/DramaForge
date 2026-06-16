@@ -71,8 +71,8 @@ CREDIT_COSTS: dict[str, int] = {
     TransactionType.VIDEO_DEFAULT_10S.value: 40,
     TransactionType.VIDEO_PREMIUM_10S.value: 80,
     TransactionType.TTS.value: 2,
-    TransactionType.SCRIPT_GEN.value: 10,
-    TransactionType.STORYBOARD_GEN.value: 15,
+    TransactionType.SCRIPT_GEN.value: 0,
+    TransactionType.STORYBOARD_GEN.value: 0,
 }
 
 

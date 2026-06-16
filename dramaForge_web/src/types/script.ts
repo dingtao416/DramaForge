@@ -23,6 +23,7 @@ export interface EpisodeBrief {
   id: number
   number: number
   title: string
+  content: string
   is_approved: boolean
 }
 

@@ -357,7 +357,7 @@ function groupModels(models: UserAPIKey['models']) {
     <!-- ═══ Add/Edit Key Modal ═══ -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="showForm" class="modal-mask" @click.self="showForm = false">
+        <div v-if="showForm" class="modal-mask">
           <div class="modal-panel">
             <div class="modal-header">
               <div>
@@ -448,7 +448,7 @@ function groupModels(models: UserAPIKey['models']) {
     <!-- ═══ Add Model Modal ═══ -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="showAddModel" class="modal-mask" @click.self="showAddModel = false">
+        <div v-if="showAddModel" class="modal-mask">
           <div class="modal-panel modal-panel-sm">
             <div class="modal-header">
               <div>

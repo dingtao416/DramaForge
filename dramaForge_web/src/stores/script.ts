@@ -34,5 +34,28 @@ export const useScriptStore = defineStore('script', () => {
     }
   }
 
-  return { script, loading, fetchScript, approveScript, rewriteNarration }
+  /**
+   * Rewrite narration with SSE streaming.
+   * Returns the accumulated content so the UI can display it in real-time.
+   */
+  async function rewriteNarrationStream(
+    projectId: number,
+    handlers: {
+      onContent?: (chunk: string) => void
+      onDone?: (content: string) => void
+      onError?: (error: string) => void
+    },
+    signal?: AbortSignal,
+  ) {
+    await scriptsApi.rewriteNarrationStream(projectId, handlers, signal)
+  }
+
+  return {
+    script,
+    loading,
+    fetchScript,
+    approveScript,
+    rewriteNarration,
+    rewriteNarrationStream,
+  }
 })
