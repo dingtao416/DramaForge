@@ -37,6 +37,7 @@ class CharacterUpdate(BaseModel):
 
 class CharacterRegenerateRequest(BaseModel):
     prompt: Optional[str] = None
+    variant_count: int = Field(default=1, ge=1, le=4, description="生成变体数量，>1 时生成多张图供选择")
 
 
 # ── SceneLocation ──
@@ -64,6 +65,7 @@ class SceneUpdate(BaseModel):
 
 class SceneRegenerateRequest(BaseModel):
     prompt: Optional[str] = None
+    variant_count: int = Field(default=1, ge=1, le=4, description="生成变体数量，>1 时生成多张图供选择")
 
 
 # ── Asset generation ──

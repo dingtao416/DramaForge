@@ -1,32 +1,36 @@
-"""
-DramaForge v2.0 — User Model Resolver
-=======================================
-Resolves which API key + model to use for a given capability type.
-Priority: user config → system default (config.py).
-"""
+"""Resolve user media/chat model configuration."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.ai_config import (
+    has_capability,
+    normalize_api_base_url,
+    normalize_optional_string,
+)
 from app.core.config import settings
+from app.models.media_generation import AIModelConfig, AIProviderConfig, MediaCapability
 from app.models.user_ai_config import UserAPIKey, UserModelConfig
 
 
 @dataclass
 class ResolvedModel:
-    """Resolved provider + model for a capability type."""
-    api_key: str | None      # None → use system default
-    base_url: str | None     # None → use system default
-    model_id: str            # Actual model name for API call
+    api_key: str | None
+    base_url: str | None
+    model_id: str
+    provider_type: str | None = None
+    auth_type: str | None = None
+    headers: dict | None = None
+    config: dict | None = None
+    raw_params: dict | None = None
+    provider_id: int | None = None
 
 
-# System defaults from config.py
 _SYSTEM_DEFAULTS = {
     "chat": settings.llm_model,
     "image": settings.image_model,
@@ -35,18 +39,8 @@ _SYSTEM_DEFAULTS = {
 }
 
 
-def _normalize_url(url: str | None) -> str | None:
-    """Ensure URL ends with /v1 for OpenAI-compatible endpoints."""
-    if not url:
-        return url
-    url = url.rstrip("/")
-    if not url.endswith("/v1"):
-        url = url + "/v1"
-    return url
-
-
 class UserModelResolver:
-    """Resolves user-configured models with fallback to system defaults."""
+    """Resolve model/provider credentials for a capability."""
 
     async def resolve(
         self,
@@ -55,15 +49,86 @@ class UserModelResolver:
         capability_type: str,
         model_hint: str | None = None,
     ) -> ResolvedModel:
-        """
-        Resolve the provider + model for a capability type.
+        capability_type = (capability_type or "").strip().lower()
+        model_hint = normalize_optional_string(model_hint)
 
-        Priority:
-        1. model_hint (explicitly specified by caller)
-        2. User's default model for this capability type
-        3. System default (config.py)
-        """
-        # Load user's API keys with models eagerly
+        if capability_type in {"image", "video"}:
+            return await self._resolve_media_model(db, user_id, capability_type, model_hint)
+
+        return await self._resolve_legacy_model(db, user_id, capability_type, model_hint)
+
+    async def _resolve_media_model(
+        self,
+        db: AsyncSession,
+        user_id: int,
+        capability_type: str,
+        model_hint: str | None,
+    ) -> ResolvedModel:
+        capability = MediaCapability.IMAGE if capability_type == "image" else MediaCapability.VIDEO
+        stmt = (
+            select(AIModelConfig, AIProviderConfig)
+            .join(AIProviderConfig, AIModelConfig.provider_id == AIProviderConfig.id)
+            .where(
+                AIProviderConfig.user_id == user_id,
+                AIProviderConfig.enabled == True,
+                AIModelConfig.enabled == True,
+                AIModelConfig.capability == capability,
+            )
+            .order_by(
+                AIModelConfig.is_default.desc(),
+                AIProviderConfig.priority.asc(),
+                AIModelConfig.id.asc(),
+            )
+        )
+        if model_hint:
+            hinted = await db.execute(stmt.where(AIModelConfig.model_id == model_hint))
+            row = hinted.first()
+            if row:
+                model, provider = row
+                return self._to_resolved_media(model, provider)
+
+        result = await db.execute(stmt)
+        row = result.first()
+        if row:
+            model, provider = row
+            return self._to_resolved_media(model, provider)
+
+        fallback_model = settings.image_model if capability_type == "image" else settings.video_model
+        return ResolvedModel(
+            api_key=normalize_optional_string(settings.laozhang_api_key),
+            base_url=normalize_api_base_url(settings.laozhang_base_url),
+            model_id=normalize_optional_string(fallback_model) or fallback_model,
+            provider_type="openai_compatible",
+            auth_type="bearer",
+            headers={},
+            config={},
+            raw_params={},
+        )
+
+    def _to_resolved_media(
+        self,
+        model: AIModelConfig,
+        provider: AIProviderConfig,
+    ) -> ResolvedModel:
+        return ResolvedModel(
+            api_key=normalize_optional_string(provider.api_key),
+            base_url=normalize_optional_string(provider.base_url),
+            model_id=normalize_optional_string(model.model_id) or model.model_id,
+            provider_type=normalize_optional_string(provider.provider_type),
+            auth_type=normalize_optional_string(provider.auth_type) or "bearer",
+            headers=provider.headers_json or {},
+            config=provider.config_json or {},
+            raw_params=model.default_params_json or {},
+            provider_id=provider.id,
+        )
+
+    async def _resolve_legacy_model(
+        self,
+        db: AsyncSession,
+        user_id: int,
+        capability_type: str,
+        model_hint: str | None,
+    ) -> ResolvedModel:
         stmt = (
             select(UserAPIKey)
             .where(UserAPIKey.user_id == user_id, UserAPIKey.enabled == True)
@@ -72,12 +137,10 @@ class UserModelResolver:
         result = await db.execute(stmt)
         api_keys = result.scalars().all()
 
-        # Find the default model config for this capability type
         default_model: UserModelConfig | None = None
         default_key: UserAPIKey | None = None
-
         for key in api_keys:
-            if capability_type not in (key.capabilities or "").split(","):
+            if not has_capability(key.capabilities, capability_type):
                 continue
             for model in key.models:
                 if model.capability_type == capability_type and model.is_default and model.enabled:
@@ -87,54 +150,45 @@ class UserModelResolver:
             if default_model:
                 break
 
-        # If model_hint is specified, try to find it in user's configs
         if model_hint:
             for key in api_keys:
-                if capability_type not in (key.capabilities or "").split(","):
+                if not has_capability(key.capabilities, capability_type):
                     continue
                 for model in key.models:
-                    if model.model_id == model_hint and model.capability_type == capability_type and model.enabled:
+                    if (
+                        normalize_optional_string(model.model_id) == model_hint
+                        and model.capability_type == capability_type
+                        and model.enabled
+                    ):
                         return ResolvedModel(
-                            api_key=key.api_key,
-                            base_url=_normalize_url(key.base_url),
+                            api_key=normalize_optional_string(key.api_key),
+                            base_url=normalize_api_base_url(key.base_url),
                             model_id=model_hint,
                         )
-            # model_hint not found in user configs → use it with user's default key
             if default_key:
                 return ResolvedModel(
-                    api_key=default_key.api_key,
-                    base_url=_normalize_url(default_key.base_url),
+                    api_key=normalize_optional_string(default_key.api_key),
+                    base_url=normalize_api_base_url(default_key.base_url),
                     model_id=model_hint,
                 )
-            # No user config at all → use model_hint with system defaults
             return ResolvedModel(api_key=None, base_url=None, model_id=model_hint)
 
-        # No hint → use user's default
         if default_model and default_key:
             return ResolvedModel(
-                api_key=default_key.api_key,
-                base_url=default_key.base_url,
-                model_id=default_model.model_id,
+                api_key=normalize_optional_string(default_key.api_key),
+                base_url=normalize_api_base_url(default_key.base_url),
+                model_id=normalize_optional_string(default_model.model_id) or default_model.model_id,
             )
 
-        # No user config → system default
         return ResolvedModel(
             api_key=None,
             base_url=None,
-            model_id=_SYSTEM_DEFAULTS.get(capability_type, "gpt-4.1-mini"),
+            model_id=normalize_optional_string(_SYSTEM_DEFAULTS.get(capability_type, "gpt-4.1-mini"))
+            or "gpt-4.1-mini",
         )
 
-    async def resolve_all(
-        self,
-        db: AsyncSession,
-        user_id: int,
-    ) -> dict[str, ResolvedModel]:
-        """Resolve all 4 capability types at once."""
-        result = {}
-        for cap in ("chat", "image", "video", "tts"):
-            result[cap] = await self.resolve(db, user_id, cap)
-        return result
+    async def resolve_all(self, db: AsyncSession, user_id: int) -> dict[str, ResolvedModel]:
+        return {cap: await self.resolve(db, user_id, cap) for cap in ("chat", "image", "video", "tts")}
 
 
-# Module-level singleton
 user_model_resolver = UserModelResolver()

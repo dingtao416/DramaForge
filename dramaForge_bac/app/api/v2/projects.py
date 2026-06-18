@@ -9,10 +9,16 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.models.project import Project
+from app.models.script import Script
+from app.models.episode import Episode
+from app.models.character import Character
+from app.models.scene import SceneLocation
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectList, ProjectDetail
+from app.core.security import CurrentUser
 
 router = APIRouter()
 
@@ -228,6 +234,94 @@ async def seed_example_projects(
 
     await db.flush()
     return [p1, p2, p3]
+
+
+@router.post("/projects/{project_id}/duplicate", response_model=ProjectDetail, status_code=201)
+async def duplicate_project(
+    project_id: int,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Duplicate a project with its script, episodes, characters, and scenes.
+    Does NOT copy segments/shots (video generation data)."""
+    src = await db.get(Project, project_id)
+    if not src:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Create new project
+    new_project = Project(
+        title=f"{src.title}（副本）",
+        description=src.description,
+        style=src.style,
+        aspect_ratio=src.aspect_ratio,
+        genre=src.genre,
+        status="script",  # Reset to script step
+        script_type=src.script_type,
+    )
+    db.add(new_project)
+    await db.flush()
+    await db.refresh(new_project)
+
+    # Copy script
+    script_stmt = select(Script).where(Script.project_id == project_id).options(selectinload(Script.episodes))
+    script_result = await db.execute(script_stmt)
+    src_script = script_result.scalar_one_or_none()
+
+    if src_script:
+        new_script = Script(
+            project_id=new_project.id,
+            protagonist=src_script.protagonist,
+            genre=src_script.genre,
+            synopsis=src_script.synopsis,
+            background=src_script.background,
+            setting=src_script.setting,
+            one_liner=src_script.one_liner,
+            raw_content=src_script.raw_content,
+        )
+        db.add(new_script)
+        await db.flush()
+
+        # Copy episodes (without segments/shots)
+        for ep in src_script.episodes:
+            new_ep = Episode(
+                script_id=new_script.id,
+                number=ep.number,
+                title=ep.title,
+                content=ep.content,
+            )
+            db.add(new_ep)
+
+    # Copy characters
+    char_stmt = select(Character).where(Character.project_id == project_id)
+    char_result = await db.execute(char_stmt)
+    for ch in char_result.scalars().all():
+        new_ch = Character(
+            project_id=new_project.id,
+            name=ch.name,
+            role=ch.role,
+            description=ch.description,
+            voice_desc=ch.voice_desc,
+            reference_images=list(ch.reference_images or []),
+        )
+        db.add(new_ch)
+
+    # Copy scenes
+    scene_stmt = select(SceneLocation).where(SceneLocation.project_id == project_id)
+    scene_result = await db.execute(scene_stmt)
+    for sc in scene_result.scalars().all():
+        new_sc = SceneLocation(
+            project_id=new_project.id,
+            name=sc.name,
+            description=sc.description,
+            time_of_day=sc.time_of_day,
+            interior=sc.interior,
+            reference_images=list(sc.reference_images or []),
+        )
+        db.add(new_sc)
+
+    await db.flush()
+    await db.refresh(new_project)
+    return new_project
 
 
 @router.delete("/projects/{project_id}", status_code=204)

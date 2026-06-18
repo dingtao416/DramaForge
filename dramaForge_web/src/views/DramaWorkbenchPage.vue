@@ -12,6 +12,7 @@ import { projectsApi } from '@/api/projects'
 import { scriptsApi } from '@/api/scripts'
 import type { ScriptParseResult, ScriptGenerateStreamResult } from '@/api/scripts'
 import type { ProjectList } from '@/types/project'
+import { DramaGenre, VideoStyle } from '@/types/enums'
 import TopbarActions from '@/components/common/TopbarActions.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useBillingStore } from '@/stores/billing'
@@ -88,10 +89,17 @@ const genPreview = computed<GenPreview>(() => {
   }
 })
 const genreOptions = ['都市', '古装', '仙侠', '悬疑', '甜宠', '末世', '穿越', '逆袭', '复仇', '豪门']
-const genreMap: Record<string, string> = {
-  都市: 'urban', 古装: 'historical', 仙侠: 'fantasy', 悬疑: 'suspense',
-  甜宠: 'romance', 末世: 'other', 穿越: 'other', 逆袭: 'revenge',
-  复仇: 'revenge', 豪门: 'other',
+const genreMap: Record<string, DramaGenre> = {
+  都市: DramaGenre.URBAN,
+  古装: DramaGenre.HISTORICAL,
+  仙侠: DramaGenre.FANTASY,
+  悬疑: DramaGenre.SUSPENSE,
+  甜宠: DramaGenre.ROMANCE,
+  末世: DramaGenre.OTHER,
+  穿越: DramaGenre.OTHER,
+  逆袭: DramaGenre.REVENGE,
+  复仇: DramaGenre.REVENGE,
+  豪门: DramaGenre.OTHER,
 }
 
 // ── Projects ──
@@ -280,14 +288,14 @@ async function handleGenerate() {
     const title = aiPrompt.value.slice(0, 30)
     const { data: project } = await projectsApi.create({
       title,
-      genre: genreMap[aiGenre.value] || 'other',
-      style: 'realistic',
+      genre: genreMap[aiGenre.value] || DramaGenre.OTHER,
+      style: VideoStyle.REALISTIC,
     })
 
     // Start generation in global store (survives navigation)
     genStore.startGeneration(project.id, {
       user_input: aiPrompt.value,
-      genre: genreMap[aiGenre.value] || 'other',
+      genre: genreMap[aiGenre.value] || DramaGenre.OTHER,
       total_episodes: aiEpisodes.value,
       duration_per_episode: 60,
     })
@@ -658,13 +666,19 @@ watch(uploadFile, () => {
             class="wb-project-card"
             @click="router.push(`/projects/${p.id}/assets`)"
           >
-            <!-- Thumbnail row (character placeholders) -->
+            <!-- Default project cover -->
             <div class="wb-project-thumb">
               <span class="wb-project-badge">{{ getStepLabel(p.status) }}</span>
-              <div class="wb-thumb-images">
-                <div v-for="i in 4" :key="i" class="wb-thumb-img-slot">
-                  <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="10" r="5" stroke="#d4d4d8" stroke-width="1.2"/><path d="M4 26c0-5.5 4.5-9 10-9s10 3.5 10 9" stroke="#d4d4d8" stroke-width="1.2" stroke-linecap="round"/></svg>
+              <div class="wb-project-cover">
+                <div class="wb-project-cover-icon" aria-hidden="true">
+                  <svg width="34" height="34" viewBox="0 0 34 34" fill="none">
+                    <path d="M6.5 13.5h21v12a2 2 0 0 1-2 2h-17a2 2 0 0 1-2-2v-12Z" stroke="currentColor" stroke-width="1.8" />
+                    <path d="M6.5 13.5 9 6.8a2 2 0 0 1 2.5-1.2l14.8 5.4a2 2 0 0 1 1.2 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                    <path d="M12 13.5 18 8M20.5 13.5 26.5 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                    <path d="M11 20h12M11 24h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                  </svg>
                 </div>
+                <div class="wb-project-cover-title">{{ p.title }}</div>
               </div>
             </div>
             <!-- Info -->
@@ -1220,12 +1234,25 @@ watch(uploadFile, () => {
 .wb-project-thumb {
   position: relative;
   height: 160px;
-  background: #f9f9f9;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 45%),
+    #171717;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
 }
+.wb-project-thumb::before,
+.wb-project-thumb::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  height: 1px;
+  background: rgba(255,255,255,0.12);
+}
+.wb-project-thumb::before { top: 36px; }
+.wb-project-thumb::after { bottom: 30px; }
 .wb-project-badge {
   position: absolute;
   top: 10px;
@@ -1238,26 +1265,41 @@ watch(uploadFile, () => {
   border-radius: 4px;
   z-index: 2;
 }
-.wb-thumb-images {
+.wb-project-cover {
+  width: 100%;
+  height: 100%;
+  padding: 34px 22px 24px;
   display: flex;
-  gap: 6px;
-  padding: 0 16px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #fff;
+  text-align: center;
 }
-.wb-thumb-img-slot {
-  width: 72px;
-  height: 120px;
-  border-radius: 8px;
-  background: #f0f0f0;
+.wb-project-cover-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #d4d4d8;
-  overflow: hidden;
+  color: #fca5a5;
+  background: rgba(255,255,255,0.08);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
 }
-.wb-thumb-img-slot img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.wb-project-cover-title {
+  max-width: 100%;
+  font-size: 17px;
+  line-height: 1.25;
+  font-weight: 700;
+  color: #f9fafb;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.25);
 }
 
 .wb-project-info {

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { Segment } from '@/types/segment'
+import type { SegmentDetail } from '@/types/segment'
 
 const props = defineProps<{
-  segment: Segment
+  segment: SegmentDetail
   index: number
   active: boolean
 }>()
@@ -11,6 +11,13 @@ function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+const statusConfig: Record<string, { label: string; dot: string }> = {
+  PENDING:    { label: '待生成', dot: 'bg-gray-300' },
+  GENERATING: { label: '生成中', dot: 'bg-purple-500 animate-pulse' },
+  COMPLETED:  { label: '已完成', dot: 'bg-green-500' },
+  FAILED:     { label: '失败',   dot: 'bg-red-500' },
 }
 </script>
 
@@ -34,11 +41,23 @@ function formatDuration(seconds: number) {
       <span class="absolute top-1 left-1 bg-primary-500 text-white text-[9px] px-1.5 py-0.5 rounded-[4px] font-medium min-w-[16px] text-center">
         {{ index + 1 }}
       </span>
+
+      <!-- Status dot -->
+      <span
+        class="absolute top-1 right-1 w-[8px] h-[8px] rounded-full border border-white"
+        :class="statusConfig[segment.status]?.dot || 'bg-gray-300'"
+        :title="statusConfig[segment.status]?.label || segment.status"
+      />
     </div>
 
-    <!-- Duration -->
-    <div class="text-center text-[11px] text-gray-500 py-1 bg-white">
-      {{ segment.duration ? formatDuration(segment.duration) : '--:--' }}
+    <!-- Duration + Status -->
+    <div class="flex items-center justify-between text-center px-2 py-1 bg-white">
+      <span class="text-[10px] text-gray-400">
+        {{ statusConfig[segment.status]?.label || segment.status }}
+      </span>
+      <span class="text-[11px] text-gray-500 font-medium">
+        {{ segment.duration ? formatDuration(segment.duration) : '--:--' }}
+      </span>
     </div>
   </div>
 </template>

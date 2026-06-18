@@ -172,6 +172,7 @@ class VideoEngine:
         image_model: str = None,
         image_api_key: str = None,
         image_base_url: str = None,
+        image_options: dict | None = None,
         tts_model: str = None,
         tts_api_key: str = None,
         tts_base_url: str = None,
@@ -213,6 +214,7 @@ class VideoEngine:
         tasks.append(self._gen_image(
             image_prompt, str(image_path),
             model=image_model, api_key=image_api_key, base_url=image_base_url,
+            image_options=image_options,
         ))
 
         # Audio generation task (if there's dialogue)
@@ -243,11 +245,13 @@ class VideoEngine:
         return shot
 
     async def _gen_image(self, prompt: str, output_path: str,
-                         model: str = None, api_key: str = None, base_url: str = None):
+                         model: str = None, api_key: str = None, base_url: str = None,
+                         image_options: dict | None = None):
         """Generate an image."""
         return await ai_hub.image.generate(
             prompt=prompt, output_path=output_path,
             model=model, api_key=api_key, base_url=base_url,
+            **(image_options or {}),
         )
 
     async def _gen_audio(self, text: str, output_path: str, voice_style: str = "",
@@ -293,6 +297,7 @@ class VideoEngine:
         video_model: str = None,
         video_api_key: str = None,
         video_base_url: str = None,
+        video_options: dict | None = None,
     ) -> str:
         """Generate video for a segment based on strategy."""
         from app.services.ffmpeg import ffmpeg_service
@@ -336,6 +341,8 @@ class VideoEngine:
                         model=video_model,
                         api_key=video_api_key,
                         base_url=video_base_url,
+                        raw_params={"duration": shot.duration or 5, **((video_options or {}).get("raw_params") or {})},
+                        **{k: v for k, v in (video_options or {}).items() if k != "raw_params"},
                     )
 
         segment.video_url = storage.get_url(output_path)
@@ -360,6 +367,7 @@ class VideoEngine:
         image_model: str = None,
         image_api_key: str = None,
         image_base_url: str = None,
+        image_options: dict | None = None,
         tts_model: str = None,
         tts_api_key: str = None,
         tts_base_url: str = None,
@@ -431,6 +439,7 @@ class VideoEngine:
                 await self._generate_shot_assets(
                     shot, characters, scenes, project_id, ep_num, style,
                     image_model=image_model, image_api_key=image_api_key, image_base_url=image_base_url,
+                    image_options=image_options,
                     tts_model=tts_model, tts_api_key=tts_api_key, tts_base_url=tts_base_url,
                 )
             except Exception as e:
@@ -486,6 +495,12 @@ class VideoEngine:
         project_id: int,
         ep_num: int,
         bgm_path: Optional[str] = None,
+        quality: str = "high",
+        resolution: Optional[str] = None,
+        subtitle_text: Optional[str] = None,
+        subtitle_font_size: int = 24,
+        subtitle_position: str = "bottom",
+        bgm_volume: float = 0.15,
     ) -> str:
         """Compose all segments into a full episode video."""
         from app.services.ffmpeg import ffmpeg_service
@@ -505,6 +520,12 @@ class VideoEngine:
             segment_paths=segment_paths,
             output_path=str(output_path),
             bgm_path=bgm_path,
+            bgm_volume=bgm_volume,
+            quality=quality,
+            resolution=resolution,
+            subtitle_text=subtitle_text,
+            subtitle_font_size=subtitle_font_size,
+            subtitle_position=subtitle_position,
         )
 
         return storage.get_url(output_path)

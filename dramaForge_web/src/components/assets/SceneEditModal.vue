@@ -36,7 +36,6 @@ function handleSave() {
     <div
       v-if="visible && scene"
       class="fixed inset-0 z-[90] flex items-center justify-center bg-black/30 backdrop-blur-[2px]"
-      @click.self="emit('close')"
     >
       <div class="bg-white rounded-[16px] w-[520px] max-w-[90vw] max-h-[85vh] overflow-y-auto shadow-[0_12px_24px_rgba(0,0,0,0.12)]">
         <!-- Header -->

@@ -69,6 +69,27 @@ export const scriptsApi = {
     return api.post<ScriptDetail>(`/projects/${projectId}/script/approve`)
   },
 
+  /** 导出剧本 */
+  async exportScript(projectId: number, format: 'docx' | 'txt' = 'docx') {
+    const token = getToken()
+    const baseURL = import.meta.env.VITE_API_BASE_URL || ''
+    const url = `${baseURL}/projects/${projectId}/script/export?format=${format}`
+
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    })
+    if (!res.ok) throw new Error('Export failed')
+    const blob = await res.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = format === 'txt' ? 'script.txt' : 'script.docx'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(blobUrl)
+  },
+
   /**
    * AI 生成剧本（SSE 流式）
    * SSE events: delta → {content}, done → {script_id, episode_count, ...}, error → {message}
@@ -85,7 +106,7 @@ export const scriptsApi = {
   ): Promise<void> {
     const token = getToken()
 
-    const response = await fetch(`/api/v2/projects/${projectId}/script/generate-stream`, {
+    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/projects/${projectId}/script/generate-stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -173,7 +194,7 @@ export const scriptsApi = {
   ): Promise<void> {
     const token = getToken()
 
-    const response = await fetch(`/api/v2/projects/${projectId}/script/rewrite-narration-stream`, {
+    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/projects/${projectId}/script/rewrite-narration-stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

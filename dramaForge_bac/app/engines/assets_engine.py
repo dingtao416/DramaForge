@@ -38,6 +38,7 @@ class AssetsEngine:
         image_model: str = None,
         image_api_key: str = None,
         image_base_url: str = None,
+        image_options: dict | None = None,
     ) -> tuple[list[Character], list[SceneLocation]]:
         """
         Generate descriptions and images for all characters and scenes in parallel.
@@ -58,6 +59,7 @@ class AssetsEngine:
                 ch, synopsis, project_id,
                 chat_model=chat_model, chat_api_key=chat_api_key, chat_base_url=chat_base_url,
                 image_model=image_model, image_api_key=image_api_key, image_base_url=image_base_url,
+                image_options=image_options,
             )
             for ch in characters
         ]
@@ -66,6 +68,7 @@ class AssetsEngine:
                 sc, script, project_id,
                 chat_model=chat_model, chat_api_key=chat_api_key, chat_base_url=chat_base_url,
                 image_model=image_model, image_api_key=image_api_key, image_base_url=image_base_url,
+                image_options=image_options,
             )
             for sc in scenes
         ]
@@ -104,6 +107,7 @@ class AssetsEngine:
         image_model: str = None,
         image_api_key: str = None,
         image_base_url: str = None,
+        image_options: dict | None = None,
     ) -> Character:
         """Generate description and image for a single character."""
         logger.info(f"AssetsEngine: generating character '{character.name}'")
@@ -137,6 +141,7 @@ class AssetsEngine:
                 model=image_model,
                 api_key=image_api_key,
                 base_url=image_base_url,
+                **(image_options or {}),
             )
             character.reference_images = [storage.get_url(image_path)]
 
@@ -153,6 +158,7 @@ class AssetsEngine:
         image_model: str = None,
         image_api_key: str = None,
         image_base_url: str = None,
+        image_options: dict | None = None,
     ) -> SceneLocation:
         """Generate description and image for a single scene."""
         logger.info(f"AssetsEngine: generating scene '{scene.name}'")
@@ -189,6 +195,7 @@ class AssetsEngine:
                     model=image_model,
                     api_key=image_api_key,
                     base_url=image_base_url,
+                    **(image_options or {}),
                 )
                 urls.append(storage.get_url(image_path))
             except Exception as e:
@@ -204,38 +211,93 @@ class AssetsEngine:
         character: Character,
         project_id: int,
         prompt: Optional[str] = None,
-    ) -> str:
-        """Regenerate a character's image with an optional custom prompt."""
+        variant_count: int = 1,
+        *,
+        image_model: str = None,
+        image_api_key: str = None,
+        image_base_url: str = None,
+        image_options: dict | None = None,
+    ) -> list[str]:
+        """Regenerate a character's image with optional variants."""
         if not prompt:
             prompt = (
                 f"Portrait of {character.name}: {character.description or 'a character'}. "
                 f"High quality, detailed, digital art."
             )
 
-        image_path = storage.character_image_path(project_id, character.id, 0)
-        await ai_hub.image.generate(prompt=prompt, output_path=str(image_path))
-        url = storage.get_url(image_path)
-        character.reference_images = [url]
-        return url
+        urls = []
+        for i in range(variant_count):
+            # Slightly vary each prompt
+            varied_prompt = prompt
+            if variant_count > 1:
+                variants = [
+                    f"{prompt} — variant A: soft lighting, warm tones.",
+                    f"{prompt} — variant B: dramatic lighting, rich contrast.",
+                    f"{prompt} — variant C: natural lighting, muted colors.",
+                    f"{prompt} — variant D: cinematic lighting, cool tones.",
+                ]
+                varied_prompt = variants[i % len(variants)]
+
+            image_path = storage.character_image_path(project_id, character.id, i)
+            try:
+                await ai_hub.image.generate(
+                    prompt=varied_prompt, output_path=str(image_path),
+                    model=image_model, api_key=image_api_key, base_url=image_base_url,
+                    **(image_options or {}),
+                )
+                urls.append(storage.get_url(image_path))
+            except Exception as e:
+                logger.warning(f"Character variant {i} failed: {e}")
+
+        if urls:
+            character.reference_images = urls
+        return urls
 
     async def regenerate_scene_image(
         self,
         scene: SceneLocation,
         project_id: int,
         prompt: Optional[str] = None,
-    ) -> str:
-        """Regenerate a scene's image with an optional custom prompt."""
+        variant_count: int = 1,
+        *,
+        image_model: str = None,
+        image_api_key: str = None,
+        image_base_url: str = None,
+        image_options: dict | None = None,
+    ) -> list[str]:
+        """Regenerate a scene's image with optional variants."""
         if not prompt:
             prompt = (
                 f"Scene: {scene.name}. {scene.description or 'A dramatic scene'}. "
                 f"Cinematic, atmospheric, detailed environment."
             )
 
-        image_path = storage.scene_image_path(project_id, scene.id, 0)
-        await ai_hub.image.generate(prompt=prompt, output_path=str(image_path))
-        url = storage.get_url(image_path)
-        scene.reference_images = [url]
-        return url
+        urls = []
+        for i in range(variant_count):
+            varied_prompt = prompt
+            if variant_count > 1:
+                variants = [
+                    f"{prompt} — variant A: golden hour, warm atmosphere.",
+                    f"{prompt} — variant B: overcast, moody atmosphere.",
+                    f"{prompt} — variant C: bright daylight, crisp details.",
+                    f"{prompt} — variant D: night scene, atmospheric lighting.",
+                ]
+                varied_prompt = variants[i % len(variants)]
+
+            image_path = storage.scene_image_path(project_id, scene.id, i)
+            try:
+                await ai_hub.image.generate(
+                    prompt=varied_prompt, output_path=str(image_path),
+                    model=image_model, api_key=image_api_key, base_url=image_base_url,
+                    **(image_options or {}),
+                )
+                urls.append(storage.get_url(image_path))
+            except Exception as e:
+                logger.warning(f"Scene variant {i} failed: {e}")
+
+        if urls:
+            scene.reference_images = urls
+        return urls
 
 
 # Module-level singleton

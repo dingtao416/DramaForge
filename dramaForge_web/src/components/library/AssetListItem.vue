@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { DEFAULT_SCENE_IMAGE } from '@/constants/defaultAssets'
+
 defineProps<{
   asset: any
 }>()
@@ -19,6 +21,12 @@ function formatDate(dateStr: string) {
         v-if="asset.reference_images?.[0]"
         :src="asset.reference_images[0]"
         :alt="asset.name"
+        class="w-full h-full object-cover"
+      />
+      <img
+        v-else-if="asset.type === 'scene'"
+        :src="DEFAULT_SCENE_IMAGE"
+        :alt="`${asset.name} 默认场景图`"
         class="w-full h-full object-cover"
       />
       <div v-else class="w-full h-full flex items-center justify-center text-lg text-gray-300">

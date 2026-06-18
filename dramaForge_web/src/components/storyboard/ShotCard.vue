@@ -44,8 +44,8 @@ const emit = defineEmits<{
         <span class="text-gray-400 w-10 shrink-0 pt-0.5">角色</span>
         <div class="flex flex-wrap gap-1">
           <span
-            v-for="char in shot.characters"
-            :key="char"
+            v-for="(char, idx) in shot.characters"
+            :key="`${char.char_id}-${char.appearance_idx}-${idx}`"
             class="inline-flex items-center gap-1 bg-primary-50 text-primary-600 text-[12px] px-2 py-0.5 rounded-full"
           >🎭 {{ char }}</span>
         </div>

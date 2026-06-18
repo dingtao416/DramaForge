@@ -102,7 +102,7 @@ export async function sendMessageStream(
 ): Promise<void> {
   const token = getToken()
 
-  const response = await fetch('/api/v2/chat/message', {
+  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/chat/message`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio as _asyncio
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,14 +75,30 @@ async def generate_script(
 
     project = await _get_project(project_id, db)
 
-    # Remove existing script if any
+    # Collect existing character & scene names (for dedup when preserving)
+    existing_chars = await db.execute(
+        select(Character.name).where(Character.project_id == project_id)
+    )
+    existing_char_names = set(existing_chars.scalars().all())
+    existing_scenes = await db.execute(
+        select(SceneLocation.name).where(SceneLocation.project_id == project_id)
+    )
+    existing_scene_names = set(existing_scenes.scalars().all())
+
+    # Handle existing script
     existing = await db.execute(
-        select(Script).where(Script.project_id == project_id)
+        select(Script).where(Script.project_id == project_id).options(selectinload(Script.episodes))
     )
     old_script = existing.scalar_one_or_none()
-    if old_script:
+
+    preserve = body.preserve_episodes
+
+    if old_script and not preserve:
         await db.delete(old_script)
         await db.flush()
+    elif old_script and preserve:
+        # Update existing script in place — keep the row (and its episodes) alive
+        pass  # We'll update fields after generation
 
     # Resolve user's configured chat model
     resolved = await user_model_resolver.resolve(db, user.id, "chat")
@@ -99,18 +115,51 @@ async def generate_script(
         chat_base_url=resolved.base_url,
     )
 
-    # Create Script ORM object
-    script = Script(project_id=project_id, **result["script"])
-    db.add(script)
-    await db.flush()
+    if old_script and preserve:
+        # ── Preserve mode: update existing script, merge episodes ──
+        script = old_script
+        for key, value in result["script"].items():
+            setattr(script, key, value)
 
-    # Create Episodes
-    for ep_data in result["episodes"]:
-        episode = Episode(script_id=script.id, **ep_data)
-        db.add(episode)
+        # Build a lookup of existing episodes by number
+        old_episodes_by_num: dict[int, Episode] = {}
+        for ep in old_script.episodes:
+            old_episodes_by_num[ep.number] = ep
 
-    # Create Characters
+        new_episodes_data = result.get("episodes", [])
+        kept_episode_ids = set()
+
+        for ep_data in new_episodes_data:
+            ep_num = ep_data.get("number", 0)
+            if ep_num in old_episodes_by_num:
+                # Update existing episode (preserves downstream segments/shots)
+                existing_ep = old_episodes_by_num[ep_num]
+                for key, value in ep_data.items():
+                    setattr(existing_ep, key, value)
+                kept_episode_ids.add(existing_ep.id)
+            else:
+                # Create new episode
+                new_ep = Episode(script_id=script.id, **ep_data)
+                db.add(new_ep)
+
+        # Remove episodes that are no longer in the new script
+        for ep_num, old_ep in old_episodes_by_num.items():
+            if old_ep.id not in kept_episode_ids:
+                await db.delete(old_ep)
+    else:
+        # ── Fresh mode: create new script ──
+        script = Script(project_id=project_id, **result["script"])
+        db.add(script)
+        await db.flush()
+
+        for ep_data in result["episodes"]:
+            episode = Episode(script_id=script.id, **ep_data)
+            db.add(episode)
+
+    # Create Characters (skip if name already exists — preserve existing images)
     for ch_data in result["characters"]:
+        if ch_data.get("name") in existing_char_names:
+            continue  # Keep existing character with its generated images
         role_str = ch_data.pop("role", "supporting")
         try:
             role = CharacterRole(role_str)
@@ -123,8 +172,10 @@ async def generate_script(
         )
         db.add(character)
 
-    # Create Scenes
+    # Create Scenes (skip if name already exists — preserve existing images)
     for sc_data in result["scenes"]:
+        if sc_data.get("name") in existing_scene_names:
+            continue
         scene = SceneLocation(project_id=project_id, **sc_data)
         db.add(scene)
 
@@ -140,31 +191,75 @@ async def generate_script(
 _gen_registry: dict[int, dict] = {}
 
 
-async def _save_script_result(project_id: int, result: dict) -> int:
+async def _save_script_result(project_id: int, result: dict, preserve: bool = False) -> int:
     """Save generated script to DB using a fresh session. Returns script_id."""
     async with _AsyncSessionLocal() as sess:
-        script = Script(project_id=project_id, **result["script"])
-        sess.add(script)
-        await sess.flush()
+        if preserve:
+            # Update existing script in place
+            stmt = select(Script).where(Script.project_id == project_id).options(selectinload(Script.episodes))
+            r = await sess.execute(stmt)
+            script = r.scalar_one_or_none()
+            if script:
+                for key, value in result["script"].items():
+                    setattr(script, key, value)
+                # Merge episodes: update matching, add new, remove old
+                old_eps_by_num = {ep.number: ep for ep in script.episodes}
+                kept_ids = set()
+                for ep_data in result.get("episodes", []):
+                    ep_num = ep_data.get("number", 0)
+                    if ep_num in old_eps_by_num:
+                        existing_ep = old_eps_by_num[ep_num]
+                        for k, v in ep_data.items():
+                            setattr(existing_ep, k, v)
+                        kept_ids.add(existing_ep.id)
+                    else:
+                        new_ep = Episode(script_id=script.id, **ep_data)
+                        sess.add(new_ep)
+                for ep_num, old_ep in old_eps_by_num.items():
+                    if old_ep.id not in kept_ids:
+                        await sess.delete(old_ep)
+                await sess.flush()
+            else:
+                # No existing script, create new
+                script = Script(project_id=project_id, **result["script"])
+                sess.add(script)
+                await sess.flush()
+                for ep_data in result["episodes"]:
+                    episode = Episode(script_id=script.id, **ep_data)
+                    sess.add(episode)
+        else:
+            script = Script(project_id=project_id, **result["script"])
+            sess.add(script)
+            await sess.flush()
 
-        for ep_data in result["episodes"]:
-            episode = Episode(script_id=script.id, **ep_data)
-            sess.add(episode)
+            for ep_data in result["episodes"]:
+                episode = Episode(script_id=script.id, **ep_data)
+                sess.add(episode)
 
+        # Characters: skip if name already exists
+        existing_chars = await sess.execute(
+            select(Character.name).where(Character.project_id == project_id)
+        )
+        existing_char_names = set(existing_chars.scalars().all())
         for ch_data in result["characters"]:
+            if ch_data.get("name") in existing_char_names:
+                continue
             role_str = ch_data.pop("role", "supporting")
             try:
                 role = CharacterRole(role_str)
             except ValueError:
                 role = CharacterRole.SUPPORTING
-            character = Character(
-                project_id=project_id,
-                role=role,
-                **ch_data,
-            )
+            character = Character(project_id=project_id, role=role, **ch_data)
             sess.add(character)
 
+        # Scenes: skip if name already exists
+        existing_scenes = await sess.execute(
+            select(SceneLocation.name).where(SceneLocation.project_id == project_id)
+        )
+        existing_scene_names = set(existing_scenes.scalars().all())
         for sc_data in result["scenes"]:
+            if sc_data.get("name") in existing_scene_names:
+                continue
             scene = SceneLocation(project_id=project_id, **sc_data)
             sess.add(scene)
 
@@ -260,14 +355,15 @@ async def generate_script_stream(
         )
 
     # ── Start a new background generation ──
-    # Remove existing script if any
-    existing = await db.execute(
-        select(Script).where(Script.project_id == project_id)
-    )
-    old_script = existing.scalar_one_or_none()
-    if old_script:
-        await db.delete(old_script)
-        await db.flush()
+    preserve = body.preserve_episodes
+    if not preserve:
+        existing = await db.execute(
+            select(Script).where(Script.project_id == project_id)
+        )
+        old_script = existing.scalar_one_or_none()
+        if old_script:
+            await db.delete(old_script)
+            await db.flush()
     # Commit now so background task's DB session won't be blocked by write lock
     await db.commit()
 
@@ -306,7 +402,7 @@ async def generate_script_stream(
                 elif event["type"] == "done":
                     # Save to DB with fresh session
                     try:
-                        script_id = await _save_script_result(project_id, event["data"])
+                        script_id = await _save_script_result(project_id, event["data"], preserve)
                         event["data"]["script_id"] = script_id
                         event["data"]["episode_count"] = len(event["data"].get("episodes", []))
                         event["data"]["character_count"] = len(event["data"].get("characters", []))
@@ -624,3 +720,96 @@ async def approve_script(
     await db.flush()
     await db.refresh(script, attribute_names=["episodes"])
     return script
+
+
+# ═══════════════════════════════════════════════════════════════
+# P2-2: Script export
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/projects/{project_id}/script/export")
+async def export_script(
+    project_id: int,
+    format: str = Query("docx", description="Export format: docx or txt"),
+    user: CurrentUser = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Export the script as a downloadable file (DOCX or TXT)."""
+    from fastapi.responses import Response
+    from io import BytesIO
+
+    script = await _get_script(project_id, db)
+    project = await _get_project(project_id, db)
+
+    if format == "txt":
+        lines = [f"《{project.title}》剧本", "=" * 40, ""]
+        lines.append(f"主角：{script.protagonist or '未指定'}")
+        lines.append(f"类型：{script.genre or '未指定'}")
+        lines.append(f"梗概：{script.synopsis or '未指定'}")
+        lines.append(f"背景：{script.background or '未指定'}")
+        lines.append("")
+
+        for ep in script.episodes:
+            lines.append(f"第{ep.number}集：{ep.title or ''}")
+            lines.append("-" * 30)
+            lines.append(ep.content or "（暂无内容）")
+            lines.append("")
+
+        content = "\n".join(lines)
+        safe_title = "".join(c for c in project.title if c.isalnum() or c in "._- ")
+        filename = f"{safe_title}.txt"
+
+        return Response(
+            content=content.encode("utf-8-sig"),
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    # DOCX export
+    try:
+        from docx import Document
+        from docx.shared import Pt
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+    except ImportError:
+        raise HTTPException(status_code=500, detail="python-docx is required for DOCX export")
+
+    doc = Document()
+
+    # Title
+    title_para = doc.add_heading(f"《{project.title}》", level=0)
+    title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Meta table
+    meta_table = doc.add_table(rows=4, cols=2)
+    for i, (label, value) in enumerate([
+        ("主角", script.protagonist or ""),
+        ("类型", script.genre or ""),
+        ("梗概", script.synopsis or ""),
+        ("背景", script.background or ""),
+    ]):
+        meta_table.rows[i].cells[0].text = label
+        meta_table.rows[i].cells[1].text = value
+
+    doc.add_paragraph("")
+
+    # Episodes
+    for ep in script.episodes:
+        doc.add_heading(f"第{ep.number}集：{ep.title or ''}", level=2)
+        if ep.content:
+            for line in ep.content.split("\n"):
+                if line.strip():
+                    doc.add_paragraph(line.strip())
+        else:
+            doc.add_paragraph("（暂无内容）")
+
+    buf = BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+
+    safe_title = "".join(c for c in project.title if c.isalnum() or c in "._- ")
+    filename = f"{safe_title}.docx"
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

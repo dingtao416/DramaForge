@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DEFAULT_SCENE_IMAGE } from '@/constants/defaultAssets'
 import type { CharacterDetail } from '@/types/character'
 import type { SceneDetail } from '@/types/scene'
 
@@ -14,7 +15,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <aside class="w-52 border-r border-gray-200 bg-white overflow-y-auto shrink-0 flex flex-col">
+  <aside class="w-60 border-r border-gray-200 bg-white overflow-y-auto shrink-0 flex flex-col">
     <!-- Header -->
     <div class="flex items-center justify-between px-3 pt-3 pb-2">
       <span class="text-[14px] font-medium text-gray-900">资产库</span>
@@ -71,7 +72,12 @@ const emit = defineEmits<{
                 :alt="scene.name"
                 class="w-full h-full object-cover"
               />
-              <div v-else class="w-full h-full flex items-center justify-center text-xl text-gray-300">🏠</div>
+              <img
+                v-else
+                :src="DEFAULT_SCENE_IMAGE"
+                :alt="`${scene.name} 默认场景图`"
+                class="w-full h-full object-cover"
+              />
             </div>
             <div class="text-[10px] text-gray-600 truncate">{{ scene.name }}</div>
           </div>

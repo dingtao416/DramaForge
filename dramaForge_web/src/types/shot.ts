@@ -57,3 +57,5 @@ export interface StoryboardGenerateRequest {
   shots_per_segment?: number
   force?: boolean
 }
+
+export type Shot = ShotDetail

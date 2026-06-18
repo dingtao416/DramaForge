@@ -1,10 +1,20 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { useStoryboardStore } from '@/stores/storyboard'
 import { useAssetsStore } from '@/stores/assets'
+import { storyboardApi } from '@/api/storyboard'
 import LoadingOverlay from '@/components/common/LoadingOverlay.vue'
 import TopbarActions from '@/components/common/TopbarActions.vue'
+import AssetPanel from '@/components/storyboard/AssetPanel.vue'
+import StoryboardScript from '@/components/storyboard/StoryboardScript.vue'
+import PreviewPanel from '@/components/storyboard/PreviewPanel.vue'
+import Timeline from '@/components/storyboard/Timeline.vue'
+import ShotEditor from '@/components/storyboard/ShotEditor.vue'
+import type { ShotDetail } from '@/types/shot'
+import type { CharacterDetail } from '@/types/character'
+import type { SceneDetail } from '@/types/scene'
+import type { SegmentDetail } from '@/types/segment'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,25 +24,377 @@ const assetsStore = useAssetsStore()
 const projectId = Number(route.params.id)
 const episodeId = Number(route.params.epId)
 
+// ── Model selection ──
+const selectedModel = ref('seedance-2.0')
+const modelOptions = [
+  { value: 'seedance-2.0', label: 'Seedance 2.0 · Fast' },
+  { value: 'veo-3.1-fast', label: 'veo-3.1-fast' },
+  { value: 'veo3', label: 'veo3' },
+]
+
+// ── Editing state ──
+const editingShot = ref(false)
+const savingShot = ref(false)
+
+// ── Generation state ──
+const generatingSegmentIds = ref<Set<number>>(new Set())
+const generatingAll = ref(false)
+const generatingAllProgress = ref('')
+const composing = ref(false)
+const downloading = ref(false)
+const exporting = ref(false)
+const addingShot = ref(false)
+const deletingShotId = ref<number | null>(null)
+
+// ── Compose options (P1-2 & P1-3) ──
+const composeQuality = ref<'high' | 'medium' | 'low'>('high')
+const composeResolution = ref('')
+const composeSubtitleText = ref('')
+const composeSubtitleFontSize = ref(24)
+const composeBgmVolume = ref(0.15)
+const bgmUploading = ref(false)
+const hasBgm = ref(false)
+const showComposeOptions = ref(false)
+
+// ── Toast messages ──
+const toastMessage = ref('')
+const toastType = ref<'success' | 'error' | 'info'>('info')
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+function showToast(msg: string, type: 'success' | 'error' | 'info' = 'info') {
+  toastMessage.value = msg
+  toastType.value = type
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { toastMessage.value = '' }, 4000)
+}
+
+// ── Polling ──
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function startPolling() {
+  if (pollTimer) return
+  pollTimer = setInterval(async () => {
+    try {
+      await sbStore.fetchStoryboard(projectId, episodeId)
+      // Stop polling if no segments are generating
+      const stillGenerating = sbStore.storyboard?.segments.some(s => s.status === 'generating')
+      if (!stillGenerating && generatingSegmentIds.value.size === 0) {
+        stopPolling()
+      }
+    } catch { /* silent */ }
+  }, 3000)
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+
 onMounted(async () => {
   await Promise.all([
     sbStore.fetchStoryboard(projectId, episodeId),
     assetsStore.fetchAssets(projectId),
   ])
+  document.addEventListener('keydown', onKeydown)
 })
 
-function formatDuration(seconds: number) {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-}
+onBeforeUnmount(() => {
+  stopPolling()
+  document.removeEventListener('keydown', onKeydown)
+})
 
+// ── Navigation guard ──
+onBeforeRouteLeave((_to, _from, next) => {
+  if (generatingSegmentIds.value.size > 0 || generatingAll.value) {
+    const leave = window.confirm('有片段正在生成中，确定要离开吗？生成进度会丢失。')
+    if (!leave) return next(false)
+  }
+  stopPolling()
+  next()
+})
+
+// ── Computed ──
 const totalDuration = computed(() => sbStore.storyboard?.total_duration || 0)
 const episodeTitle = computed(() => sbStore.storyboard?.episode_title || '分镜编辑器')
+
+const allSegmentsCompleted = computed(() => {
+  const segs = sbStore.storyboard?.segments
+  if (!segs || segs.length === 0) return false
+  return segs.every(s => s.status === 'completed')
+})
+
+const anySegmentPending = computed(() => {
+  const segs = sbStore.storyboard?.segments
+  if (!segs || segs.length === 0) return false
+  return segs.some(s => s.status === 'pending' || s.status === 'failed')
+})
+
+const pendingSegmentCount = computed(() => {
+  const segs = sbStore.storyboard?.segments || []
+  return segs.filter(s => s.status === 'pending' || s.status === 'failed').length
+})
 
 function goBack() {
   router.push(`/projects/${projectId}/episodes`)
 }
+
+// ── Shot selection ──
+function handleSelectShot(_shot: ShotDetail, index: number) {
+  sbStore.currentShotIndex = index
+}
+
+// ── Asset selection ──
+function handleSelectCharacter(_char: CharacterDetail) {
+  // TODO: insert character reference into current shot
+}
+function handleSelectScene(_scene: SceneDetail) {
+  // TODO: insert scene reference into current shot
+}
+
+// ── Edit / Save ──
+function handleEditScript() {
+  // Save snapshot for undo
+  if (sbStore.currentShot) {
+    sbStore.pushUndo({
+      camera_type: sbStore.currentShot.camera_type,
+      camera_angle: sbStore.currentShot.camera_angle,
+      camera_movement: sbStore.currentShot.camera_movement,
+      transition: sbStore.currentShot.transition,
+      time_of_day: sbStore.currentShot.time_of_day,
+      duration: sbStore.currentShot.duration,
+      dialogue: sbStore.currentShot.dialogue,
+      scene_ref: sbStore.currentShot.scene_ref,
+      background: sbStore.currentShot.background,
+    })
+  }
+  editingShot.value = true
+}
+
+async function handleSaveShot(data: Partial<ShotDetail>) {
+  if (!sbStore.currentShot) return
+  savingShot.value = true
+  try {
+    await storyboardApi.updateShot(projectId, episodeId, sbStore.currentShot.id, data as any)
+    editingShot.value = false
+    await sbStore.fetchStoryboard(projectId, episodeId)
+    showToast('分镜已保存', 'success')
+  } catch (e: any) {
+    showToast('保存失败，请重试', 'error')
+  } finally {
+    savingShot.value = false
+  }
+}
+
+// ── Undo/Redo (P2-5) ──
+async function handleUndo() {
+  await sbStore.undo(projectId, episodeId)
+  showToast('已撤销', 'info')
+}
+async function handleRedo() {
+  await sbStore.redo(projectId, episodeId)
+  showToast('已重做', 'info')
+}
+
+// Keyboard shortcuts
+function onKeydown(e: KeyboardEvent) {
+  if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    handleUndo()
+  } else if (e.ctrlKey && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+    e.preventDefault()
+    handleRedo()
+  }
+}
+
+function handleCancelEdit() {
+  editingShot.value = false
+}
+
+// ── Generate single segment ──
+async function handleGenerateSegment(segment?: SegmentDetail) {
+  const seg = segment || sbStore.currentSegment
+  if (!seg) return
+
+  const segId = seg.id
+  generatingSegmentIds.value = new Set([...generatingSegmentIds.value, segId])
+  startPolling()
+
+  try {
+    await storyboardApi.generateSegment(projectId, episodeId, segId)
+    showToast('素材生成任务已提交', 'success')
+  } catch (e: any) {
+    showToast(e?.response?.data?.detail || '素材生成失败', 'error')
+  } finally {
+    const next = new Set(generatingSegmentIds.value)
+    next.delete(segId)
+    generatingSegmentIds.value = next
+    // Refresh to get latest status
+    await sbStore.fetchStoryboard(projectId, episodeId)
+  }
+}
+
+// ── Regenerate segment ──
+async function handleRegenerateSegment() {
+  if (!sbStore.currentSegment) return
+  const segId = sbStore.currentSegment.id
+  generatingSegmentIds.value = new Set([...generatingSegmentIds.value, segId])
+  startPolling()
+
+  try {
+    await storyboardApi.regenerateSegment(projectId, episodeId, segId)
+    showToast('重新生成任务已提交', 'success')
+  } catch (e: any) {
+    showToast(e?.response?.data?.detail || '重新生成失败', 'error')
+  } finally {
+    const next = new Set(generatingSegmentIds.value)
+    next.delete(segId)
+    generatingSegmentIds.value = next
+    await sbStore.fetchStoryboard(projectId, episodeId)
+  }
+}
+
+// ── Batch generate all ──
+async function handleGenerateAll() {
+  const segs = sbStore.storyboard?.segments || []
+  const pending = segs.filter(s => s.status === 'pending' || s.status === 'failed')
+  if (pending.length === 0) return
+
+  generatingAll.value = true
+  let completed = 0
+  const total = pending.length
+
+  for (const seg of pending) {
+    generatingAllProgress.value = `正在生成素材 (${completed}/${total})...`
+    generatingSegmentIds.value = new Set([...generatingSegmentIds.value, seg.id])
+
+    try {
+      await storyboardApi.generateSegment(projectId, episodeId, seg.id)
+      completed++
+    } catch (e: any) {
+      showToast(`片段${seg.index + 1}生成失败`, 'error')
+    } finally {
+      const next = new Set(generatingSegmentIds.value)
+      next.delete(seg.id)
+      generatingSegmentIds.value = next
+    }
+  }
+
+  generatingAll.value = false
+  generatingAllProgress.value = ''
+  await sbStore.fetchStoryboard(projectId, episodeId)
+  showToast(`素材生成完成 (${completed}/${total})`, completed > 0 ? 'success' : 'error')
+}
+
+// ── Compose episode ──
+async function handleCompose() {
+  composing.value = true
+  try {
+    await storyboardApi.composeEpisode(projectId, episodeId, {
+      quality: composeQuality.value,
+      resolution: composeResolution.value || undefined,
+      subtitle_text: composeSubtitleText.value || undefined,
+      subtitle_font_size: composeSubtitleFontSize.value,
+      subtitle_position: 'bottom',
+      bgm_volume: hasBgm.value ? composeBgmVolume.value : 0,
+    })
+    await sbStore.fetchStoryboard(projectId, episodeId)
+    showToast('全集合成完成', 'success')
+    showComposeOptions.value = false
+  } catch (e: any) {
+    showToast(e?.response?.data?.detail || '合成失败，请确保所有片段素材已生成', 'error')
+  } finally {
+    composing.value = false
+  }
+}
+
+// ── BGM upload ──
+async function handleBgmUpload(e: Event) {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+  bgmUploading.value = true
+  try {
+    await storyboardApi.uploadBgm(projectId, file)
+    hasBgm.value = true
+    showToast('BGM 上传成功', 'success')
+  } catch (err: any) {
+    showToast('BGM 上传失败', 'error')
+  } finally {
+    bgmUploading.value = false
+  }
+}
+
+// ── Download episode video ──
+async function handleDownload() {
+  downloading.value = true
+  try {
+    await storyboardApi.downloadEpisode(projectId, episodeId)
+    showToast('下载已开始', 'success')
+  } catch (e: any) {
+    showToast('下载失败', 'error')
+  } finally {
+    downloading.value = false
+  }
+}
+
+// ── Add shot ──
+async function handleAddShot() {
+  const seg = sbStore.currentSegment
+  if (!seg) return
+  addingShot.value = true
+  try {
+    await storyboardApi.createShot(projectId, episodeId, seg.id)
+    await sbStore.fetchStoryboard(projectId, episodeId)
+    showToast('新分镜已添加', 'success')
+  } catch (e: any) {
+    showToast(e?.response?.data?.detail || '添加分镜失败', 'error')
+  } finally {
+    addingShot.value = false
+  }
+}
+
+// ── Delete shot ──
+async function handleDeleteShot(shotId: number) {
+  if (!window.confirm('确定要删除这个分镜吗？')) return
+  deletingShotId.value = shotId
+  try {
+    await storyboardApi.deleteShot(projectId, episodeId, shotId)
+    await sbStore.fetchStoryboard(projectId, episodeId)
+    showToast('分镜已删除', 'success')
+  } catch (e: any) {
+    showToast(e?.response?.data?.detail || '删除分镜失败', 'error')
+  } finally {
+    deletingShotId.value = null
+  }
+}
+
+// ── Export ──
+async function handleExport() {
+  exporting.value = true
+  try {
+    await storyboardApi.exportProject(projectId)
+    showToast('项目已导出', 'success')
+    router.push(`/projects/${projectId}/episodes`)
+  } catch (e: any) {
+    showToast(e?.response?.data?.detail || '导出失败', 'error')
+  } finally {
+    exporting.value = false
+  }
+}
+
+// ── Generate storyboard (initial) ──
+async function handleGenerateStoryboard() {
+  try {
+    await sbStore.generateStoryboard(projectId, episodeId)
+    showToast('分镜脚本生成完成', 'success')
+  } catch (e: any) {
+    showToast(e?.response?.data?.detail || '分镜生成失败', 'error')
+  }
+}
+
+// ── Reset editing when segment changes ──
+watch(() => sbStore.currentSegmentIndex, () => {
+  editingShot.value = false
+})
 </script>
 
 <template>
@@ -43,234 +405,268 @@ function goBack() {
     <header class="sb-topbar">
       <div class="sb-topbar-left">
         <button class="sb-back-btn" @click="goBack">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
           <span>返回</span>
         </button>
         <div class="sb-topbar-sep" />
-        <span class="sb-topbar-title">第{{ route.params.epId }}集·{{ episodeTitle }}</span>
+        <div class="sb-topbar-title-area">
+          <span class="sb-topbar-ep">第{{ route.params.epId }}集</span>
+          <span class="sb-topbar-title">{{ episodeTitle }}</span>
+        </div>
       </div>
+
       <div class="sb-topbar-right">
+        <!-- Undo/Redo -->
+        <button class="sb-btn sb-btn--ghost" :disabled="!sbStore.canUndo" title="撤销 (Ctrl+Z)" @click="handleUndo">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 3.5L1.5 6 4 8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M1.5 6h7.5a3.5 3.5 0 010 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+        <button class="sb-btn sb-btn--ghost" :disabled="!sbStore.canRedo" title="重做 (Ctrl+Y)" @click="handleRedo">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M10 3.5L12.5 6 10 8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 6H5a3.5 3.5 0 100 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+        <div class="sb-topbar-sep" />
+
         <TopbarActions />
         <div class="sb-topbar-sep" />
-        <select class="sb-model-select">
-          <option>Seedance 2.0 · Fast</option>
-          <option>veo-3.1-fast</option>
-          <option>veo3</option>
+
+        <!-- Model selector -->
+        <select v-model="selectedModel" class="sb-model-select">
+          <option v-for="opt in modelOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
         </select>
-        <button class="btn btn-outline btn-sm">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v5m0 0v5m0-5h5m-5 0H2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-          导出
+
+        <!-- Export -->
+        <button class="sb-btn sb-btn--outline" :disabled="exporting" @click="handleExport">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M7 1.5v8M4 6.5l3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 11.5h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+          {{ exporting ? '导出中...' : '导出' }}
         </button>
-        <button class="btn btn-primary btn-sm sb-compose-btn">合成全集</button>
+
+        <!-- Compose -->
+        <button
+          class="sb-btn sb-btn--primary"
+          :disabled="composing || !allSegmentsCompleted"
+          :title="!allSegmentsCompleted ? '请先生成所有片段素材' : '合成全集视频'"
+          @click="handleCompose"
+        >
+          <svg v-if="composing" class="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5" opacity="0.3"/>
+            <path d="M7 1.5a5.5 5.5 0 015.1 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <svg v-else width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <polygon points="4,2 4,12 11.5,7" fill="currentColor"/>
+          </svg>
+          {{ composing ? '合成中...' : '合成全集' }}
+        </button>
+
+        <!-- Download -->
+        <button
+          class="sb-btn sb-btn--outline"
+          :disabled="downloading || !allSegmentsCompleted"
+          :title="!allSegmentsCompleted ? '请先合成全集视频' : '下载视频'"
+          @click="handleDownload"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M7 1.5v8M4 6.5l3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 11.5h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+          {{ downloading ? '下载中...' : '下载' }}
+        </button>
+
+        <!-- Compose options toggle -->
+        <button
+          class="sb-btn sb-btn--ghost"
+          :class="{ 'sb-btn--active': showComposeOptions }"
+          @click="showComposeOptions = !showComposeOptions"
+          title="合成选项"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M7 4v6M4 7h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+          选项
+        </button>
       </div>
     </header>
 
-    <!-- ═══ Main Area ═══ -->
+    <!-- Compose options panel -->
+    <div v-if="showComposeOptions" class="sb-compose-options">
+      <div class="sb-options-grid">
+        <!-- Quality -->
+        <div class="sb-option-group">
+          <label class="sb-option-label">视频质量</label>
+          <div class="sb-option-tabs">
+            <button
+              v-for="q in (['high', 'medium', 'low'] as const)"
+              :key="q"
+              :class="['sb-option-tab', { active: composeQuality === q }]"
+              @click="composeQuality = q"
+            >{{ { high: '高', medium: '中', low: '低' }[q] }}</button>
+          </div>
+        </div>
+
+        <!-- Resolution -->
+        <div class="sb-option-group">
+          <label class="sb-option-label">分辨率</label>
+          <select v-model="composeResolution" class="sb-option-select">
+            <option value="">默认 (720x1280)</option>
+            <option value="1080x1920">1080x1920 (高清)</option>
+            <option value="720x1280">720x1280 (标清)</option>
+            <option value="540x960">540x960 (流畅)</option>
+          </select>
+        </div>
+
+        <!-- BGM -->
+        <div class="sb-option-group">
+          <label class="sb-option-label">背景音乐</label>
+          <div class="sb-bgm-row">
+            <label class="sb-upload-btn" :class="{ uploading: bgmUploading }">
+              <input type="file" accept=".mp3,.wav,.m4a,.aac,.ogg" class="hidden" @change="handleBgmUpload" />
+              {{ bgmUploading ? '上传中...' : hasBgm ? '已上传 ✓' : '选择文件' }}
+            </label>
+            <div v-if="hasBgm" class="sb-bgm-volume">
+              <span class="text-[11px] text-gray-400">音量</span>
+              <input
+                v-model.number="composeBgmVolume"
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                class="sb-volume-slider"
+              />
+              <span class="text-[11px] text-gray-500 w-8">{{ Math.round(composeBgmVolume * 100) }}%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subtitle -->
+        <div class="sb-option-group">
+          <label class="sb-option-label">片头字幕</label>
+          <input
+            v-model="composeSubtitleText"
+            type="text"
+            class="sb-option-input"
+            placeholder="输入字幕文本（留空不添加）"
+          />
+          <div v-if="composeSubtitleText" class="sb-subtitle-extra">
+            <label class="text-[11px] text-gray-400">字号</label>
+            <select v-model.number="composeSubtitleFontSize" class="sb-option-select-sm">
+              <option :value="18">18px</option>
+              <option :value="24">24px</option>
+              <option :value="32">32px</option>
+              <option :value="40">40px</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Main 3-col ═══ -->
     <div class="sb-main">
       <!-- LEFT: Asset Panel -->
-      <aside class="sb-left">
-        <div class="sb-left-header">
-          <span class="sb-left-title">资产库</span>
-          <button class="sb-add-btn">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="8" y1="3" x2="8" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          </button>
-        </div>
+      <AssetPanel
+        :characters="assetsStore.characters"
+        :scenes="assetsStore.scenes"
+        @select-character="handleSelectCharacter"
+        @select-scene="handleSelectScene"
+      />
 
-        <div class="sb-left-body">
-          <!-- Characters -->
-          <div class="sb-asset-group">
-            <div class="sb-asset-group-title">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M2 13c0-3 2.5-5 5-5s5 2 5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-              角色 ({{ assetsStore.characters.length }})
-            </div>
-            <div class="sb-char-grid">
-              <div
-                v-for="char in assetsStore.characters"
-                :key="char.id"
-                class="sb-char-item"
-              >
-                <div class="sb-char-img">
-                  <img
-                    v-if="char.reference_images?.[0]"
-                    :src="char.reference_images[0]"
-                    :alt="char.name"
-                  />
-                  <div v-else class="sb-char-placeholder">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="#ccc" stroke-width="1.5"/><path d="M4 22c0-4.4 3.6-7 8-7s8 2.6 8 7" stroke="#ccc" stroke-width="1.5" stroke-linecap="round"/></svg>
-                  </div>
-                </div>
-                <div class="sb-char-name">{{ char.name }}</div>
-                <div class="sb-char-tag">基础形象</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Scenes -->
-          <div class="sb-asset-group">
-            <div class="sb-asset-group-title">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="3" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M4 3V1.5M10 3V1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-              场景 ({{ assetsStore.scenes.length }})
-            </div>
-            <div class="sb-scene-list">
-              <div
-                v-for="scene in assetsStore.scenes"
-                :key="scene.id"
-                class="sb-scene-item"
-              >
-                <div class="sb-scene-img">
-                  <img
-                    v-if="scene.reference_images?.[0]"
-                    :src="scene.reference_images[0]"
-                    :alt="scene.name"
-                  />
-                  <div v-else class="sb-scene-placeholder">🏠</div>
-                </div>
-                <div class="sb-scene-name">{{ scene.name }}</div>
-              </div>
-            </div>
-            <!-- Empty scene placeholder -->
-            <div v-if="!assetsStore.scenes.length" class="sb-scene-empty">
-              暂无场景
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <!-- CENTER: Storyboard Script -->
-      <main class="sb-center">
+      <!-- CENTER: Script / Editor -->
+      <div class="sb-center">
         <template v-if="sbStore.storyboard && sbStore.storyboard.segments.length">
-          <div class="sb-script-wrap">
-            <!-- Segment header -->
-            <div class="sb-segment-header">
-              <h2 class="sb-segment-title">
-                片段 {{ sbStore.currentSegmentIndex + 1 }}
-              </h2>
-              <span class="sb-segment-hint">
-                片段时长请限制在4-15s，输入"@"可快速调整镜头时长、引用角色、场景、素材
-              </span>
-              <span class="sb-cost-hint">
-                视频每秒消耗11积分，以实际生成为准
-              </span>
+          <!-- Batch generate banner -->
+          <div v-if="anySegmentPending && !generatingAll" class="sb-batch-banner">
+            <div class="sb-batch-info">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"/>
+                <path d="M8 5v3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                <circle cx="8" cy="12" r="0.7" fill="currentColor"/>
+              </svg>
+              <span>{{ pendingSegmentCount }} 个片段待生成素材</span>
             </div>
+            <button class="sb-btn sb-btn--primary sb-btn--sm" @click="handleGenerateAll">
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                <polygon points="3.5,1.5 3.5,11.5 10.5,6.5" fill="currentColor"/>
+              </svg>
+              全部生成
+            </button>
+          </div>
 
-            <!-- Segment script card -->
-            <div class="sb-script-card">
-              <template v-if="sbStore.currentSegment">
-                <div v-for="(shot, idx) in sbStore.currentSegment.shots" :key="shot.id" class="sb-shot">
-                  <!-- Shot header -->
-                  <div class="sb-shot-header">
-                    <span class="sb-shot-label">分镜{{ idx + 1 }}</span>
-                    <span class="sb-shot-meta">
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M6 3.5V6.5L8 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                      {{ shot.duration }}s
-                    </span>
-                    <span class="sb-shot-meta">时间：{{ shot.time_of_day }}</span>
-                    <span class="sb-shot-meta">场景图片：{{ shot.scene_ref || '无' }}</span>
-                  </div>
-
-                  <!-- Shot content -->
-                  <div class="sb-shot-body">
-                    <p v-if="shot.background">{{ shot.background }}</p>
-                    <p v-if="shot.dialogue">
-                      <span class="sb-shot-dialogue-label">台词：</span>
-                      「{{ shot.dialogue }}」
-                    </p>
-                    <p v-if="shot.voice_style" class="sb-shot-voice">
-                      音色：{{ shot.voice_style }}
-                    </p>
-                  </div>
-                </div>
-              </template>
-            </div>
-
-            <!-- Actions -->
-            <div class="sb-script-actions">
-              <button class="btn btn-outline btn-sm">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M8.5 2.5l3 3M2 11l7.5-7.5 3 3L5 14H2v-3z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                编辑脚本
-              </button>
-              <button class="btn btn-primary btn-sm sb-regen-btn">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 7a5.5 5.5 0 019.37-3.9M12.5 7a5.5 5.5 0 01-9.37 3.9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M11 1v2.5h-2.5M3 11v-2.5h2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                再次生成
-              </button>
+          <!-- Batch progress -->
+          <div v-if="generatingAll" class="sb-batch-banner sb-batch-banner--active">
+            <div class="flex items-center gap-2">
+              <div class="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+              <span class="text-[13px] text-purple-600 font-medium">{{ generatingAllProgress || '正在生成...' }}</span>
             </div>
           </div>
+
+          <!-- Shot Editor (when editing) -->
+          <ShotEditor
+            v-if="editingShot && sbStore.currentShot"
+            :shot="sbStore.currentShot"
+            @save="handleSaveShot"
+            @cancel="handleCancelEdit"
+          />
+          <!-- Storyboard Script (normal view) -->
+          <StoryboardScript
+            v-else
+            :segment="sbStore.currentSegment"
+            :segment-index="sbStore.currentSegmentIndex"
+            :generating="generatingSegmentIds.has(sbStore.currentSegment?.id || -1)"
+            :adding-shot="addingShot"
+            :deleting-shot-id="deletingShotId"
+            @edit-script="handleEditScript"
+            @generate-segment="handleGenerateSegment()"
+            @regenerate="handleRegenerateSegment"
+            @select-shot="handleSelectShot"
+            @add-shot="handleAddShot"
+            @delete-shot="handleDeleteShot"
+          />
         </template>
 
-        <!-- Empty state -->
+        <!-- Empty state (no storyboard yet) -->
         <div v-else-if="!sbStore.loading" class="sb-empty">
-          <div class="sb-empty-icon">🎬</div>
-          <p class="sb-empty-text">尚未生成分镜脚本</p>
-          <button class="btn btn-primary" @click="sbStore.generateStoryboard(projectId, episodeId)">
+          <div class="sb-empty-icon">
+            <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+              <rect x="4" y="8" width="48" height="36" rx="6" stroke="#d1d5db" stroke-width="2.5"/>
+              <polygon points="22,18 22,34 38,26" fill="#d1d5db"/>
+            </svg>
+          </div>
+          <h3 class="sb-empty-title">尚未生成分镜脚本</h3>
+          <p class="sb-empty-desc">AI 将根据剧本和角色场景设定自动拆分镜头</p>
+          <button class="sb-btn sb-btn--primary sb-btn--lg" @click="handleGenerateStoryboard">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M2 4l6-3 6 3v8l-6 3-6-3V4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+              <polygon points="6.5,6 6.5,11 10.5,8.5" fill="currentColor"/>
+            </svg>
             生成分镜脚本
           </button>
         </div>
-      </main>
+      </div>
 
       <!-- RIGHT: Preview Panel -->
-      <aside class="sb-right">
-        <div class="sb-preview-video">
-          <div v-if="sbStore.currentShot?.video_url">
-            <video :src="sbStore.currentShot.video_url" controls class="sb-video" />
-          </div>
-          <div v-else-if="sbStore.currentShot?.image_url">
-            <img :src="sbStore.currentShot.image_url" class="sb-video" />
-          </div>
-          <div v-else class="sb-preview-placeholder">
-            暂无预览
-          </div>
-
-          <!-- Video controls overlay -->
-          <div class="sb-video-controls">
-            <button class="sb-play-btn">
-              <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5L13 8L4 13.5V2.5Z"/></svg>
-            </button>
-            <span class="sb-time">00:00</span>
-            <span class="sb-time-sep">|</span>
-            <span class="sb-time">00:15</span>
-            <div class="sb-video-controls-right">
-              <button class="sb-ctrl-btn">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-              </button>
-              <button class="sb-ctrl-btn">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 3h4v4H3V3zM9 3h4v4H9V3zM3 9h4v4H3V9zM9 9h4v4H9V9z" stroke="currentColor" stroke-width="1.2"/></svg>
-              </button>
-              <button class="sb-ctrl-btn">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 14V8l5-6 5 6v6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      </aside>
+      <PreviewPanel :shot="sbStore.currentShot" />
     </div>
 
     <!-- ═══ Bottom Timeline ═══ -->
-    <div class="sb-timeline">
-      <div class="sb-timeline-top">
-        <button class="sb-timeline-play">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M3.5 2L11.5 7L3.5 12V2Z"/></svg>
-        </button>
-        <span class="sb-timeline-time">00:00 / {{ formatDuration(totalDuration) }}</span>
-        <div class="sb-timeline-spacer" />
-        <button class="sb-timeline-multi">多选</button>
+    <Timeline
+      v-if="sbStore.storyboard && sbStore.storyboard.segments.length"
+      :segments="sbStore.storyboard.segments"
+      :current-index="sbStore.currentSegmentIndex"
+      :total-duration="totalDuration"
+      @select="sbStore.selectSegment"
+    />
+
+    <!-- ═══ Toast ═══ -->
+    <Transition name="toast">
+      <div v-if="toastMessage" class="sb-toast" :class="'sb-toast--' + toastType">
+        <span>{{ toastMessage }}</span>
       </div>
-      <div class="sb-timeline-track">
-        <div
-          v-for="(seg, idx) in sbStore.storyboard?.segments || []"
-          :key="seg.id"
-          class="sb-timeline-seg"
-          :class="{ active: idx === sbStore.currentSegmentIndex }"
-          @click="sbStore.selectSegment(idx)"
-        >
-          <div class="sb-seg-thumb">
-            <img v-if="seg.thumbnail_url" :src="seg.thumbnail_url" />
-            <span v-else class="sb-seg-thumb-text">{{ idx + 1 }}</span>
-            <span class="sb-seg-badge">{{ idx + 1 }}</span>
-            <span class="sb-seg-dur">{{ seg.duration ? formatDuration(seg.duration) : '--:--' }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    </Transition>
   </div>
 </template>
 
@@ -282,67 +678,146 @@ function goBack() {
   flex-direction: column;
   background: #fff;
   overflow: hidden;
+  position: relative;
 }
 
 /* ═══ Top Bar ═══ */
 .sb-topbar {
-  height: 48px;
-  border-bottom: 1px solid #e8e8e8;
+  height: 52px;
+  border-bottom: 1px solid #f0f0f0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 0 20px;
   flex-shrink: 0;
+  background: #fff;
+  z-index: 10;
 }
+
 .sb-topbar-left {
   display: flex;
   align-items: center;
   gap: 0;
 }
+
 .sb-back-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 13px;
   color: #666;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 6px 8px;
-  border-radius: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
   transition: all 0.15s;
+  font-weight: 500;
 }
 .sb-back-btn:hover { color: #333; background: #f5f5f5; }
+
 .sb-topbar-sep {
   width: 1px;
-  height: 20px;
+  height: 22px;
   background: #e8e8e8;
-  margin: 0 12px;
+  margin: 0 14px;
 }
+
+.sb-topbar-title-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sb-topbar-ep {
+  font-size: 13px;
+  font-weight: 600;
+  color: #7c3aed;
+  background: #F3F0FF;
+  padding: 2px 10px;
+  border-radius: 6px;
+}
+
 .sb-topbar-title {
   font-size: 14px;
   font-weight: 600;
   color: #1a1a1a;
 }
+
 .sb-topbar-right {
   display: flex;
   align-items: center;
   gap: 10px;
 }
+
 .sb-model-select {
-  height: 32px;
+  height: 34px;
   font-size: 13px;
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
-  padding: 0 10px;
+  border: 1px solid #e5e5e5;
+  border-radius: 9px;
+  padding: 0 12px;
   background: #fff;
   outline: none;
-  color: #333;
+  color: #555;
   cursor: pointer;
+  font-weight: 500;
+  transition: border-color 0.15s;
 }
-.sb-compose-btn {
-  background: #1a1a1a !important;
-  color: #fff !important;
+.sb-model-select:hover { border-color: #d1d5db; }
+.sb-model-select:focus { border-color: #7c3aed; }
+
+/* ── Topbar buttons ── */
+.sb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.sb-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sb-btn--sm {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+
+.sb-btn--outline {
+  background: #fff;
+  color: #555;
+  border: 1px solid #e5e5e5;
+}
+.sb-btn--outline:hover:not(:disabled) {
+  background: #fafafa;
+  border-color: #d1d5db;
+  color: #333;
+}
+
+.sb-btn--primary {
+  background: #1a1a1a;
+  color: #fff;
+}
+.sb-btn--primary:hover:not(:disabled) {
+  background: #333;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.sb-btn--lg {
+  height: 42px;
+  padding: 0 24px;
+  font-size: 14px;
+  border-radius: 10px;
 }
 
 /* ═══ Main 3-col ═══ */
@@ -353,253 +828,40 @@ function goBack() {
   min-height: 0;
 }
 
-/* ── Left Panel ── */
-.sb-left {
-  width: 240px;
-  border-right: 1px solid #e8e8e8;
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-.sb-left-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f0;
-}
-.sb-left-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1a1a1a;
-}
-.sb-add-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: none;
-  color: #999;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.sb-add-btn:hover { background: #f5f5f5; color: #666; }
-
-.sb-left-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 16px;
-}
-
-.sb-asset-group {
-  margin-bottom: 20px;
-}
-.sb-asset-group-title {
-  font-size: 12px;
-  color: #999;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-/* Character grid */
-.sb-char-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.sb-char-item {
-  text-align: center;
-  cursor: pointer;
-}
-.sb-char-img {
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #f5f5f5;
-  margin-bottom: 6px;
-}
-.sb-char-img img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.sb-char-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.sb-char-name {
-  font-size: 12px;
-  color: #333;
-  font-weight: 500;
-  margin-bottom: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sb-char-tag {
-  font-size: 10px;
-  color: #bbb;
-}
-
-/* Scene list */
-.sb-scene-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.sb-scene-item {
-  cursor: pointer;
-}
-.sb-scene-img {
-  width: 100%;
-  aspect-ratio: 16/10;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #f5f5f5;
-  margin-bottom: 4px;
-}
-.sb-scene-img img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.sb-scene-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  color: #ccc;
-}
-.sb-scene-name {
-  font-size: 12px;
-  color: #333;
-  font-weight: 500;
-}
-.sb-scene-empty {
-  font-size: 12px;
-  color: #ccc;
-  text-align: center;
-  padding: 16px 0;
-}
-
-/* ── Center Panel ── */
 .sb-center {
   flex: 1;
   overflow-y: auto;
-  background: #fafafa;
   min-width: 0;
 }
-.sb-script-wrap {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 24px 24px 32px;
-}
-.sb-segment-header {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-.sb-segment-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #1a1a1a;
-  flex-shrink: 0;
-}
-.sb-segment-hint {
-  font-size: 12px;
-  color: #bbb;
-  line-height: 1.5;
-}
-.sb-cost-hint {
-  font-size: 12px;
-  color: #bbb;
-  margin-left: auto;
-  flex-shrink: 0;
-}
 
-/* Script card */
-.sb-script-card {
-  background: #fff;
-  border: 1px solid #e8e8e8;
-  border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 16px;
-}
-.sb-shot {
-  margin-bottom: 24px;
-}
-.sb-shot:last-child {
-  margin-bottom: 0;
-}
-.sb-shot-header {
+/* ═══ Batch Banner ═══ */
+.sb-batch-banner {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 10px 16px;
+  margin: 0;
+  background: #FFFBEB;
+  border-bottom: 1px solid #FDE68A;
 }
-.sb-shot-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1a1a1a;
-}
-.sb-shot-meta {
-  font-size: 12px;
-  color: #bbb;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-.sb-shot-body {
-  font-size: 14px;
-  color: #555;
-  line-height: 1.9;
-  padding-left: 16px;
-  border-left: 2px solid #e8e0ff;
-}
-.sb-shot-body p {
-  margin-bottom: 6px;
-}
-.sb-shot-body p:last-child {
-  margin-bottom: 0;
-}
-.sb-shot-dialogue-label {
-  color: #bbb;
-}
-.sb-shot-voice {
-  font-size: 12px;
-  color: #bbb;
+.sb-batch-banner--active {
+  background: #F3F0FF;
+  border-bottom-color: #c4b5fd;
 }
 
-/* Script actions */
-.sb-script-actions {
+.sb-batch-info {
   display: flex;
   align-items: center;
-  gap: 12px;
-  justify-content: flex-end;
+  gap: 8px;
+  font-size: 13px;
+  color: #92400e;
+  font-weight: 500;
 }
-.sb-regen-btn {
-  background: #7c3aed !important;
-  color: #fff !important;
-  opacity: 0.6;
+.sb-batch-banner--active .sb-batch-info {
+  color: #6d28d9;
 }
 
-/* Empty state */
+/* ═══ Empty State ═══ */
 .sb-empty {
   display: flex;
   flex-direction: column;
@@ -607,198 +869,184 @@ function goBack() {
   justify-content: center;
   height: 100%;
   gap: 12px;
-}
-.sb-empty-icon {
-  font-size: 48px;
-}
-.sb-empty-text {
-  font-size: 15px;
-  color: #999;
+  background: #fafafa;
 }
 
-/* ── Right Panel ── */
-.sb-right {
-  width: 320px;
-  border-left: 1px solid #e8e8e8;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  background: #000;
+.sb-empty-icon { margin-bottom: 4px; }
+
+.sb-empty-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #555;
+  margin: 0;
 }
-.sb-preview-video {
-  flex: 1;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-}
-.sb-video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-.sb-preview-placeholder {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #666;
+
+.sb-empty-desc {
   font-size: 14px;
+  color: #aaa;
+  margin: 0 0 8px;
 }
-.sb-video-controls {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+
+/* ═══ Toast ═══ */
+.sb-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  pointer-events: none;
+}
+.sb-toast--success { background: #1a1a1a; color: #fff; }
+.sb-toast--error   { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
+.sb-toast--info    { background: #F3F0FF; color: #6d28d9; border: 1px solid #c4b5fd; }
+
+.toast-enter-active { transition: all 0.3s ease; }
+.toast-leave-active { transition: all 0.3s ease; }
+.toast-enter-from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+.toast-leave-to   { opacity: 0; transform: translateX(-50%) translateY(10px); }
+
+/* ═══ Compose Options Panel ═══ */
+.sb-compose-options {
+  padding: 14px 20px;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+  flex-shrink: 0;
 }
-.sb-play-btn {
-  color: #fff;
-  background: none;
+
+.sb-options-grid {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.sb-option-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 120px;
+}
+
+.sb-option-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sb-option-tabs {
+  display: flex;
+  gap: 2px;
+  background: #eee;
+  border-radius: 7px;
+  padding: 2px;
+}
+
+.sb-option-tab {
+  padding: 4px 12px;
   border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: #777;
+  border-radius: 5px;
   cursor: pointer;
+  transition: all 0.15s;
+}
+.sb-option-tab.active {
+  background: #fff;
+  color: #333;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+
+.sb-option-select {
+  height: 30px;
+  font-size: 12px;
+  border: 1px solid #e5e5e5;
+  border-radius: 7px;
+  padding: 0 8px;
+  background: #fff;
+  color: #555;
+  outline: none;
+}
+.sb-option-select-sm {
+  height: 26px;
+  font-size: 11px;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  padding: 0 6px;
+  background: #fff;
+  color: #555;
+}
+
+.sb-option-input {
+  height: 30px;
+  font-size: 12px;
+  border: 1px solid #e5e5e5;
+  border-radius: 7px;
+  padding: 0 10px;
+  background: #fff;
+  color: #333;
+  outline: none;
+  width: 200px;
+}
+.sb-option-input:focus { border-color: #7c3aed; }
+
+.sb-bgm-row {
   display: flex;
   align-items: center;
+  gap: 10px;
 }
-.sb-time {
+
+.sb-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
   font-size: 12px;
-  color: #fff;
-  font-variant-numeric: tabular-nums;
+  border: 1px dashed #d1d5db;
+  border-radius: 7px;
+  cursor: pointer;
+  color: #777;
+  transition: all 0.15s;
 }
-.sb-time-sep {
-  color: rgba(255,255,255,0.4);
-  font-size: 12px;
-}
-.sb-video-controls-right {
-  margin-left: auto;
+.sb-upload-btn:hover { border-color: #7c3aed; color: #7c3aed; }
+.sb-upload-btn.uploading { opacity: 0.5; pointer-events: none; }
+
+.sb-bgm-volume {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.sb-ctrl-btn {
-  color: rgba(255,255,255,0.7);
-  background: none;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  padding: 4px;
-}
-.sb-ctrl-btn:hover { color: #fff; }
 
-/* ═══ Bottom Timeline ═══ */
-.sb-timeline {
-  height: 130px;
-  border-top: 1px solid #e8e8e8;
-  flex-shrink: 0;
-  padding: 10px 16px;
-  display: flex;
-  flex-direction: column;
-  background: #fff;
+.sb-volume-slider {
+  width: 60px;
+  height: 4px;
+  cursor: pointer;
 }
-.sb-timeline-top {
+
+.sb-subtitle-extra {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.sb-timeline-play {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #f5f5f5;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #666;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.sb-timeline-play:hover { background: #eee; color: #333; }
-.sb-timeline-time {
-  font-size: 13px;
-  color: #999;
-  font-variant-numeric: tabular-nums;
-}
-.sb-timeline-spacer {
-  flex: 1;
-}
-.sb-timeline-multi {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  color: #666;
-  border: 1px solid #e8e8e8;
-  background: #fff;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.sb-timeline-multi:hover { background: #f9f9f9; }
-
-/* Timeline track */
-.sb-timeline-track {
-  flex: 1;
-  display: flex;
   gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 4px;
+  margin-top: 4px;
 }
-.sb-timeline-seg {
-  flex-shrink: 0;
-  width: 110px;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: all 0.15s;
+
+/* ── Ghost button for options toggle ── */
+.sb-btn--ghost {
+  background: none;
+  color: #888;
+  border: none;
 }
-.sb-timeline-seg:hover {
-  border-color: #ddd;
-}
-.sb-timeline-seg.active {
-  border-color: #7c3aed;
-  box-shadow: 0 0 0 1px rgba(124,58,237,0.2);
-}
-.sb-seg-thumb {
-  height: 64px;
-  background: #f0f0f0;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.sb-seg-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.sb-seg-thumb-text {
-  font-size: 12px;
-  color: #bbb;
-}
-.sb-seg-badge {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  background: #7c3aed;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-.sb-seg-dur {
-  position: absolute;
-  bottom: 4px;
-  left: 4px;
-  background: rgba(0,0,0,0.6);
-  color: #fff;
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 3px;
-}
+.sb-btn--ghost:hover { color: #555; background: #f5f5f5; }
+.sb-btn--ghost.sb-btn--active { color: #7c3aed; background: #F3F0FF; }
+
+.hidden { display: none; }
 </style>

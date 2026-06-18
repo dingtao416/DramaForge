@@ -31,4 +31,9 @@ export const projectsApi = {
   seedExamples() {
     return api.post<ProjectDetail[]>('/projects/seed-examples')
   },
+
+  /** 复制项目 */
+  duplicate(id: number) {
+    return api.post<ProjectDetail>(`/projects/${id}/duplicate`)
+  },
 }

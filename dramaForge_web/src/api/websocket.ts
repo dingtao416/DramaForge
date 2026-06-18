@@ -28,8 +28,10 @@ class WebSocketManager {
   connect(taskId: string, onMessage?: WSCallback): void {
     if (this.connections.has(taskId)) return
 
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = `${protocol}//${location.host}/api/v2/ws/tasks/${taskId}`
+    const base = new URL(import.meta.env.VITE_API_BASE_URL || '/api/v2', window.location.origin)
+    base.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const pathname = base.pathname.replace(/\/$/, '')
+    const url = `${base.origin}${pathname}/ws/tasks/${taskId}`
 
     const ws = new WebSocket(url)
     this.connections.set(taskId, ws)

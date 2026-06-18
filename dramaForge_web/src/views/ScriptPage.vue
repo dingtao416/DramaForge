@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
 import { useScriptStore } from '@/stores/script'
 import { useGenerationStore } from '@/stores/generation'
+import { scriptsApi } from '@/api/scripts'
+import { ProjectStep } from '@/types/enums'
 import LoadingOverlay from '@/components/common/LoadingOverlay.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
@@ -16,6 +18,7 @@ const genStore = useGenerationStore()
 const projectId = Number(route.params.id)
 const rewriting = ref(false)
 const rewriteContent = ref('')
+const exporting = ref(false)
 let rewriteAbortController: AbortController | null = null
 
 // Check if generation is still running for this project
@@ -116,10 +119,39 @@ async function handleRewrite() {
   }
 }
 
+const advancing = ref(false)
+
+async function goToAssets() {
+  advancing.value = true
+  try {
+    // Advance project status to ASSETS
+    if (projectStore.currentProject) {
+      projectStore.currentProject.status = ProjectStep.ASSETS
+    }
+    await scriptStore.approveScript(projectId)
+    router.push(`/projects/${projectId}/assets`)
+  } catch {
+    router.push(`/projects/${projectId}/assets`)
+  } finally {
+    advancing.value = false
+  }
+}
+
 function cancelRewrite() {
   if (rewriteAbortController) {
     rewriteAbortController.abort()
     rewriteAbortController = null
+  }
+}
+
+async function handleExport(format: 'docx' | 'txt') {
+  exporting.value = true
+  try {
+    await scriptsApi.exportScript(projectId, format)
+  } catch (e: any) {
+    console.error('Export failed:', e)
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -320,6 +352,12 @@ function onEpisodeToggle(epId: number, event: Event) {
             <button class="btn btn-ghost btn-sm" @click="toggleAllEpisodes">
               {{ allExpanded ? '收起全部' : '展开全部' }}
             </button>
+            <button class="btn btn-ghost btn-sm" :disabled="exporting" @click="handleExport('txt')">
+              {{ exporting ? '导出中...' : '导出 TXT' }}
+            </button>
+            <button class="btn btn-outline btn-sm" :disabled="exporting" @click="handleExport('docx')">
+              {{ exporting ? '导出中...' : '导出 DOCX' }}
+            </button>
             <button
               class="btn btn-outline btn-sm"
               :disabled="rewriting"
@@ -401,8 +439,8 @@ function onEpisodeToggle(epId: number, event: Event) {
       <span>剧本内容整理完毕，可以进行下一步了</span>
     </div>
     <div class="bar-actions">
-      <button class="btn btn-primary btn-sm" @click="router.push(`/projects/${projectId}/assets`)">
-        下一步
+      <button class="btn btn-primary btn-sm" :disabled="advancing" @click="goToAssets">
+        {{ advancing ? '提交中...' : '下一步' }}
       </button>
     </div>
   </div>

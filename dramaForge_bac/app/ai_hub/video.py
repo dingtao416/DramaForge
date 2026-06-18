@@ -26,6 +26,11 @@ from loguru import logger
 from app.core.config import settings
 from app.ai_hub._client import BaseClient, HubClientError
 from app.ai_hub._models import VideoResponse, VideoStatus, VideoTaskStatus
+from app.ai_hub.media_adapters import (
+    MediaProviderSettings,
+    MediaRequest,
+    get_media_adapter,
+)
 
 
 # ─── Model registry ───
@@ -88,6 +93,11 @@ class VideoService:
         fallback: bool = True,
         api_key: str = None,
         base_url: str = None,
+        provider_type: str = None,
+        auth_type: str = "bearer",
+        headers: dict = None,
+        config: dict = None,
+        raw_params: dict = None,
     ) -> VideoResponse:
         """
         Generate a video from a text prompt with auto-fallback.
@@ -109,6 +119,22 @@ class VideoService:
         """
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
+
+        if provider_type:
+            return await self._generate_with_adapter(
+                prompt=prompt,
+                out=out,
+                model=model or settings.video_model,
+                size=size or settings.video_size,
+                seconds=seconds or settings.video_seconds,
+                api_key=api_key,
+                base_url=base_url,
+                provider_type=provider_type,
+                auth_type=auth_type,
+                headers=headers or {},
+                config=config or {},
+                raw_params=raw_params or {},
+            )
 
         # If explicit model given, just try that one
         if model:
@@ -147,9 +173,14 @@ class VideoService:
             status_code=0,
         )
 
-    async def get_task_status(self, task_id: str) -> VideoTaskStatus:
+    async def get_task_status(
+        self,
+        task_id: str,
+        api_key: str = None,
+        base_url: str = None,
+    ) -> VideoTaskStatus:
         """Query status of an async video task."""
-        http = BaseClient.http()
+        http = BaseClient.http(api_key, base_url)
         resp = await http.get(f"/videos/{task_id}")
         resp.raise_for_status()
         data = resp.json()
@@ -190,6 +221,66 @@ class VideoService:
         }
 
     # ──────────── Internal ────────────
+
+    async def _generate_with_adapter(
+        self,
+        *,
+        prompt: str,
+        out: Path,
+        model: str,
+        size: str,
+        seconds: str,
+        api_key: str | None,
+        base_url: str | None,
+        provider_type: str,
+        auth_type: str,
+        headers: dict,
+        config: dict,
+        raw_params: dict,
+    ) -> VideoResponse:
+        adapter = get_media_adapter(
+            MediaProviderSettings(
+                provider_type=provider_type,
+                auth_type=auth_type,
+                base_url=base_url or "",
+                api_key=api_key or "",
+                headers=headers,
+                config=config,
+            )
+        )
+        result = await adapter.submit_video(
+            MediaRequest(
+                prompt=prompt,
+                model_id=model,
+                size=size,
+                resolution=size,
+                duration=seconds,
+                raw_params=raw_params,
+            )
+        )
+        elapsed = 0
+        while (
+            result.status in {"queued", "running"}
+            and result.provider_job_id
+            and elapsed < settings.video_timeout
+        ):
+            await asyncio.sleep(settings.video_poll_interval)
+            elapsed += settings.video_poll_interval
+            result = await adapter.get_status(result.provider_job_id)
+        if result.status != "succeeded":
+            raise HubClientError(
+                result.error or f"Video generation failed: {result.status}",
+                status_code=0,
+            )
+        await adapter.download_result(result, out)
+        asset = result.assets[0] if result.assets else {}
+        return VideoResponse(
+            video_path=str(out),
+            video_url=asset.get("url"),
+            model=model,
+            status=VideoStatus.COMPLETED,
+            task_id=result.provider_job_id,
+        )
 
     async def _try_model(
         self,
@@ -289,7 +380,7 @@ class VideoService:
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
 
-            status = await self.get_task_status(task_id)
+            status = await self.get_task_status(task_id, api_key, base_url)
             logger.debug(
                 f"video poll | task={task_id} status={status.status} "
                 f"elapsed={elapsed}s"

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     app_port: int = 8000
     debug: bool = True
     secret_key: str = "change-me-in-production"
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"  # 逗号分隔的允许域名
 
     # ----- JWT Authentication -----
     jwt_secret_key: str = "dramaforge-jwt-secret-change-in-production"

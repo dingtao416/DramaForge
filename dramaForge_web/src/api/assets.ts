@@ -59,4 +59,18 @@ export const assetsApi = {
   deleteAsset(assetId: number) {
     return api.delete(`/assets/${assetId}`)
   },
+
+  /** 新建全局角色 */
+  createGlobalCharacter(formData: FormData) {
+    return api.post<CharacterDetail>('/assets/characters', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  /** 上传资产文件 */
+  uploadAsset(formData: FormData) {
+    return api.post<{ id: number; name: string; url: string }>('/assets/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 }

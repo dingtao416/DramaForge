@@ -16,8 +16,8 @@ const emit = defineEmits<{
 const form = ref({
   name: '',
   role: CharacterRole.SUPPORTING as CharacterRole,
-  appearance: '',
-  voice_description: '',
+  description: '',
+  voice_desc: '',
 })
 
 watch(() => props.character, (char) => {
@@ -25,8 +25,8 @@ watch(() => props.character, (char) => {
     form.value = {
       name: char.name,
       role: char.role,
-      appearance: char.appearance || '',
-      voice_description: char.voice_description || '',
+      description: char.description || '',
+      voice_desc: char.voice_desc || '',
     }
   }
 }, { immediate: true })
@@ -43,7 +43,6 @@ const roleOptions = Object.entries(CharacterRoleLabel) as [CharacterRole, string
     <div
       v-if="visible && character"
       class="fixed inset-0 z-[90] flex items-center justify-center bg-black/30 backdrop-blur-[2px]"
-      @click.self="emit('close')"
     >
       <div class="bg-white rounded-[16px] w-[520px] max-w-[90vw] max-h-[85vh] overflow-y-auto shadow-[0_12px_24px_rgba(0,0,0,0.12)]">
         <!-- Header -->
@@ -86,7 +85,7 @@ const roleOptions = Object.entries(CharacterRoleLabel) as [CharacterRole, string
           <div>
             <label class="block text-[13px] font-medium text-gray-700 mb-1.5">外貌描述</label>
             <textarea
-              v-model="form.appearance"
+              v-model="form.description"
               rows="3"
               class="w-full px-3 py-2.5 border border-gray-200 rounded-[8px] text-[14px] text-gray-800 outline-none focus:border-primary-500 resize-y transition-colors leading-[1.7]"
               placeholder="25岁，长发及腰，气质优雅，常穿白色..."
@@ -97,7 +96,7 @@ const roleOptions = Object.entries(CharacterRoleLabel) as [CharacterRole, string
           <div>
             <label class="block text-[13px] font-medium text-gray-700 mb-1.5">音色描述</label>
             <textarea
-              v-model="form.voice_description"
+              v-model="form.voice_desc"
               rows="2"
               class="w-full px-3 py-2.5 border border-gray-200 rounded-[8px] text-[14px] text-gray-800 outline-none focus:border-primary-500 resize-y transition-colors leading-[1.7]"
               placeholder="女声，温柔成熟，音调中偏低，语速适中..."

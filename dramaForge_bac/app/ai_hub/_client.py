@@ -10,12 +10,13 @@ No caller outside ai_hub should import this module.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from loguru import logger
 from openai import AsyncOpenAI
 
+from app.core.ai_config import normalize_api_base_url, normalize_optional_string
 from app.core.config import settings
 
 
@@ -93,6 +94,9 @@ class BaseClient:
         If api_key and base_url are provided, returns a cached custom client.
         Otherwise returns the system-default client from config.py.
         """
+        api_key = normalize_optional_string(api_key)
+        base_url = normalize_api_base_url(base_url)
+
         if api_key and base_url:
             cache_key = (api_key, base_url)
             if cache_key not in cls._custom_openai:
@@ -107,15 +111,16 @@ class BaseClient:
 
         # System default
         if cls._openai is None:
+            default_base_url = normalize_api_base_url(settings.laozhang_base_url)
             cls._openai = AsyncOpenAI(
-                api_key=settings.laozhang_api_key,
-                base_url=settings.laozhang_base_url,
+                api_key=normalize_optional_string(settings.laozhang_api_key),
+                base_url=default_base_url,
                 timeout=cls.DEFAULT_TIMEOUT,
                 max_retries=0,
             )
             logger.info(
                 f"AI Hub OpenAI client created | "
-                f"base_url={settings.laozhang_base_url}"
+                f"base_url={default_base_url}"
             )
         return cls._openai
 
@@ -127,6 +132,9 @@ class BaseClient:
         If api_key and base_url are provided, creates a new client.
         Otherwise returns the system-default client from config.py.
         """
+        api_key = normalize_optional_string(api_key)
+        base_url = normalize_api_base_url(base_url)
+
         if api_key and base_url:
             return httpx.AsyncClient(
                 base_url=base_url,
@@ -139,10 +147,13 @@ class BaseClient:
 
         # System default
         if cls._http is None:
+            default_base_url = normalize_api_base_url(settings.laozhang_base_url)
             cls._http = httpx.AsyncClient(
-                base_url=settings.laozhang_base_url,
+                base_url=default_base_url,
                 headers={
-                    "Authorization": f"Bearer {settings.laozhang_api_key}",
+                    "Authorization": (
+                        f"Bearer {normalize_optional_string(settings.laozhang_api_key)}"
+                    ),
                     "Content-Type": "application/json",
                 },
                 timeout=cls.DEFAULT_TIMEOUT,
@@ -199,9 +210,10 @@ class BaseClient:
                 status = _extract_status(exc)
                 mapped = _ERROR_MAP.get(status)
 
-                # Don't retry auth / quota errors
-                if mapped in (AuthError, QuotaError):
-                    raise mapped(str(exc), status_code=status, raw=exc) from exc
+                # Don't retry auth / quota / not-found errors
+                if mapped in (AuthError, QuotaError) or status == 404:
+                    err_cls = mapped if mapped else HubClientError
+                    raise err_cls(str(exc), status_code=status, raw=exc) from exc
 
                 if attempt < max_attempts:
                     delay = min(

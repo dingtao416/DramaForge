@@ -20,6 +20,7 @@ from app.models.user import User, Conversation, Message
 from app.models.billing import Plan, Subscription, CreditBalance, CreditTransaction
 from app.models.payment import PaymentOrder, UserAgreement
 from app.models.user_ai_config import UserAPIKey, UserModelConfig
+from app.models.media_generation import AIProviderConfig, AIModelConfig, MediaGenerationJob
 
 # ── Enums (re-export from their home modules) ──
 from app.models.project import ProjectStep, VideoStyle, DramaGenre
@@ -39,6 +40,7 @@ from app.models.payment import (
     OrderType,
     CREDIT_PACKS,
 )
+from app.models.media_generation import MediaCapability, MediaJobStatus
 
 __all__ = [
     # Models
@@ -60,6 +62,9 @@ __all__ = [
     "UserAgreement",
     "UserAPIKey",
     "UserModelConfig",
+    "AIProviderConfig",
+    "AIModelConfig",
+    "MediaGenerationJob",
     # Enums
     "ProjectStep",
     "VideoStyle",
@@ -78,4 +83,6 @@ __all__ = [
     "OrderStatus",
     "OrderType",
     "CREDIT_PACKS",
+    "MediaCapability",
+    "MediaJobStatus",
 ]

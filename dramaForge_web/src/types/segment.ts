@@ -13,3 +13,5 @@ export interface SegmentDetail {
   shots: ShotDetail[]
   created_at: string
 }
+
+export type Segment = SegmentDetail

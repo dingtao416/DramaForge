@@ -2,15 +2,19 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { assetsApi } from '@/api/assets'
-import type { CharacterDetail } from '@/types/character'
+import { projectsApi } from '@/api/projects'
 import EmptyState from '@/components/common/EmptyState.vue'
 import TopbarActions from '@/components/common/TopbarActions.vue'
 import { useBillingStore } from '@/stores/billing'
+import { DEFAULT_SCENE_IMAGE } from '@/constants/defaultAssets'
 
 const router = useRouter()
 const billingStore = useBillingStore()
 
-const assets = ref<CharacterDetail[]>([])
+// ── Projects list (for character creation context) ──
+const projects = ref<any[]>([])
+
+const assets = ref<any[]>([])
 const loading = ref(false)
 const viewMode = ref<'grid' | 'list'>('grid')
 const activeTab = ref<'assets' | 'characters'>('assets')
@@ -28,8 +32,12 @@ const filteredAssets = computed(() => {
 onMounted(async () => {
   loading.value = true
   try {
-    const { data } = await assetsApi.listGlobal()
-    assets.value = data
+    const [assetsRes, projectsRes] = await Promise.all([
+      assetsApi.listGlobal(),
+      projectsApi.list({ limit: 100 }),
+    ])
+    assets.value = assetsRes.data
+    projects.value = projectsRes.data
   } finally {
     loading.value = false
   }
@@ -93,9 +101,27 @@ async function onAssetFileSelected(e: Event) {
   const file = input.files?.[0]
   if (!file) return
   input.value = ''
-  // TODO: call upload API
-  alert(`资产上传: ${file.name} (接口对接中)`)
-  await handleRefresh()
+
+  // Require a project context for upload
+  const targetProjectId = projects.value[0]?.id
+  if (!targetProjectId) {
+    alert('请先创建一个项目，再上传资产')
+    return
+  }
+
+  const fd = new FormData()
+  fd.append('project_id', String(targetProjectId))
+  fd.append('file', file)
+  fd.append('name', file.name)
+  fd.append('asset_type', 'character')
+
+  try {
+    await assetsApi.uploadAsset(fd)
+    await handleRefresh()
+  } catch (e: any) {
+    alert('上传失败，请重试')
+    console.error('Upload failed:', e)
+  }
 }
 
 // ── 新建角色弹窗 ──
@@ -105,6 +131,7 @@ const charForm = ref({
   description: '',
   gender: '',
   age: '',
+  projectId: 0,
 })
 const charImage = ref<File | null>(null)
 const charImagePreview = ref('')
@@ -112,7 +139,7 @@ const charCreating = ref(false)
 
 function openCreateCharacter() {
   showAddMenu.value = false
-  charForm.value = { name: '', description: '', gender: '', age: '' }
+  charForm.value = { name: '', description: '', gender: '', age: '', projectId: projects.value[0]?.id || 0 }
   charImage.value = null
   charImagePreview.value = ''
   showCreateCharacter.value = true
@@ -129,21 +156,38 @@ function onCharImageSelect(e: Event) {
 
 async function handleCreateCharacter() {
   if (!charForm.value.name.trim()) return
+  if (!charForm.value.projectId) {
+    alert('请先选择一个项目')
+    return
+  }
   charCreating.value = true
   try {
-    // TODO: call create character API with FormData
-    // const fd = new FormData()
-    // fd.append('name', charForm.value.name)
-    // fd.append('description', charForm.value.description)
-    // fd.append('gender', charForm.value.gender)
-    // fd.append('age', charForm.value.age)
-    // if (charImage.value) fd.append('image', charImage.value)
-    // await assetsApi.createCharacter(fd)
-    await new Promise(r => setTimeout(r, 1000))
+    const fd = new FormData()
+    fd.append('name', charForm.value.name)
+    fd.append('project_id', String(charForm.value.projectId))
+    fd.append('description', charForm.value.description)
+    fd.append('gender', charForm.value.gender)
+    fd.append('age', charForm.value.age)
+    fd.append('role', 'extra')
+    if (charImage.value) fd.append('image', charImage.value)
+    await assetsApi.createGlobalCharacter(fd)
     showCreateCharacter.value = false
     await handleRefresh()
+  } catch (e: any) {
+    alert('创建角色失败，请重试')
+    console.error('Create character failed:', e)
   } finally {
     charCreating.value = false
+  }
+}
+
+async function handleDeleteAsset(assetId: number) {
+  if (!confirm('确定要删除此资产吗？')) return
+  try {
+    await assetsApi.deleteAsset(assetId)
+    await handleRefresh()
+  } catch (e: any) {
+    alert('删除失败，请重试')
   }
 }
 </script>
@@ -275,19 +319,25 @@ async function handleCreateCharacter() {
               <video :src="asset.reference_images?.[0]" class="thumb-img" muted />
               <span class="video-badge">0:10</span>
             </div>
+            <img
+              v-else-if="asset.type === 'scene'"
+              :src="DEFAULT_SCENE_IMAGE"
+              :alt="`${asset.name} 默认场景图`"
+              class="thumb-img"
+            />
             <div v-else class="thumb-placeholder">
               <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect x="4" y="4" width="24" height="24" rx="4" stroke="#d4d4d8" stroke-width="1.5"/><circle cx="12" cy="12" r="3" stroke="#d4d4d8" stroke-width="1.3"/><path d="M4 24l6-8 4 4 6-6 8 10" stroke="#d4d4d8" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </div>
 
             <!-- Action buttons overlay -->
-            <div class="card-actions">
+            <div class="card-actions" @click.stop>
               <button class="card-action-btn" title="添加到项目">
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><line x1="6.5" y1="2" x2="6.5" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="2" y1="6.5" x2="11" y2="6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               </button>
               <button class="card-action-btn" title="标签">
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M1.5 7.2l4.3 4.3a1 1 0 001.4 0l4.3-4.3a1 1 0 000-1.4L7.2 1.5A1 1 0 006.5 1.2H2.5a1 1 0 00-1 1v4a1 1 0 00.3.7z" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><circle cx="4.2" cy="4.2" r="0.7" fill="currentColor"/></svg>
               </button>
-              <button class="card-action-btn danger" title="删除">
+              <button class="card-action-btn danger" title="删除" @click="handleDeleteAsset(asset.id)">
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 3.5h9M4.5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v3.5M7.5 6v3.5M3.5 3.5l.5 7a1 1 0 001 1h3a1 1 0 001-1l.5-7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </div>
@@ -310,6 +360,12 @@ async function handleCreateCharacter() {
         >
           <div class="list-thumb">
             <img v-if="asset.reference_images?.[0]" :src="asset.reference_images[0]" class="list-thumb-img" />
+            <img
+              v-else-if="asset.type === 'scene'"
+              :src="DEFAULT_SCENE_IMAGE"
+              :alt="`${asset.name} 默认场景图`"
+              class="list-thumb-img"
+            />
             <div v-else class="list-thumb-placeholder">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="16" height="16" rx="3" stroke="#d4d4d8" stroke-width="1.3"/></svg>
             </div>
@@ -322,14 +378,14 @@ async function handleCreateCharacter() {
               <span class="list-date">{{ formatDate(asset.created_at) }}</span>
             </div>
           </div>
-          <div class="list-actions">
+          <div class="list-actions" @click.stop>
             <button class="card-action-btn" title="添加到项目">
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><line x1="6.5" y1="2" x2="6.5" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="2" y1="6.5" x2="11" y2="6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             </button>
             <button class="card-action-btn" title="标签">
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M1.5 7.2l4.3 4.3a1 1 0 001.4 0l4.3-4.3a1 1 0 000-1.4L7.2 1.5A1 1 0 006.5 1.2H2.5a1 1 0 00-1 1v4a1 1 0 00.3.7z" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><circle cx="4.2" cy="4.2" r="0.7" fill="currentColor"/></svg>
             </button>
-            <button class="card-action-btn danger" title="删除">
+            <button class="card-action-btn danger" title="删除" @click="handleDeleteAsset(asset.id)">
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 3.5h9M4.5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v3.5M7.5 6v3.5M3.5 3.5l.5 7a1 1 0 001 1h3a1 1 0 001-1l.5-7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </div>
@@ -354,6 +410,14 @@ async function handleCreateCharacter() {
           <div class="modal-body">
             <!-- Left: Form -->
             <div class="modal-form">
+              <!-- 所属项目 -->
+              <div class="form-group">
+                <label class="form-label">所属项目</label>
+                <select v-model="charForm.projectId" class="form-select">
+                  <option :value="0" disabled>选择项目</option>
+                  <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.title }}</option>
+                </select>
+              </div>
               <!-- 角色名称 -->
               <div class="form-group">
                 <label class="form-label">角色名称</label>

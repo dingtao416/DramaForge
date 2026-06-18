@@ -61,10 +61,12 @@ function handleSave() {
         >
           <option value="close_up">特写</option>
           <option value="medium">中景</option>
+          <option value="full">全景</option>
           <option value="wide">远景</option>
-          <option value="extreme_close_up">极特写</option>
-          <option value="extreme_wide">极远景</option>
+          <option value="extreme_close">大特写</option>
           <option value="over_shoulder">过肩</option>
+          <option value="pov">主观视角</option>
+          <option value="aerial">航拍</option>
         </select>
       </div>
 
@@ -118,14 +120,13 @@ function handleSave() {
           class="w-full h-[36px] px-3 border border-gray-200 rounded-[8px] text-[13px] outline-none focus:border-primary-500 bg-white"
         >
           <option value="static">静止</option>
-          <option value="pan_left">左摇</option>
-          <option value="pan_right">右摇</option>
-          <option value="tilt_up">上摇</option>
-          <option value="tilt_down">下摇</option>
+          <option value="pan">摇</option>
+          <option value="tilt">俯仰</option>
           <option value="zoom_in">推进</option>
           <option value="zoom_out">拉远</option>
-          <option value="tracking">跟踪</option>
           <option value="dolly">推轨</option>
+          <option value="tracking">跟踪</option>
+          <option value="handheld">手持</option>
         </select>
       </div>
 

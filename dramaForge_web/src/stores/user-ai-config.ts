@@ -1,45 +1,53 @@
-/**
- * DramaForge — User AI Configuration Store
- */
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import type { UserAPIKey, ModelConfig, DefaultsMap, DiscoveredModel } from '@/types/user-ai-config'
+import { computed, ref } from 'vue'
+import type {
+  DefaultsMap,
+  MediaJob,
+  ModelConfig,
+  ModelConfigCreate,
+  ProviderConfig,
+  ProviderCreate,
+} from '@/types/user-ai-config'
 import * as aiConfigApi from '@/api/user-ai-config'
 
 export const useUserAIConfigStore = defineStore('user-ai-config', () => {
-  const keys = ref<UserAPIKey[]>([])
+  const providers = ref<ProviderConfig[]>([])
   const defaults = ref<DefaultsMap>({})
+  const jobs = ref<MediaJob[]>([])
   const loading = ref(false)
 
-  // ── Computed ──
+  const keys = providers
 
-  /** All models grouped by capability type */
   const modelsByType = computed(() => {
-    const result: Record<string, (ModelConfig & { provider_name: string })[]> = {
-      chat: [],
+    const result: Record<string, (ModelConfig & { provider_name: string; capability_type: string })[]> = {
       image: [],
       video: [],
+      chat: [],
       tts: [],
     }
-    for (const key of keys.value) {
-      if (!key.enabled) continue
-      for (const model of key.models) {
+    for (const provider of providers.value) {
+      if (!provider.enabled) continue
+      for (const model of provider.models) {
         if (!model.enabled) continue
-        result[model.capability_type]?.push({
+        const capability = model.capability || model.capability_type
+        result[capability]?.push({
           ...model,
-          provider_name: key.name,
+          capability_type: capability,
+          provider_name: provider.name,
         })
       }
     }
     return result
   })
 
-  // ── Actions ──
-
   async function fetchKeys() {
+    return fetchProviders()
+  }
+
+  async function fetchProviders() {
     loading.value = true
     try {
-      keys.value = await aiConfigApi.listKeys()
+      providers.value = await aiConfigApi.listProviders()
     } finally {
       loading.value = false
     }
@@ -49,53 +57,65 @@ export const useUserAIConfigStore = defineStore('user-ai-config', () => {
     defaults.value = await aiConfigApi.getDefaults()
   }
 
-  async function addKey(data: { name: string; base_url: string; api_key: string; capabilities: string }) {
-    const key = await aiConfigApi.createKey(data)
-    keys.value.push(key)
-    return key
+  async function addKey(data: ProviderCreate) {
+    return addProvider(data)
+  }
+
+  async function addProvider(data: ProviderCreate) {
+    const provider = await aiConfigApi.createProvider(data)
+    providers.value.push(provider)
+    return provider
   }
 
   async function updateKey(id: number, data: Record<string, any>) {
-    const updated = await aiConfigApi.updateKey(id, data)
-    const idx = keys.value.findIndex(k => k.id === id)
-    if (idx >= 0) keys.value[idx] = updated
+    return updateProvider(id, data)
+  }
+
+  async function updateProvider(id: number, data: Record<string, any>) {
+    const updated = await aiConfigApi.updateProvider(id, data)
+    const idx = providers.value.findIndex((p) => p.id === id)
+    if (idx >= 0) providers.value[idx] = updated
     return updated
   }
 
   async function removeKey(id: number) {
-    await aiConfigApi.deleteKey(id)
-    keys.value = keys.value.filter(k => k.id !== id)
+    return removeProvider(id)
+  }
+
+  async function removeProvider(id: number) {
+    await aiConfigApi.deleteProvider(id)
+    providers.value = providers.value.filter((p) => p.id !== id)
   }
 
   async function testKey(id: number) {
-    return await aiConfigApi.testConnection(id)
+    return aiConfigApi.testProvider(id)
   }
 
-  async function discoverModels(keyId: number) {
-    return await aiConfigApi.discoverModels(keyId)
+  async function discoverModels(providerId: number) {
+    return aiConfigApi.discoverModels(providerId)
   }
 
-  async function addModel(keyId: number, data: { capability_type: string; model_id: string; display_name: string; is_default?: boolean }) {
-    const model = await aiConfigApi.createModel(keyId, data)
-    const key = keys.value.find(k => k.id === keyId)
-    if (key) key.models.push(model)
+  async function addModel(providerId: number, data: ModelConfigCreate) {
+    const model = await aiConfigApi.createModel(providerId, data)
+    const provider = providers.value.find((p) => p.id === providerId)
+    if (provider) provider.models.push(model)
     return model
   }
 
   async function removeModel(modelId: number) {
     await aiConfigApi.deleteModel(modelId)
-    for (const key of keys.value) {
-      key.models = key.models.filter(m => m.id !== modelId)
+    for (const provider of providers.value) {
+      provider.models = provider.models.filter((m) => m.id !== modelId)
     }
   }
 
   async function setDefault(modelId: number) {
     const updated = await aiConfigApi.setDefaultModel(modelId)
-    // Unset other defaults of the same type
-    for (const key of keys.value) {
-      for (const m of key.models) {
-        if (m.capability_type === updated.capability_type) {
-          m.is_default = m.id === modelId
+    const capability = updated.capability || updated.capability_type
+    for (const provider of providers.value) {
+      for (const model of provider.models) {
+        if ((model.capability || model.capability_type) === capability) {
+          model.is_default = model.id === modelId
         }
       }
     }
@@ -103,26 +123,36 @@ export const useUserAIConfigStore = defineStore('user-ai-config', () => {
     return updated
   }
 
-  /** Get models for a capability type (for HomePage model selector) */
   function getModelsForType(type: string) {
     return modelsByType.value[type] || []
   }
 
+  async function fetchJobs() {
+    jobs.value = await aiConfigApi.listJobs()
+  }
+
   return {
+    providers,
     keys,
     defaults,
+    jobs,
     loading,
     modelsByType,
     fetchKeys,
+    fetchProviders,
     fetchDefaults,
     addKey,
+    addProvider,
     updateKey,
+    updateProvider,
     removeKey,
+    removeProvider,
     testKey,
     discoverModels,
     addModel,
     removeModel,
     setDefault,
     getModelsForType,
+    fetchJobs,
   }
 })

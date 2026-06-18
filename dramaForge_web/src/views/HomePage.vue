@@ -65,7 +65,7 @@ const modeAgentMap: Record<Mode, string> = {
   clip: 'director',
   longvideo2: 'director',
   image: 'general',
-  longvideo: 'director',
+  longvideo: 'project',
 }
 
 function selectMode(mode: Mode) {
@@ -271,16 +271,14 @@ const featureCards = [
   { title: '一镜到底', desc: '多张图片生成连续自然的转场', isNew: false, bg: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' },
 ]
 
-;(async () => {
-  try {
-    const { data } = await projectsApi.list({ limit: 10 })
-    recentProjects.value = data
-  } catch {}
-})()
-
-// Load chat conversations, billing, and AI config on mount
+// Load chat conversations, billing, recent projects, and AI config on mount
 onMounted(async () => {
   if (authStore.isLoggedIn) {
+    // Fetch recent projects (was previously an IIFE running before auth)
+    try {
+      const { data } = await projectsApi.list({ limit: 10 })
+      recentProjects.value = data
+    } catch {}
     await Promise.all([
       chatStore.fetchConversations(),
       billingStore.initialize(),

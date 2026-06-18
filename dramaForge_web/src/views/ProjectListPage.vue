@@ -9,16 +9,33 @@ import EmptyState from '@/components/common/EmptyState.vue'
 const router = useRouter()
 const projects = ref<ProjectList[]>([])
 const loading = ref(false)
+const duplicatingId = ref<number | null>(null)
+
+async function refreshList() {
+  const { data } = await projectsApi.list()
+  projects.value = data
+}
 
 onMounted(async () => {
   loading.value = true
   try {
-    const { data } = await projectsApi.list()
-    projects.value = data
+    await refreshList()
   } finally {
     loading.value = false
   }
 })
+
+async function handleDuplicate(id: number) {
+  duplicatingId.value = id
+  try {
+    await projectsApi.duplicate(id)
+    await refreshList()
+  } catch (e: any) {
+    alert('复制失败')
+  } finally {
+    duplicatingId.value = null
+  }
+}
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
@@ -66,7 +83,24 @@ function formatDate(dateStr: string) {
         </div>
 
         <div class="p-4">
-          <h3 class="text-[14px] font-semibold text-gray-900 truncate mb-2">{{ p.title }}</h3>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-[14px] font-semibold text-gray-900 truncate">{{ p.title }}</h3>
+            <button
+              class="duplicate-btn"
+              :disabled="duplicatingId === p.id"
+              title="复制项目"
+              @click.stop="handleDuplicate(p.id)"
+            >
+              <svg v-if="duplicatingId === p.id" class="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5" opacity="0.3"/>
+                <path d="M7 1.5a5.5 5.5 0 015.1 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <svg v-else width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <rect x="4" y="4" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+                <path d="M2 10V2.5A.5.5 0 012.5 2H10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
 
           <div class="flex items-center gap-2 mb-3">
             <span class="badge badge-primary">{{ VideoStyleLabel[p.style] }}</span>
@@ -85,3 +119,33 @@ function formatDate(dateStr: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.duplicate-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 6px;
+  color: #ccc;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  opacity: 0;
+}
+.group:hover .duplicate-btn,
+.duplicate-btn:hover {
+  opacity: 1;
+}
+.duplicate-btn:hover {
+  background: #f5f5f5;
+  color: #666;
+}
+.duplicate-btn:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+}
+</style>

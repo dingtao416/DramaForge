@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useProjectStore } from '@/stores/project'
 import { ProjectStep } from '@/types/enums'
 
 const props = defineProps<{
@@ -9,6 +10,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const router = useRouter()
+const projectStore = useProjectStore()
 const projectId = computed(() => route.params.id)
 
 const steps = [
@@ -28,6 +30,10 @@ function getStepState(step: typeof steps[0]) {
 }
 
 function navigateToStep(step: typeof steps[0]) {
+  // Update store status so the indicator reflects the clicked step immediately
+  if (projectStore.currentProject) {
+    projectStore.currentProject.status = step.key
+  }
   router.push(`/projects/${projectId.value}/${step.path}`)
 }
 </script>

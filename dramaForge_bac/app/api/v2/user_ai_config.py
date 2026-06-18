@@ -1,511 +1,502 @@
-"""
-DramaForge v2.0 — User AI Configuration API
-=============================================
-Endpoints for managing user API keys and model preferences.
-Supports both "relay" mode (one key for all) and "multi-key" mode.
-"""
+"""User media provider configuration API."""
 
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
-import httpx
-from fastapi import APIRouter, HTTPException, status
-from loguru import logger
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.ai_hub.media_adapters import MediaProviderSettings, get_media_adapter
+from app.core.ai_config import normalize_optional_string
+from app.core.config import settings
 from app.core.security import CurrentUser, DbSession
-from app.models.user import User
-from app.models.user_ai_config import UserAPIKey, UserModelConfig
+from app.models.media_generation import (
+    AIModelConfig,
+    AIProviderConfig,
+    MediaCapability,
+    MediaGenerationJob,
+    MediaJobStatus,
+)
+from app.services.media_generation_service import media_generation_service
+from app.tasks.media_generation_tasks import enqueue_media_job
+
 
 router = APIRouter(prefix="/user-ai", tags=["User AI Config"])
 
+PROVIDER_TYPES = {
+    "openai_compatible",
+    "openai_native",
+    "replicate",
+    "fal",
+    "fal_ai",
+    "runway",
+    "luma",
+    "volcengine_ark",
+    "volces",
+    "dashscope",
+    "google_vertex",
+    "vertex",
+}
 
-# ═══════════════════════════════════════════════════════════════════
-# Request / Response schemas
-# ═══════════════════════════════════════════════════════════════════
 
-class APIKeyCreate(BaseModel):
-    name: str = Field(..., max_length=100, description="Display name")
-    base_url: str = Field(..., max_length=500, description="API endpoint URL")
-    api_key: str = Field(..., max_length=500, description="API key")
-    capabilities: str = Field(default="chat,image,video,tts", max_length=200, description="Supported capabilities")
-    is_default: bool = Field(default=False, description="Is default provider")
+class ProviderCreate(BaseModel):
+    name: str = Field(..., max_length=100)
+    provider_type: str = Field(..., max_length=50)
+    auth_type: str = Field(default="bearer", max_length=50)
+    base_url: str = Field(default="", max_length=500)
+    api_key: str = Field(default="", max_length=1000)
+    enabled: bool = True
+    priority: int = 100
+    headers_json: dict[str, str] = Field(default_factory=dict)
+    config_json: dict[str, Any] = Field(default_factory=dict)
 
 
-class APIKeyUpdate(BaseModel):
+class ProviderUpdate(BaseModel):
     name: str | None = None
+    provider_type: str | None = None
+    auth_type: str | None = None
     base_url: str | None = None
     api_key: str | None = None
-    capabilities: str | None = None
-    is_default: bool | None = None
     enabled: bool | None = None
+    priority: int | None = None
+    headers_json: dict[str, str] | None = None
+    config_json: dict[str, Any] | None = None
 
 
-class ModelConfigCreate(BaseModel):
-    capability_type: str = Field(..., description="chat / image / video / tts")
-    model_id: str = Field(..., max_length=100, description="API model name")
-    display_name: str = Field(..., max_length=100, description="Human-readable name")
-    is_default: bool = Field(default=False, description="Is default for this capability type")
+class ModelCreate(BaseModel):
+    capability: MediaCapability
+    model_id: str = Field(..., max_length=200)
+    display_name: str = Field(..., max_length=100)
+    is_default: bool = False
+    enabled: bool = True
+    default_params_json: dict[str, Any] = Field(default_factory=dict)
+    param_schema_json: dict[str, Any] = Field(default_factory=dict)
+    capabilities_json: dict[str, Any] = Field(default_factory=dict)
 
 
-class ModelConfigUpdate(BaseModel):
+class ModelUpdate(BaseModel):
+    capability: MediaCapability | None = None
     model_id: str | None = None
     display_name: str | None = None
     is_default: bool | None = None
     enabled: bool | None = None
+    default_params_json: dict[str, Any] | None = None
+    param_schema_json: dict[str, Any] | None = None
+    capabilities_json: dict[str, Any] | None = None
 
 
-class ModelConfigResponse(BaseModel):
+class ModelResponse(BaseModel):
     id: int
-    api_key_id: int
-    capability_type: str
+    provider_id: int
+    capability: MediaCapability
     model_id: str
     display_name: str
     is_default: bool
     enabled: bool
+    default_params_json: dict[str, Any]
+    param_schema_json: dict[str, Any]
+    capabilities_json: dict[str, Any]
 
     class Config:
         from_attributes = True
 
 
-class APIKeyResponse(BaseModel):
+class ProviderResponse(BaseModel):
     id: int
     name: str
+    provider_type: str
+    auth_type: str
     base_url: str
     api_key_masked: str
-    capabilities: list[str]
-    is_default: bool
     enabled: bool
-    models: list[ModelConfigResponse]
+    priority: int
+    headers_json: dict[str, Any]
+    config_json: dict[str, Any]
+    models: list[ModelResponse]
     created_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
 
-
-class TestResult(BaseModel):
+class ProviderTestResult(BaseModel):
     success: bool
     message: str
     models_found: int = 0
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Helpers
-# ═══════════════════════════════════════════════════════════════════
+class JobCreate(BaseModel):
+    capability: MediaCapability
+    prompt: str
+    model_id: str | None = None
+    output_path: str | None = None
+    request_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class JobResponse(BaseModel):
+    id: int
+    capability: MediaCapability
+    provider_id: int | None
+    model_id: str
+    provider_job_id: str | None
+    status: MediaJobStatus
+    progress: int
+    request_json: dict[str, Any]
+    response_json: dict[str, Any]
+    result_assets_json: list[Any]
+    error: str | None
+    created_at: datetime | None
+    updated_at: datetime | None
+
+    class Config:
+        from_attributes = True
+
 
 def _mask_key(key: str) -> str:
-    """Mask API key for display: sk-abc...xyz"""
+    if not key:
+        return ""
     if len(key) <= 8:
         return "****"
     return f"{key[:4]}****{key[-4:]}"
 
 
-def _to_response(key: UserAPIKey) -> APIKeyResponse:
-    return APIKeyResponse(
-        id=key.id,
-        name=key.name,
-        base_url=key.base_url,
-        api_key_masked=_mask_key(key.api_key),
-        capabilities=(key.capabilities or "").split(","),
-        is_default=key.is_default,
-        enabled=key.enabled,
-        models=[ModelConfigResponse.model_validate(m) for m in key.models],
-        created_at=key.created_at,
+def _normalize_provider_type(provider_type: str) -> str:
+    normalized = (provider_type or "").strip().lower()
+    if normalized not in PROVIDER_TYPES:
+        raise HTTPException(400, f"Unsupported provider_type: {provider_type}")
+    return normalized
+
+
+def _to_provider_response(provider: AIProviderConfig) -> ProviderResponse:
+    return ProviderResponse(
+        id=provider.id,
+        name=provider.name,
+        provider_type=provider.provider_type,
+        auth_type=provider.auth_type,
+        base_url=provider.base_url,
+        api_key_masked=_mask_key(provider.api_key),
+        enabled=provider.enabled,
+        priority=provider.priority,
+        headers_json=provider.headers_json or {},
+        config_json=provider.config_json or {},
+        models=[ModelResponse.model_validate(m) for m in provider.models],
+        created_at=provider.created_at,
     )
 
 
-async def _load_user_keys(db: DbSession, user_id: int) -> list[UserAPIKey]:
+async def _load_providers(db: DbSession, user_id: int) -> list[AIProviderConfig]:
     stmt = (
-        select(UserAPIKey)
-        .where(UserAPIKey.user_id == user_id)
-        .options(selectinload(UserAPIKey.models))
-        .order_by(UserAPIKey.is_default.desc(), UserAPIKey.id)
+        select(AIProviderConfig)
+        .where(AIProviderConfig.user_id == user_id)
+        .options(selectinload(AIProviderConfig.models))
+        .order_by(AIProviderConfig.priority.asc(), AIProviderConfig.id.asc())
     )
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
 
-async def _get_key_or_404(db: DbSession, key_id: int, user_id: int) -> UserAPIKey:
+async def _get_provider(db: DbSession, provider_id: int, user_id: int) -> AIProviderConfig:
     stmt = (
-        select(UserAPIKey)
-        .where(UserAPIKey.id == key_id, UserAPIKey.user_id == user_id)
-        .options(selectinload(UserAPIKey.models))
+        select(AIProviderConfig)
+        .where(AIProviderConfig.id == provider_id, AIProviderConfig.user_id == user_id)
+        .options(selectinload(AIProviderConfig.models))
     )
     result = await db.execute(stmt)
-    key = result.scalar_one_or_none()
-    if not key:
-        raise HTTPException(status_code=404, detail="API key not found")
-    return key
+    provider = result.scalar_one_or_none()
+    if not provider:
+        raise HTTPException(404, "Provider not found")
+    return provider
 
 
-# ═══════════════════════════════════════════════════════════════════
-# API Key CRUD
-# ═══════════════════════════════════════════════════════════════════
-
-@router.get("/keys", response_model=list[APIKeyResponse])
-async def list_keys(user: CurrentUser, db: DbSession):
-    """Get all API keys for the current user."""
-    keys = await _load_user_keys(db, user.id)
-    return [_to_response(k) for k in keys]
-
-
-@router.post("/keys", response_model=APIKeyResponse, status_code=201)
-async def create_key(data: APIKeyCreate, user: CurrentUser, db: DbSession):
-    """Create a new API key configuration."""
-    key = UserAPIKey(
-        user_id=user.id,
-        name=data.name,
-        base_url=data.base_url.rstrip("/"),
-        api_key=data.api_key,
-        capabilities=data.capabilities,
-        is_default=data.is_default,
+async def _get_model(db: DbSession, model_id: int, user_id: int) -> AIModelConfig:
+    stmt = (
+        select(AIModelConfig)
+        .join(AIProviderConfig)
+        .where(AIModelConfig.id == model_id, AIProviderConfig.user_id == user_id)
     )
-    db.add(key)
-    await db.flush()
-    await db.refresh(key, ["models"])
-    return _to_response(key)
-
-
-@router.put("/keys/{key_id}", response_model=APIKeyResponse)
-async def update_key(key_id: int, data: APIKeyUpdate, user: CurrentUser, db: DbSession):
-    """Update an API key configuration."""
-    key = await _get_key_or_404(db, key_id, user.id)
-
-    if data.name is not None:
-        key.name = data.name
-    if data.base_url is not None:
-        key.base_url = data.base_url.rstrip("/")
-    if data.api_key is not None:
-        key.api_key = data.api_key
-    if data.capabilities is not None:
-        key.capabilities = data.capabilities
-    if data.is_default is not None:
-        key.is_default = data.is_default
-    if data.enabled is not None:
-        key.enabled = data.enabled
-
-    await db.flush()
-    await db.refresh(key, ["models"])
-    return _to_response(key)
-
-
-@router.delete("/keys/{key_id}", status_code=204)
-async def delete_key(key_id: int, user: CurrentUser, db: DbSession):
-    """Delete an API key and all its model configs."""
-    key = await _get_key_or_404(db, key_id, user.id)
-    await db.delete(key)
-    await db.flush()
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Test Connection
-# ═══════════════════════════════════════════════════════════════════
-
-@router.post("/keys/{key_id}/test", response_model=TestResult)
-async def test_connection(key_id: int, user: CurrentUser, db: DbSession):
-    """Test if the API key and URL are valid by calling /v1/models."""
-    key = await _get_key_or_404(db, key_id, user.id)
-
-    # Ensure base_url ends with /v1
-    base = key.base_url.rstrip("/")
-    if not base.endswith("/v1"):
-        base = base + "/v1"
-
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(
-                f"{base}/models",
-                headers={"Authorization": f"Bearer {key.api_key}"},
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                count = len(data.get("data", []))
-                return TestResult(success=True, message=f"连接成功，发现 {count} 个模型", models_found=count)
-            else:
-                return TestResult(success=False, message=f"HTTP {resp.status_code}: {resp.text[:200]}")
-    except httpx.ConnectError:
-        return TestResult(success=False, message="无法连接到服务器，请检查 URL")
-    except Exception as e:
-        return TestResult(success=False, message=f"连接失败: {str(e)[:200]}")
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Model Config CRUD
-# ═══════════════════════════════════════════════════════════════════
-
-@router.get("/keys/{key_id}/models", response_model=list[ModelConfigResponse])
-async def list_models(key_id: int, user: CurrentUser, db: DbSession):
-    """Get all model configs under an API key."""
-    key = await _get_key_or_404(db, key_id, user.id)
-    return [ModelConfigResponse.model_validate(m) for m in key.models]
-
-
-@router.post("/keys/{key_id}/models", response_model=ModelConfigResponse, status_code=201)
-async def create_model(key_id: int, data: ModelConfigCreate, user: CurrentUser, db: DbSession):
-    """Add a model config under an API key."""
-    key = await _get_key_or_404(db, key_id, user.id)
-
-    # Validate capability_type
-    valid_types = {"chat", "image", "video", "tts"}
-    if data.capability_type not in valid_types:
-        raise HTTPException(400, f"Invalid capability_type: {data.capability_type}. Must be one of {valid_types}")
-
-    model = UserModelConfig(
-        api_key_id=key.id,
-        capability_type=data.capability_type,
-        model_id=data.model_id,
-        display_name=data.display_name,
-        is_default=data.is_default,
-    )
-    db.add(model)
-    await db.flush()
-    await db.refresh(model)
-    return ModelConfigResponse.model_validate(model)
-
-
-@router.put("/models/{model_id}", response_model=ModelConfigResponse)
-async def update_model(model_id: int, data: ModelConfigUpdate, user: CurrentUser, db: DbSession):
-    """Update a model config."""
-    stmt = select(UserModelConfig).where(UserModelConfig.id == model_id)
     result = await db.execute(stmt)
     model = result.scalar_one_or_none()
     if not model:
-        raise HTTPException(404, "Model config not found")
+        raise HTTPException(404, "Model not found")
+    return model
 
-    # Verify ownership
-    key = await _get_key_or_404(db, model.api_key_id, user.id)
 
-    if data.model_id is not None:
-        model.model_id = data.model_id
-    if data.display_name is not None:
-        model.display_name = data.display_name
-    if data.is_default is not None:
-        model.is_default = data.is_default
-    if data.enabled is not None:
-        model.enabled = data.enabled
+@router.get("/providers", response_model=list[ProviderResponse])
+async def list_providers(user: CurrentUser, db: DbSession):
+    return [_to_provider_response(p) for p in await _load_providers(db, user.id)]
 
+
+@router.post("/providers", response_model=ProviderResponse, status_code=201)
+async def create_provider(data: ProviderCreate, user: CurrentUser, db: DbSession):
+    provider = AIProviderConfig(
+        user_id=user.id,
+        name=normalize_optional_string(data.name) or data.name,
+        provider_type=_normalize_provider_type(data.provider_type),
+        auth_type=(data.auth_type or "bearer").strip().lower(),
+        base_url=normalize_optional_string(data.base_url) or "",
+        api_key=normalize_optional_string(data.api_key) or "",
+        enabled=data.enabled,
+        priority=data.priority,
+        headers_json=data.headers_json,
+        config_json=data.config_json,
+    )
+    db.add(provider)
+    await db.flush()
+    await db.refresh(provider, ["models"])
+    return _to_provider_response(provider)
+
+
+@router.put("/providers/{provider_id}", response_model=ProviderResponse)
+async def update_provider(provider_id: int, data: ProviderUpdate, user: CurrentUser, db: DbSession):
+    provider = await _get_provider(db, provider_id, user.id)
+    update = data.model_dump(exclude_unset=True)
+    if "provider_type" in update:
+        update["provider_type"] = _normalize_provider_type(update["provider_type"])
+    if "auth_type" in update and update["auth_type"]:
+        update["auth_type"] = update["auth_type"].strip().lower()
+    for key, value in update.items():
+        if key in {"name", "base_url", "api_key"} and value is not None:
+            value = normalize_optional_string(value) or ""
+        setattr(provider, key, value)
+    await db.flush()
+    await db.refresh(provider, ["models"])
+    return _to_provider_response(provider)
+
+
+@router.delete("/providers/{provider_id}", status_code=204)
+async def delete_provider(provider_id: int, user: CurrentUser, db: DbSession):
+    provider = await _get_provider(db, provider_id, user.id)
+    await db.delete(provider)
+    await db.flush()
+
+
+@router.post("/providers/{provider_id}/test", response_model=ProviderTestResult)
+async def test_provider(provider_id: int, user: CurrentUser, db: DbSession):
+    provider = await _get_provider(db, provider_id, user.id)
+    try:
+        adapter = get_media_adapter(
+            MediaProviderSettings(
+                provider_type=provider.provider_type,
+                auth_type=provider.auth_type,
+                base_url=provider.base_url,
+                api_key=provider.api_key,
+                headers=provider.headers_json or {},
+                config=provider.config_json or {},
+            )
+        )
+        result = await adapter.test_connection()
+        return ProviderTestResult(
+            success=bool(result.get("success")),
+            message=str(result.get("message") or "Connection tested"),
+            models_found=int(result.get("models_found") or 0),
+        )
+    except Exception as e:
+        return ProviderTestResult(success=False, message=str(e)[:300])
+
+
+@router.post("/providers/{provider_id}/discover")
+async def discover_models(provider_id: int, user: CurrentUser, db: DbSession):
+    provider = await _get_provider(db, provider_id, user.id)
+    adapter = get_media_adapter(
+        MediaProviderSettings(
+            provider_type=provider.provider_type,
+            auth_type=provider.auth_type,
+            base_url=provider.base_url,
+            api_key=provider.api_key,
+            headers=provider.headers_json or {},
+            config=provider.config_json or {},
+        )
+    )
+    models = await adapter.list_models()
+    return {"models": models, "count": len(models)}
+
+
+@router.get("/providers/{provider_id}/models", response_model=list[ModelResponse])
+async def list_models(provider_id: int, user: CurrentUser, db: DbSession):
+    provider = await _get_provider(db, provider_id, user.id)
+    return [ModelResponse.model_validate(m) for m in provider.models]
+
+
+@router.post("/providers/{provider_id}/models", response_model=ModelResponse, status_code=201)
+async def create_model(provider_id: int, data: ModelCreate, user: CurrentUser, db: DbSession):
+    await _get_provider(db, provider_id, user.id)
+    model = AIModelConfig(provider_id=provider_id, **data.model_dump())
+    db.add(model)
     await db.flush()
     await db.refresh(model)
-    return ModelConfigResponse.model_validate(model)
+    if model.is_default:
+        await _unset_other_defaults(db, model)
+    return ModelResponse.model_validate(model)
+
+
+@router.put("/models/{model_id}", response_model=ModelResponse)
+async def update_model(model_id: int, data: ModelUpdate, user: CurrentUser, db: DbSession):
+    model = await _get_model(db, model_id, user.id)
+    for key, value in data.model_dump(exclude_unset=True).items():
+        if key in {"model_id", "display_name"} and value is not None:
+            value = normalize_optional_string(value) or ""
+        setattr(model, key, value)
+    await db.flush()
+    if model.is_default:
+        await _unset_other_defaults(db, model)
+    await db.refresh(model)
+    return ModelResponse.model_validate(model)
 
 
 @router.delete("/models/{model_id}", status_code=204)
 async def delete_model(model_id: int, user: CurrentUser, db: DbSession):
-    """Delete a model config."""
-    stmt = select(UserModelConfig).where(UserModelConfig.id == model_id)
-    result = await db.execute(stmt)
-    model = result.scalar_one_or_none()
-    if not model:
-        raise HTTPException(404, "Model config not found")
-
-    # Verify ownership
-    await _get_key_or_404(db, model.api_key_id, user.id)
-
+    model = await _get_model(db, model_id, user.id)
     await db.delete(model)
     await db.flush()
 
 
-@router.put("/models/{model_id}/set-default", response_model=ModelConfigResponse)
+@router.put("/models/{model_id}/set-default", response_model=ModelResponse)
 async def set_default_model(model_id: int, user: CurrentUser, db: DbSession):
-    """Set a model as the default for its capability type."""
-    stmt = select(UserModelConfig).where(UserModelConfig.id == model_id)
-    result = await db.execute(stmt)
-    model = result.scalar_one_or_none()
-    if not model:
-        raise HTTPException(404, "Model config not found")
-
-    key = await _get_key_or_404(db, model.api_key_id, user.id)
-
-    # Unset other defaults for the same capability type under this user
-    all_keys = await _load_user_keys(db, user.id)
-    for k in all_keys:
-        for m in k.models:
-            if m.capability_type == model.capability_type and m.id != model.id:
-                m.is_default = False
-
+    model = await _get_model(db, model_id, user.id)
     model.is_default = True
+    await _unset_other_defaults(db, model)
     await db.flush()
     await db.refresh(model)
-    return ModelConfigResponse.model_validate(model)
+    return ModelResponse.model_validate(model)
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Defaults
-# ═══════════════════════════════════════════════════════════════════
+async def _unset_other_defaults(db: DbSession, model: AIModelConfig) -> None:
+    stmt = (
+        select(AIModelConfig)
+        .join(AIProviderConfig)
+        .where(
+            AIProviderConfig.user_id == (
+                select(AIProviderConfig.user_id)
+                .where(AIProviderConfig.id == model.provider_id)
+                .scalar_subquery()
+            ),
+            AIModelConfig.capability == model.capability,
+            AIModelConfig.id != model.id,
+        )
+    )
+    result = await db.execute(stmt)
+    for other in result.scalars().all():
+        other.is_default = False
+
 
 @router.get("/defaults")
 async def get_defaults(user: CurrentUser, db: DbSession):
-    """Get the default model for each capability type."""
-    keys = await _load_user_keys(db, user.id)
     defaults = {}
-
-    for key in keys:
-        if not key.enabled:
+    providers = await _load_providers(db, user.id)
+    for provider in providers:
+        if not provider.enabled:
             continue
-        for model in key.models:
-            if model.is_default and model.enabled and model.capability_type not in defaults:
-                defaults[model.capability_type] = {
+        for model in provider.models:
+            if model.enabled and model.is_default and model.capability.value not in defaults:
+                defaults[model.capability.value] = {
                     "model_id": model.model_id,
                     "display_name": model.display_name,
-                    "provider_name": key.name,
-                    "base_url": key.base_url,
+                    "provider_name": provider.name,
+                    "provider_type": provider.provider_type,
+                    "base_url": provider.base_url,
                 }
-
     return defaults
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Auto-discover models from /v1/models
-# ═══════════════════════════════════════════════════════════════════
+@router.get("/jobs", response_model=list[JobResponse])
+async def list_jobs(user: CurrentUser, db: DbSession, limit: int = Query(default=50, ge=1, le=200)):
+    result = await db.execute(
+        select(MediaGenerationJob)
+        .where(MediaGenerationJob.user_id == user.id)
+        .order_by(MediaGenerationJob.id.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
 
-@router.post("/keys/{key_id}/discover")
-async def discover_models(key_id: int, user: CurrentUser, db: DbSession):
-    """
-    Auto-discover models from the provider's /v1/models endpoint.
-    Automatically adds the first model of each capability type as the default.
-    """
-    key = await _get_key_or_404(db, key_id, user.id)
 
-    # Ensure base_url ends with /v1 for OpenAI-compatible endpoints
-    base = key.base_url.rstrip("/")
-    if not base.endswith("/v1"):
-        base = base + "/v1"
+@router.get("/jobs/{job_id}", response_model=JobResponse)
+async def get_job(job_id: int, user: CurrentUser, db: DbSession):
+    job = await db.get(MediaGenerationJob, job_id)
+    if not job or job.user_id != user.id:
+        raise HTTPException(404, "Job not found")
+    return job
 
-    # Fetch models from provider
+
+@router.post("/jobs", response_model=JobResponse, status_code=201)
+async def create_job(data: JobCreate, user: CurrentUser, db: DbSession):
+    output_path = data.output_path
+    if not output_path:
+        ext = "png" if data.capability == MediaCapability.IMAGE else "mp4"
+        output_path = str(Path(settings.storage_dir) / "media_jobs" / f"job_pending.{ext}")
+    job = await media_generation_service.create_job(
+        db=db,
+        user_id=user.id,
+        capability=data.capability.value,
+        prompt=data.prompt,
+        output_path=output_path,
+        model_hint=data.model_id,
+        request_json=data.request_json,
+    )
+    await db.commit()
+
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(
-                f"{base}/models",
-                headers={"Authorization": f"Bearer {key.api_key}"},
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        queue_job_id = await enqueue_media_job(job.id)
     except Exception as e:
-        raise HTTPException(400, f"Failed to fetch models: {str(e)[:200]}")
+        job.status = MediaJobStatus.FAILED
+        job.error = f"Failed to enqueue media generation job: {e}"[:2000]
+        job.progress = 100
+        await db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail={"job_id": job.id, "message": job.error},
+        ) from e
 
-    raw_models = data.get("data", [])
-    if not raw_models:
-        return {"added": 0, "models": []}
+    request_json = dict(job.request_json or {})
+    request_json["_queue_job_id"] = queue_job_id
+    job.request_json = request_json
+    await db.commit()
+    await db.refresh(job)
+    return job
 
-    # Classify and pick first model per capability type
-    by_type: dict[str, list[str]] = {}
-    for item in raw_models:
-        model_id = item.get("id", "")
-        cap_type = _classify_model(model_id)
-        if cap_type:
-            by_type.setdefault(cap_type, []).append(model_id)
-
-    # Check which types already have models configured
-    existing_types = set()
-    for m in key.models:
-        if m.enabled:
-            existing_types.add(m.capability_type)
-
-    # Only add models for types that are NOT already configured
-    added = []
-    for cap_type, model_ids in by_type.items():
-        if cap_type in existing_types:
-            continue  # Already configured, skip
-        first_model = model_ids[0]
-        model = UserModelConfig(
-            api_key_id=key.id,
-            capability_type=cap_type,
-            model_id=first_model,
-            display_name=first_model,
-            is_default=True,
-        )
-        db.add(model)
-        added.append({
-            "model_id": first_model,
-            "capability_type": cap_type,
-            "display_name": first_model,
-            "is_default": True,
-        })
-
-    await db.flush()
-
-    return {
-        "added": len(added),
-        "models": added,
-        "available": {cap: ids for cap, ids in by_type.items()},
-    }
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Built-in Catalog
-# ═══════════════════════════════════════════════════════════════════
 
 @router.get("/catalog")
 async def get_catalog():
-    """Get built-in provider templates for quick setup."""
     from app.data.model_catalog import BUILTIN_CATALOG
+
     return BUILTIN_CATALOG
 
 
-@router.post("/catalog/import", response_model=APIKeyResponse, status_code=201)
+@router.post("/catalog/import", response_model=ProviderResponse, status_code=201)
 async def import_from_catalog(catalog_index: int, user: CurrentUser, db: DbSession):
-    """Import a provider template from the built-in catalog."""
     from app.data.model_catalog import BUILTIN_CATALOG
 
     if catalog_index < 0 or catalog_index >= len(BUILTIN_CATALOG):
         raise HTTPException(400, f"Invalid catalog index: {catalog_index}")
-
     template = BUILTIN_CATALOG[catalog_index]
-
-    # Create the API key
-    key = UserAPIKey(
+    provider = AIProviderConfig(
         user_id=user.id,
         name=template["name"],
-        base_url=template["base_url"],
-        api_key="",  # User must fill in
-        capabilities=template["capabilities"],
-        is_default=template.get("is_default", False),
+        provider_type=_normalize_provider_type(template["provider_type"]),
+        auth_type=template.get("auth_type", "bearer"),
+        base_url=template.get("base_url", ""),
+        api_key="",
+        enabled=True,
+        priority=template.get("priority", 100),
+        headers_json=template.get("headers_json", {}),
+        config_json=template.get("config_json", {}),
     )
-    db.add(key)
+    db.add(provider)
     await db.flush()
-
-    # Create model configs
-    for m in template.get("models", []):
-        model = UserModelConfig(
-            api_key_id=key.id,
-            capability_type=m["capability_type"],
-            model_id=m["model_id"],
-            display_name=m["display_name"],
-            is_default=m.get("is_default", False),
+    for item in template.get("models", []):
+        db.add(
+            AIModelConfig(
+                provider_id=provider.id,
+                capability=MediaCapability(item["capability"]),
+                model_id=item["model_id"],
+                display_name=item["display_name"],
+                is_default=item.get("is_default", False),
+                default_params_json=item.get("default_params_json", {}),
+                param_schema_json=item.get("param_schema_json", {}),
+                capabilities_json=item.get("capabilities_json", {}),
+            )
         )
-        db.add(model)
-
     await db.flush()
-    await db.refresh(key, ["models"])
-    return _to_response(key)
-
-
-def _classify_model(model_id: str) -> str | None:
-    """Classify a model ID into a capability type based on naming patterns."""
-    mid = model_id.lower()
-
-    # Video models
-    video_keywords = ["video", "sora", "veo", "kling", "seedance", "runway", "pika", "vidu", "hailuo", "wan"]
-    if any(kw in mid for kw in video_keywords):
-        return "video"
-
-    # Image models
-    image_keywords = ["image", "dall-e", "dalle", "midjourney", "stable-diffusion", "flux", "ideogram", "sora-image"]
-    if any(kw in mid for kw in image_keywords):
-        return "image"
-
-    # TTS models
-    tts_keywords = ["tts", "speech", "audio"]
-    if any(kw in mid for kw in tts_keywords):
-        return "tts"
-
-    # Chat/LLM models (default for known LLM prefixes)
-    chat_keywords = ["gpt", "claude", "gemini", "qwen", "deepseek", "glm", "kimi", "llama", "mistral", "mixtral"]
-    if any(kw in mid for kw in chat_keywords):
-        return "chat"
-
-    # Unknown → default to chat
-    return "chat"
+    await db.refresh(provider, ["models"])
+    return _to_provider_response(provider)
