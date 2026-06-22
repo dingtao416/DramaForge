@@ -44,7 +44,7 @@ function resetFilter() {
     <Transition name="fade">
       <div
         v-if="showFilterPanel"
-        class="absolute top-full right-0 mt-2 w-[260px] bg-white border border-gray-200 rounded-[12px] shadow-[0_4px_16px_rgba(0,0,0,0.08)] p-4 z-50"
+        class="absolute top-full right-0 mt-2 w-[260px] bg-[#FEF9E7] border border-gray-200 rounded-[12px] shadow-[0_4px_16px_rgba(0,0,0,0.08)] p-4 z-50"
       >
         <h4 class="text-[13px] font-medium text-gray-800 mb-3">筛选条件</h4>
 
@@ -53,7 +53,7 @@ function resetFilter() {
           <label class="block text-[12px] text-gray-500 mb-1">资产类型</label>
           <select
             v-model="selectedType"
-            class="w-full h-[32px] px-2 border border-gray-200 rounded-[6px] text-[13px] outline-none focus:border-primary-500 bg-white"
+            class="w-full h-[32px] px-2 border border-gray-200 rounded-[6px] text-[13px] outline-none focus:border-primary-500 bg-[#FEF9E7]"
           >
             <option value="">全部</option>
             <option value="character">角色</option>
@@ -67,7 +67,7 @@ function resetFilter() {
           <label class="block text-[12px] text-gray-500 mb-1">时间范围</label>
           <select
             v-model="selectedDate"
-            class="w-full h-[32px] px-2 border border-gray-200 rounded-[6px] text-[13px] outline-none focus:border-primary-500 bg-white"
+            class="w-full h-[32px] px-2 border border-gray-200 rounded-[6px] text-[13px] outline-none focus:border-primary-500 bg-[#FEF9E7]"
           >
             <option value="">不限</option>
             <option value="today">今天</option>

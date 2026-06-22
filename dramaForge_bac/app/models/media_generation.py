@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 
 class MediaCapability(str, enum.Enum):
+    CHAT = "chat"
     IMAGE = "image"
     VIDEO = "video"
 

@@ -9,8 +9,9 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from loguru import logger
 
-from app.core.ai_config import normalize_optional_string
+from app.core.ai_config import normalize_api_base_url, normalize_optional_string
 
 
 class MediaAdapterError(RuntimeError):
@@ -84,6 +85,10 @@ class BaseMediaAdapter:
         headers = {"Content-Type": "application/json", **(self.settings.headers or {})}
         api_key = normalize_optional_string(self.settings.api_key)
         if not api_key:
+            logger.warning(
+                f"Media adapter ({self.settings.provider_type}): no API key configured — "
+                f"requests to {self.settings.base_url} will fail with 401"
+            )
             return headers
         if self.settings.auth_type == "api-key":
             key_name = self.settings.config.get("api_key_header", "X-API-Key")
@@ -148,7 +153,21 @@ class BaseMediaAdapter:
 
 
 class OpenAICompatibleAdapter(BaseMediaAdapter):
-    """OpenAI-compatible media adapter for relays and aggregators."""
+    """OpenAI-compatible media adapter for relays and aggregators.
+
+    By default, normalizes base_url to include /v1 (OpenAI convention).
+    Set config.skip_v1_normalization = true on the provider to disable this
+    (e.g. for Azure AI Foundry which uses bare endpoints like /videos).
+    """
+
+    def _normalized_base_url(self) -> str:
+        """Return the base URL, normalized for OpenAI convention unless opt-out."""
+        if self.settings.config.get("skip_v1_normalization"):
+            return (self.settings.base_url or "").rstrip("/")
+        return normalize_api_base_url(self.settings.base_url) or ""
+
+    def _url(self, path: str) -> str:
+        return _join_url(self._normalized_base_url(), path)
 
     async def submit_image(self, request: MediaRequest) -> MediaResult:
         payload = {
@@ -161,21 +180,38 @@ class OpenAICompatibleAdapter(BaseMediaAdapter):
             payload["size"] = request.size
         payload.setdefault("response_format", "b64_json")
         try:
+            logger.info(
+                f"Image adapter → POST {self._url('/images/generations')} "
+                f"model={request.model_id} size={request.size}"
+            )
             data = await self._post("/images/generations", payload)
             return _image_result_from_openai_data(data)
-        except Exception as image_error:
-            data = await self._post(
-                "/chat/completions",
-                {
-                    "model": request.model_id,
-                    "messages": [{"role": "user", "content": request.prompt}],
-                },
+        except MediaAdapterError as image_error:
+            # Don't fallback to chat for auth errors — fail fast
+            if "401" in str(image_error) or "403" in str(image_error):
+                raise
+            logger.warning(
+                f"Image API failed ({image_error}), falling back to chat → "
+                f"POST {self._url('/chat/completions')}"
             )
-            content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
-            urls = _extract_urls(content, extensions=r"png|jpg|jpeg|webp|gif")
-            if not urls:
-                raise MediaAdapterError(f"Image API failed and chat response had no image URL: {image_error}")
-            return MediaResult(status="succeeded", assets=[{"type": "image", "url": urls[0]}], response=data)
+            try:
+                data = await self._post(
+                    "/chat/completions",
+                    {
+                        "model": request.model_id,
+                        "messages": [{"role": "user", "content": request.prompt}],
+                    },
+                )
+                content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+                urls = _extract_urls(content, extensions=r"png|jpg|jpeg|webp|gif")
+                if not urls:
+                    raise MediaAdapterError(f"Image API failed and chat response had no image URL: {image_error}")
+                return MediaResult(status="succeeded", assets=[{"type": "image", "url": urls[0]}], response=data)
+            except Exception as chat_error:
+                raise MediaAdapterError(
+                    f"Image generation failed — "
+                    f"Image API error: {image_error}. Chat fallback error: {chat_error}"
+                ) from image_error
 
     async def submit_video(self, request: MediaRequest) -> MediaResult:
         payload = {"model": request.model_id, "prompt": request.prompt, **request.raw_params}
@@ -194,17 +230,30 @@ class OpenAICompatibleAdapter(BaseMediaAdapter):
             urls = _urls_from_any(data)
             if urls:
                 return MediaResult(status="succeeded", assets=[{"type": "video", "url": urls[0]}], response=data)
-        except Exception:
-            pass
-        data = await self._post(
-            "/chat/completions",
-            {"model": request.model_id, "messages": [{"role": "user", "content": request.prompt}]},
-        )
-        content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
-        urls = _extract_urls(content, extensions=r"mp4|mov|webm")
-        if not urls:
-            raise MediaAdapterError("Video response did not contain a video URL")
-        return MediaResult(status="succeeded", assets=[{"type": "video", "url": urls[0]}], response=data)
+        except MediaAdapterError as video_error:
+            # Don't fallback to chat for auth errors
+            if "401" in str(video_error) or "403" in str(video_error):
+                raise
+            logger.warning(
+                f"Video API failed ({video_error}), falling back to chat → "
+                f"POST {self._url('/chat/completions')}"
+            )
+        try:
+            data = await self._post(
+                "/chat/completions",
+                {"model": request.model_id, "messages": [{"role": "user", "content": request.prompt}]},
+            )
+            content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+            urls = _extract_urls(content, extensions=r"mp4|mov|webm")
+            if not urls:
+                raise MediaAdapterError("Video response did not contain a video URL")
+            return MediaResult(status="succeeded", assets=[{"type": "video", "url": urls[0]}], response=data)
+        except Exception as chat_error:
+            raise MediaAdapterError(
+                f"Video generation failed — "
+                f"Video API error: {video_error if 'video_error' in dir() else 'unknown'}. "
+                f"Chat fallback error: {chat_error}"
+            )
 
     async def get_status(self, provider_job_id: str) -> MediaResult:
         data = await self._get(f"/videos/{provider_job_id}")
@@ -220,13 +269,24 @@ class OpenAICompatibleAdapter(BaseMediaAdapter):
             error=_error_from_response(data),
         )
 
+    @staticmethod
+    def _extract_model_list(data: Any) -> list[dict[str, Any]]:
+        """Normalize /models response: some providers return a plain list, others wrap in {"data": [...]}."""
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict):
+            items = data.get("data") or []
+            return items if isinstance(items, list) else []
+        return []
+
     async def test_connection(self) -> dict[str, Any]:
         data = await self._get("/models")
-        return {"success": True, "message": "Connection succeeded", "models_found": len(data.get("data", []))}
+        models = self._extract_model_list(data)
+        return {"success": True, "message": "Connection succeeded", "models_found": len(models)}
 
     async def list_models(self) -> list[str]:
         data = await self._get("/models")
-        return [item.get("id") for item in data.get("data", []) if item.get("id")]
+        return [item.get("id") for item in self._extract_model_list(data) if item.get("id")]
 
 
 class OpenAINativeAdapter(OpenAICompatibleAdapter):

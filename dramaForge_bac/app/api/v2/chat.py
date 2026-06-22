@@ -201,6 +201,7 @@ async def send_message(
                     temperature=request.temperature,
                     api_key=resolved.api_key,
                     base_url=resolved.base_url,
+                    chat_options=resolved.raw_params or {},
                 ):
                     event_type = event["type"]
                     event_data = event["data"]
@@ -259,6 +260,7 @@ async def send_message(
         temperature=request.temperature,
         api_key=resolved.api_key,
         base_url=resolved.base_url,
+        chat_options=resolved.raw_params or {},
     )
 
     assistant_message = Message(

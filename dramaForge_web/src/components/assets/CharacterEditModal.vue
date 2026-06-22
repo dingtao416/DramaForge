@@ -44,7 +44,7 @@ const roleOptions = Object.entries(CharacterRoleLabel) as [CharacterRole, string
       v-if="visible && character"
       class="fixed inset-0 z-[90] flex items-center justify-center bg-black/30 backdrop-blur-[2px]"
     >
-      <div class="bg-white rounded-[16px] w-[520px] max-w-[90vw] max-h-[85vh] overflow-y-auto shadow-[0_12px_24px_rgba(0,0,0,0.12)]">
+      <div class="bg-[#FEF9E7] rounded-[16px] w-[520px] max-w-[90vw] max-h-[85vh] overflow-y-auto shadow-[0_12px_24px_rgba(0,0,0,0.12)]">
         <!-- Header -->
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h3 class="text-[16px] font-semibold text-gray-900">
@@ -75,7 +75,7 @@ const roleOptions = Object.entries(CharacterRoleLabel) as [CharacterRole, string
             <label class="block text-[13px] font-medium text-gray-700 mb-1.5">角色类型</label>
             <select
               v-model="form.role"
-              class="w-full h-[40px] px-3 border border-gray-200 rounded-[8px] text-[14px] text-gray-800 outline-none focus:border-primary-500 bg-white transition-colors"
+              class="w-full h-[40px] px-3 border border-gray-200 rounded-[8px] text-[14px] text-gray-800 outline-none focus:border-primary-500 bg-[#FEF9E7] transition-colors"
             >
               <option v-for="[key, label] in roleOptions" :key="key" :value="key">{{ label }}</option>
             </select>

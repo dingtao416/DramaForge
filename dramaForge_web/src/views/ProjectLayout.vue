@@ -21,9 +21,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col bg-white">
+  <div class="min-h-screen flex flex-col bg-[#FEF9E7]">
     <!-- Top bar -->
-    <div class="h-[56px] border-b border-gray-200 bg-white flex items-center px-6 shrink-0">
+    <div class="h-[56px] border-b border-gray-200 bg-[#FEF9E7] flex items-center px-6 shrink-0">
       <!-- Back -->
       <button
         class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer transition-colors mr-3 shrink-0"

@@ -478,17 +478,18 @@ function formatTime(isoStr: string): string {
   <div class="h-screen flex">
     <!-- ═══ Left Sidebar ═══ -->
     <aside
-      class="border-r border-[#EBEBEB] bg-white flex flex-col shrink-0 transition-all duration-200"
+      class="border-r-2 border-[#D4C898] flex flex-col shrink-0 transition-all duration-200"
+      style="background: #FDF5D6;"
       :class="sidebarCollapsed ? 'w-0 overflow-hidden border-r-0' : 'w-[272px]'"
     >
       <!-- Top: Logo + collapse -->
       <div class="sidebar-section sidebar-header flex items-center justify-between h-[56px] shrink-0">
         <div class="flex items-center gap-2.5">
-          <div class="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center text-white text-[11px] font-bold">D</div>
+          <div class="w-7 h-7 rounded-[2px] flex items-center justify-center text-white text-[11px] font-bold" style="background: #E8A317;">D</div>
           <span class="text-[15px] font-semibold text-gray-900 whitespace-nowrap">DramaForge</span>
         </div>
         <button
-          class="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer transition-colors"
+          class="w-7 h-7 rounded-[2px] flex items-center justify-center text-gray-500 hover:bg-black/5 hover:text-gray-600 cursor-pointer transition-colors"
           @click="sidebarCollapsed = true"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="2" x2="6" y2="14" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -498,7 +499,7 @@ function formatTime(isoStr: string): string {
       <!-- + 新对话 -->
       <div class="sidebar-section sidebar-new-chat">
         <button
-          class="new-chat-btn rounded-full border border-[#E5E5E5] bg-white text-gray-600 flex items-center hover:bg-gray-50 cursor-pointer transition-colors"
+          class="new-chat-btn rounded-[2px] border-2 border-[#D4C898] bg-transparent text-gray-600 flex items-center hover:bg-black/5 cursor-pointer transition-colors"
           @click="handleNewChat"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><line x1="8" y1="3" x2="8" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -509,7 +510,7 @@ function formatTime(isoStr: string): string {
       <!-- 资产库 -->
       <div class="sidebar-section">
         <div
-          class="sidebar-item rounded-[10px] text-gray-600 flex items-center hover:bg-gray-50 cursor-pointer transition-colors"
+          class="sidebar-item rounded-[2px] text-gray-600 flex items-center hover:bg-black/5 cursor-pointer transition-colors"
           @click="router.push('/assets')"
         >
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2.5 5.5C2.5 4.4 3.4 3.5 4.5 3.5H7L8.75 5.25H13.5C14.6 5.25 15.5 6.15 15.5 7.25V12.5C15.5 13.6 14.6 14.5 13.5 14.5H4.5C3.4 14.5 2.5 13.6 2.5 12.5V5.5Z" stroke="currentColor" stroke-width="1.4"/></svg>
@@ -519,15 +520,15 @@ function formatTime(isoStr: string): string {
 
       <!-- 历史记录 -->
       <div class="sidebar-section sidebar-history flex items-center justify-between">
-        <span class="text-[12px] text-gray-400 font-medium">历史记录</span>
-        <span class="text-[12px] text-gray-400 cursor-pointer hover:text-primary-600 transition-colors">全部</span>
+        <span class="text-[12px] text-gray-500 font-medium">历史记录</span>
+        <span class="text-[12px] text-gray-500 cursor-pointer hover:text-[#E8A317] transition-colors">全部</span>
       </div>
 
       <!-- Conversation + Project list -->
       <div class="sidebar-section flex-1 overflow-y-auto">
         <!-- Today's conversations -->
         <template v-if="todayConversations.length">
-          <div class="text-[11px] text-gray-400 px-3 mb-2">今天</div>
+          <div class="text-[11px] text-gray-500 px-3 mb-2">今天</div>
           <div
             v-for="conv in todayConversations"
             :key="'conv-' + conv.id"
@@ -539,8 +540,8 @@ function formatTime(isoStr: string): string {
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 4.5C3 3.67 3.67 3 4.5 3h9c.83 0 1.5.67 1.5 1.5v7c0 .83-.67 1.5-1.5 1.5H7l-2.5 2V13H4.5C3.67 13 3 12.33 3 11.5v-7z" stroke="currentColor" stroke-width="1.3"/></svg>
             </div>
             <div class="min-w-0 flex-1">
-              <div class="text-[13px] text-gray-800 truncate leading-tight">{{ conv.title || '新对话' }}</div>
-              <div class="text-[11px] text-gray-400 truncate mt-0.5">{{ getModeLabel(conv.mode) }}</div>
+              <div class="text-[13px] text-gray-700 truncate leading-tight">{{ conv.title || '新对话' }}</div>
+              <div class="text-[11px] text-gray-500 truncate mt-0.5">{{ getModeLabel(conv.mode) }}</div>
             </div>
           </div>
         </template>
@@ -558,26 +559,26 @@ function formatTime(isoStr: string): string {
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 4.5C3 3.67 3.67 3 4.5 3h9c.83 0 1.5.67 1.5 1.5v7c0 .83-.67 1.5-1.5 1.5H7l-2.5 2V13H4.5C3.67 13 3 12.33 3 11.5v-7z" stroke="currentColor" stroke-width="1.3"/></svg>
             </div>
             <div class="min-w-0 flex-1">
-              <div class="text-[13px] text-gray-800 truncate leading-tight">{{ conv.title || '新对话' }}</div>
-              <div class="text-[11px] text-gray-400 truncate mt-0.5">{{ getModeLabel(conv.mode) }}</div>
+              <div class="text-[13px] text-gray-700 truncate leading-tight">{{ conv.title || '新对话' }}</div>
+              <div class="text-[11px] text-gray-500 truncate mt-0.5">{{ getModeLabel(conv.mode) }}</div>
             </div>
           </div>
         </template>
-        <div v-if="!chatStore.conversations.length" class="text-center text-[13px] text-gray-400 py-10">暂无记录</div>
+        <div v-if="!chatStore.conversations.length" class="text-center text-[13px] text-gray-500 py-10">暂无记录</div>
       </div>
     </aside>
 
     <!-- Sidebar expand button -->
     <button
       v-if="sidebarCollapsed"
-      class="absolute left-3 top-4 z-20 w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-50 cursor-pointer shadow-sm transition-colors"
+      class="absolute left-3 top-4 z-20 w-8 h-8 rounded-[2px] bg-[#FEF9E7] border-2 border-[#D4C898] flex items-center justify-center text-gray-500 hover:text-gray-600 hover:bg-black/5 cursor-pointer transition-colors"
       @click="sidebarCollapsed = false"
     >
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="2" x2="6" y2="14" stroke="currentColor" stroke-width="1.5"/></svg>
     </button>
 
     <!-- ═══ Main Content ═══ -->
-    <div class="flex-1 flex flex-col bg-white min-w-0">
+    <div class="flex-1 flex flex-col min-w-0">
       <!-- Top bar -->
       <div class="topbar">
         <TopbarActions
@@ -699,12 +700,15 @@ function formatTime(isoStr: string): string {
           </div>
 
           <!-- Greeting -->
-          <h1 class="greeting-title text-[42px] font-bold text-gray-900 text-center leading-[1.2] tracking-[-0.5px] mb-0">
+          <h1 class="greeting-title text-[28px] text-gray-900 text-center leading-[1.4] mb-0"
+            style="font-family: 'Press Start 2P', monospace; letter-spacing: 2px; text-shadow: -2px -2px 0 rgba(0,0,0,0.08), 2px -2px 0 rgba(0,0,0,0.08), -2px 2px 0 rgba(0,0,0,0.08), 2px 2px 0 rgba(0,0,0,0.08), 0 4px 0 rgba(229,37,33,0.3);">
             Hi，DramaForge 助你爆款写剧一键成片
           </h1>
 
           <!-- ─── Input card ─── -->
-          <div class="input-card w-full max-w-[777px] bg-white rounded-[24px] border border-[#E5E5E5] shadow-[0_1px_4px_rgba(0,0,0,0.03)] focus-within:border-[#C4B5FD] focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.06)] transition-all" style="margin-top: 35px;">
+          <div class="input-card w-full max-w-[777px] rounded-[2px] border-2 border-[#D4C898] transition-all"
+            style="margin-top: 35px; background: #FDF5D6; box-shadow: 4px 4px 0 0 rgba(0,0,0,0.4);"
+            :style="showModeMenu || showModelMenu ? { borderColor: '#F5C34B', boxShadow: '0 0 0 3px rgba(241,196,15,0.25), 4px 4px 0 0 rgba(0,0,0,0.4)' } : {}">
             <!-- Top hint bar (mode-specific) -->
             <div v-if="currentModeOption.topHint" class="top-hint-bar">
               {{ currentModeOption.topHint }}
@@ -714,7 +718,7 @@ function formatTime(isoStr: string): string {
             <textarea
               v-model="userInput"
               rows="1"
-              class="input-textarea w-full pr-7 resize-none border-none outline-none text-[16px] text-gray-800 placeholder-gray-400 bg-transparent leading-[1.8]"
+              class="input-textarea w-full pr-7 resize-none border-none outline-none text-[16px] text-gray-900 placeholder-[#8B7A5A] bg-transparent leading-[1.8]"
               :placeholder="currentModeOption.placeholder"
               @keydown.enter.exact.prevent="startCreation"
             />
@@ -724,7 +728,7 @@ function formatTime(isoStr: string): string {
               <!-- ① + 上传参考素材（所有模式） -->
               <div class="dropdown-wrapper">
                 <button
-                  class="w-[36px] h-[36px] rounded-[10px] border border-[#E5E5E5] flex items-center justify-center text-gray-500 hover:bg-gray-50 hover:text-gray-700 cursor-pointer transition-colors bg-white"
+                  class="w-[36px] h-[36px] rounded-[2px] border-2 border-[#D4C898] flex items-center justify-center text-gray-500 hover:bg-black/5 hover:text-gray-600 cursor-pointer transition-colors bg-transparent"
                   @click="toggleMenu('upload')"
                   title="上传参考素材"
                 >
@@ -748,7 +752,7 @@ function formatTime(isoStr: string): string {
               <!-- ② 模式切换按钮（所有模式） -->
               <div class="dropdown-wrapper">
                 <button
-                  class="toolbar-btn-text rounded-full flex items-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white"
+                  class="toolbar-btn-text rounded-[2px] flex items-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent"
                   @click="toggleMenu('mode')"
                 >
                   <!-- Agent 模式 — 地球/网络图标 -->
@@ -791,7 +795,7 @@ function formatTime(isoStr: string): string {
               <!-- ④ 模型偏好（所有模式均可用） -->
               <div class="dropdown-wrapper">
                 <button
-                  class="toolbar-btn-icon-text rounded-full flex items-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white"
+                  class="toolbar-btn-icon-text rounded-[2px] flex items-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent"
                   @click="toggleMenu('model')"
                   title="模型偏好"
                 >
@@ -897,7 +901,7 @@ function formatTime(isoStr: string): string {
               </div>
 
               <!-- ⑤ @引用素材（仅沉浸式短片） -->
-              <button v-if="currentMode === 'clip'" class="toolbar-btn-circle rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white" title="@引用素材">
+              <button v-if="currentMode === 'clip'" class="toolbar-btn-circle rounded-[2px] flex items-center justify-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent" title="@引用素材">
                 <!-- @ 符号 -->
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M10.5 8v1a2 2 0 004 0V8a6 6 0 10-2 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
               </button>
@@ -905,7 +909,7 @@ function formatTime(isoStr: string): string {
               <!-- ⑥ 画幅比例（所有模式通用） -->
               <div class="dropdown-wrapper">
                 <button
-                  class="toolbar-btn-circle rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white"
+                  class="toolbar-btn-circle rounded-[2px] flex items-center justify-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent"
                   @click="toggleMenu('ratio')"
                   title="画幅比例"
                 >
@@ -928,19 +932,19 @@ function formatTime(isoStr: string): string {
               </div>
 
               <!-- ⑦ 参考（仅沉浸式短片） -->
-              <button v-if="currentMode === 'clip'" class="toolbar-btn-circle rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white" title="参考风格">
+              <button v-if="currentMode === 'clip'" class="toolbar-btn-circle rounded-[2px] flex items-center justify-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent" title="参考风格">
                 <!-- 链接/参考图标 -->
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6.5 9.5l3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M9 7l1.5-1.5a2.12 2.12 0 013 3L12 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M7 9L5.5 10.5a2.12 2.12 0 01-3-3L4 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
               </button>
 
               <!-- ⑧ 时长选择（仅沉浸式短片） -->
-              <button v-if="currentMode === 'clip'" class="toolbar-btn-circle rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white" title="时长选择">
+              <button v-if="currentMode === 'clip'" class="toolbar-btn-circle rounded-[2px] flex items-center justify-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent" title="时长选择">
                 <!-- 时钟图标 -->
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3.5l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
 
               <!-- ⑨ 创作偏好（仅智能长视频2.0） -->
-              <button v-if="currentMode === 'longvideo2'" class="toolbar-btn-circle rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white" title="创作偏好">
+              <button v-if="currentMode === 'longvideo2'" class="toolbar-btn-circle rounded-[2px] flex items-center justify-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent" title="创作偏好">
                 <!-- 调色板/画笔图标 -->
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6.5" r="1" fill="currentColor"/><circle cx="8" cy="5" r="1" fill="currentColor"/><circle cx="10.5" cy="6.5" r="1" fill="currentColor"/><circle cx="5.5" cy="9.5" r="1" fill="currentColor"/></svg>
               </button>
@@ -948,7 +952,7 @@ function formatTime(isoStr: string): string {
               <!-- ⑩ 预设提示词（Agent / 沉浸式短片 / 智能长视频2.0 / 生成图片 / 智能长视频） -->
               <div v-if="['agent', 'clip', 'longvideo2', 'image', 'longvideo'].includes(currentMode)" class="dropdown-wrapper">
                 <button
-                  class="toolbar-btn-circle rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors border border-[#E5E5E5] bg-white"
+                  class="toolbar-btn-circle rounded-[2px] flex items-center justify-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent"
                   @click="toggleMenu('preset')"
                   title="预设提示词"
                 >
@@ -1089,7 +1093,7 @@ function formatTime(isoStr: string): string {
       <!-- 基础会员 - 包年 -->
       <div class="plan-card plan-card-featured">
         <div class="plan-card-header">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2l2.3 4.6L16 7.5l-3.5 3.4L13.4 16 9 13.6 4.6 16l.9-5.1L2 7.5l4.7-.9L9 2z" fill="#7c3aed" stroke="#7c3aed" stroke-width="1"/></svg>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2l2.3 4.6L16 7.5l-3.5 3.4L13.4 16 9 13.6 4.6 16l.9-5.1L2 7.5l4.7-.9L9 2z" fill="#E8A317" stroke="#E8A317" stroke-width="1"/></svg>
           <span>基础会员-包年</span>
         </div>
         <div class="plan-price-row">
@@ -1124,7 +1128,7 @@ function formatTime(isoStr: string): string {
       <!-- 基础会员 - 包月 -->
       <div class="plan-card plan-card-featured">
         <div class="plan-card-header">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2l2.3 4.6L16 7.5l-3.5 3.4L13.4 16 9 13.6 4.6 16l.9-5.1L2 7.5l4.7-.9L9 2z" fill="#7c3aed" stroke="#7c3aed" stroke-width="1"/></svg>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2l2.3 4.6L16 7.5l-3.5 3.4L13.4 16 9 13.6 4.6 16l.9-5.1L2 7.5l4.7-.9L9 2z" fill="#E8A317" stroke="#E8A317" stroke-width="1"/></svg>
           <span>基础会员-包月</span>
         </div>
         <div class="plan-price-row">
@@ -1192,12 +1196,12 @@ function formatTime(isoStr: string): string {
   <!-- 积分不足弹窗 -->
   <ModalOverlay :visible="showInsufficientCredits" title="积分不足" subtitle="当前积分余额不足以完成此操作" width="480px" @close="showInsufficientCredits = false">
     <template #icon>
-      <div style="width:48px;height:48px;border-radius:50%;background:#FEF3C7;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:24px;">⚡</div>
+      <div style="width:48px;height:48px;border-radius:50%;background:rgba(245, 195, 75, 0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:24px;">⚡</div>
     </template>
     <div style="text-align:center;padding:0 20px;">
       <div style="display:flex;justify-content:center;align-items:baseline;gap:4px;margin-bottom:8px;">
         <span style="font-size:14px;color:#999;">当前余额</span>
-        <span style="font-size:28px;font-weight:800;color:#7c3aed;">{{ billingStore.credits }}</span>
+        <span style="font-size:28px;font-weight:800;color:#E8A317;">{{ billingStore.credits }}</span>
         <span style="font-size:14px;color:#999;">积分</span>
       </div>
       <p style="font-size:13px;color:#999;margin:0 0 24px;">每次 AI 对话消耗 1-3 积分，升级会员可获得每月 1200 积分</p>
@@ -1207,11 +1211,11 @@ function formatTime(isoStr: string): string {
           @click="showInsufficientCredits = false"
         >稍后再说</button>
         <button
-          style="flex:1;height:44px;border-radius:12px;border:1px solid #7c3aed;background:#F9F5FF;color:#7c3aed;font-size:13px;font-weight:600;cursor:pointer;"
+          style="flex:1;height:44px;border-radius:12px;border:1px solid #E8A317;background:rgba(232, 163, 23, 0.1);color:#E8A317;font-size:13px;font-weight:600;cursor:pointer;"
           @click="showInsufficientCredits = false; showCreditPackModal = true"
         >充值积分</button>
         <button
-          style="flex:1;height:44px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:13px;font-weight:600;cursor:pointer;"
+          style="flex:1;height:44px;border-radius:12px;border:none;background:#E8A317;color:#1A1508;font-size:13px;font-weight:600;cursor:pointer;"
           @click="showInsufficientCredits = false; showSubscribeSheet = true"
         >升级套餐</button>
       </div>
@@ -1229,10 +1233,10 @@ function formatTime(isoStr: string): string {
           :key="pack.code"
           style="padding:16px;border-radius:14px;border:2px solid #e5e5e5;background:#fff;cursor:pointer;text-align:center;transition:all 0.2s;"
           @click="selectedCreditPack = pack.code"
-          :style="selectedCreditPack === pack.code ? { borderColor: '#7c3aed', background: '#F9F5FF' } : {}">
+          :style="selectedCreditPack === pack.code ? { borderColor: '#E8A317', background: 'rgba(232, 163, 23, 0.1)' } : {}">
           <div style="font-size:20px;font-weight:700;color:#333;">{{ pack.credits }}</div>
           <div style="font-size:12px;color:#999;margin:4px 0;">积分</div>
-          <div style="font-size:16px;font-weight:700;color:#7c3aed;">{{ pack.price }}</div>
+          <div style="font-size:16px;font-weight:700;color:#E8A317;">{{ pack.price }}</div>
         </button>
       </div>
 
@@ -1241,7 +1245,7 @@ function formatTime(isoStr: string): string {
         <button v-for="ch in [{code:'wechat',name:'微信'},{code:'alipay',name:'支付宝'},{code:'douyin',name:'抖音'}]"
           :key="ch.code"
           style="flex:1;padding:8px;border-radius:8px;border:1.5px solid #e5e5e5;background:#fff;cursor:pointer;font-size:12px;color:#666;"
-          :style="selectedChannel === ch.code ? { borderColor: '#7c3aed', color: '#7c3aed', fontWeight: 600 } : {}"
+          :style="selectedChannel === ch.code ? { borderColor: '#E8A317', color: '#E8A317', fontWeight: 600 } : {}"
           @click="selectedChannel = ch.code as any">
           {{ ch.name }}
         </button>
@@ -1249,14 +1253,14 @@ function formatTime(isoStr: string): string {
 
       <!-- 协议 -->
       <label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:16px;cursor:pointer;">
-        <input type="checkbox" v-model="agreementChecked" style="margin-top:3px;accent-color:#7c3aed;" />
-        <span style="font-size:12px;color:#999;">我已阅读并同意 <a href="javascript:void(0)" style="color:#7c3aed;">服务协议</a></span>
+        <input type="checkbox" v-model="agreementChecked" style="margin-top:3px;accent-color:#E8A317;" />
+        <span style="font-size:12px;color:#999;">我已阅读并同意 <a href="javascript:void(0)" style="color:#E8A317;">服务协议</a></span>
       </label>
 
       <div v-if="paymentError" style="color:#ef4444;font-size:13px;text-align:center;margin-bottom:12px;">{{ paymentError }}</div>
 
       <button
-        style="width:100%;height:48px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:15px;font-weight:600;cursor:pointer;"
+        style="width:100%;height:48px;border-radius:12px;border:none;background:#E8A317;color:#1A1508;font-size:15px;font-weight:600;cursor:pointer;"
         :disabled="!selectedCreditPack || paymentStore.isLoading"
         :style="{ opacity: !selectedCreditPack || paymentStore.isLoading ? 0.5 : 1 }"
         @click="buyCreditPack(selectedCreditPack)">
@@ -1269,7 +1273,7 @@ function formatTime(isoStr: string): string {
   <ModalOverlay :visible="showPaymentModal" :title="paymentStep === 'success' ? '支付成功' : paymentStep === 'qr' ? '扫码支付' : '选择支付方式'" width="460px" @close="closePaymentModal">
     <template #icon>
       <div style="width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 8px;font-size:24px;"
-        :style="{ background: paymentStep === 'success' ? '#D1FAE5' : '#F3F0FF' }">
+        :style="{ background: paymentStep === 'success' ? 'rgba(46, 204, 113, 0.15)' : '#F3F0FF' }">
         {{ paymentStep === 'success' ? '✅' : paymentStep === 'error' ? '❌' : '💳' }}
       </div>
     </template>
@@ -1291,7 +1295,7 @@ function formatTime(isoStr: string): string {
           <button v-for="ch in [{code:'wechat',name:'微信支付',icon:'💚'},{code:'alipay',name:'支付宝',icon:'🔵'},{code:'douyin',name:'抖音支付',icon:'🎵'}]"
             :key="ch.code"
             style="flex:1;padding:12px 8px;border-radius:12px;border:2px solid #e5e5e5;background:#fff;cursor:pointer;text-align:center;transition:all 0.2s;"
-            :style="selectedChannel === ch.code ? { borderColor: '#7c3aed', background: '#F9F5FF' } : {}"
+            :style="selectedChannel === ch.code ? { borderColor: '#E8A317', background: 'rgba(232, 163, 23, 0.1)' } : {}"
             @click="selectedChannel = ch.code as any">
             <div style="font-size:20px;">{{ ch.icon }}</div>
             <div style="font-size:12px;color:#666;margin-top:4px;">{{ ch.name }}</div>
@@ -1300,19 +1304,19 @@ function formatTime(isoStr: string): string {
 
         <!-- 协议勾选 -->
         <label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:20px;cursor:pointer;">
-          <input type="checkbox" v-model="agreementChecked" style="margin-top:3px;accent-color:#7c3aed;" />
+          <input type="checkbox" v-model="agreementChecked" style="margin-top:3px;accent-color:#E8A317;" />
           <span style="font-size:12px;color:#999;line-height:1.5;">
             我已阅读并同意
-            <a href="javascript:void(0)" style="color:#7c3aed;text-decoration:underline;">《DramaForge 服务协议》</a>
+            <a href="javascript:void(0)" style="color:#E8A317;text-decoration:underline;">《DramaForge 服务协议》</a>
             和
-            <a href="javascript:void(0)" style="color:#7c3aed;text-decoration:underline;">《支付协议》</a>
+            <a href="javascript:void(0)" style="color:#E8A317;text-decoration:underline;">《支付协议》</a>
           </span>
         </label>
 
         <div v-if="paymentError" style="color:#ef4444;font-size:13px;text-align:center;margin-bottom:12px;">{{ paymentError }}</div>
 
         <button
-          style="width:100%;height:48px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:15px;font-weight:600;cursor:pointer;transition:opacity 0.2s;"
+          style="width:100%;height:48px;border-radius:12px;border:none;background:#E8A317;color:#1A1508;font-size:15px;font-weight:600;cursor:pointer;transition:opacity 0.2s;"
           :style="{ opacity: paymentStore.isLoading ? 0.6 : 1 }"
           :disabled="paymentStore.isLoading"
           @click="startPayment">
@@ -1335,7 +1339,7 @@ function formatTime(isoStr: string): string {
             </div>
           </div>
 
-          <div style="font-size:22px;font-weight:700;color:#7c3aed;margin-bottom:4px;">
+          <div style="font-size:22px;font-weight:700;color:#E8A317;margin-bottom:4px;">
             ¥{{ paymentStore.currentOrder?.amount_cny }}
           </div>
           <div style="font-size:12px;color:#999;margin-bottom:16px;">
@@ -1365,7 +1369,7 @@ function formatTime(isoStr: string): string {
             {{ paymentStore.currentOrder?.product_name }} 已到账
           </div>
           <button
-            style="width:100%;height:48px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:15px;font-weight:600;cursor:pointer;"
+            style="width:100%;height:48px;border-radius:12px;border:none;background:#E8A317;color:#1A1508;font-size:15px;font-weight:600;cursor:pointer;"
             @click="closePaymentModal">
             完成
           </button>
@@ -1385,7 +1389,7 @@ function formatTime(isoStr: string): string {
               关闭
             </button>
             <button
-              style="flex:1;height:44px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:14px;font-weight:600;cursor:pointer;"
+              style="flex:1;height:44px;border-radius:12px;border:none;background:#E8A317;color:#1A1508;font-size:14px;font-weight:600;cursor:pointer;"
               @click="paymentStep = 'select'; paymentError = ''">
               重新支付
             </button>
@@ -1439,17 +1443,18 @@ function formatTime(isoStr: string): string {
 .home-avatar {
   width: 56px;
   height: 56px;
-  border-radius: 50%;
-  background: #1a1a1a;
+  border-radius: 2px;
+  background: #E8A317;
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 18px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border: 3px solid #B87D08;
+  box-shadow: 4px 4px 0 0 #B87D08;
 }
 
 .greeting-title {
-  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
+  font-family: 'Press Start 2P', monospace;
 }
 
 /* ─── Input card ─── */
@@ -1497,22 +1502,22 @@ function formatTime(isoStr: string): string {
   height: 40px;
   min-width: 115px;
   padding: 0 20px;
-  border-radius: 20px;
+  border-radius: 2px;
   font-size: 13px;
-  color: #444;
-  background: #fff;
-  border: 1px solid #E8E8E8;
+  color: #6B5D40;
+  background: transparent;
+  border: 2px solid #D4C898;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.1s ease;
   white-space: nowrap;
   letter-spacing: 0.3px;
 }
 
 .tag-pill:hover {
-  border-color: #C4B5FD;
-  color: #7C3AED;
-  background: #F5F3FF;
-  box-shadow: 0 1px 6px rgba(124, 58, 237, 0.08);
+  border-color: #F5C34B;
+  color: #F5C34B;
+  background: rgba(245, 195, 75, 0.08);
+  box-shadow: 2px 2px 0 0 rgba(245, 195, 75, 0.3);
 }
 
 /* ─── Feature cards ─── */
@@ -1523,6 +1528,9 @@ function formatTime(isoStr: string): string {
 .feature-section-title {
   font-size: 13px;
   margin-bottom: 12px;
+  font-family: 'Press Start 2P', monospace;
+  color: #F5C34B;
+  letter-spacing: 1px;
 }
 
 .feature-cards-grid {
@@ -1533,19 +1541,22 @@ function formatTime(isoStr: string): string {
 .feature-card {
   width: 235px;
   height: 115px;
+  border-radius: 2px;
+  border: 2px solid #D4C898;
 }
 
 .feature-card .new-badge {
   top: 8px;
   left: 10px;
-  background: linear-gradient(135deg, #34d399, #10b981);
+  background: #E8A317;
   color: #fff;
-  font-size: 9px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 10px;
-  letter-spacing: 0.5px;
+  font-size: 10px;
+  font-family: 'Press Start 2P', monospace;
+  padding: 3px 8px;
+  border-radius: 2px;
+  letter-spacing: 1px;
   line-height: 1.4;
+  border: 2px solid #B87D08;
 }
 
 .feature-card .card-title {
@@ -1566,10 +1577,10 @@ function formatTime(isoStr: string): string {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  background: #fff;
-  border: 1px solid #E5E5E5;
-  border-radius: 14px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.04);
+  background: #FEF9E7;
+  border: 2px solid #D4C898;
+  border-radius: 2px;
+  box-shadow: 4px 4px 0 0 rgba(0, 0, 0, 0.4);
   z-index: 100;
   overflow: hidden;
   animation: dropdownFadeIn 0.15s ease;
@@ -1584,10 +1595,10 @@ function formatTime(isoStr: string): string {
 .top-hint-bar {
   padding: 8px 20px;
   font-size: 12px;
-  color: #888;
-  background: #FAFAFA;
-  border-bottom: 1px solid #F0F0F0;
-  border-radius: 24px 24px 0 0;
+  color: #6B5D40;
+  background: #FDF4D8;
+  border-bottom: 2px solid #D4C898;
+  border-radius: 2px 2px 0 0;
 }
 
 /* ─── Model version tag ─── */
@@ -1611,17 +1622,17 @@ function formatTime(isoStr: string): string {
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  border-radius: 10px;
+  border-radius: 2px;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .mode-item:hover {
-  background: #F8F7FF;
+  background: rgba(0,0,0,0.04);
 }
 
 .mode-item-active {
-  background: #F5F3FF;
+  background: rgba(232, 163, 23, 0.1) !important;
 }
 
 .mode-item-content {
@@ -1638,22 +1649,22 @@ function formatTime(isoStr: string): string {
 .mode-item-label {
   font-size: 14px;
   font-weight: 500;
-  color: #1a1a1a;
+  color: #111111;
 }
 
 .mode-tag {
   font-size: 10px;
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(135deg, #34d399, #10b981);
+  background: #E8A317;
   padding: 1px 6px;
-  border-radius: 8px;
+  border-radius: 2px;
   letter-spacing: 0.3px;
 }
 
 .mode-item-desc {
   font-size: 12px;
-  color: #999;
+  color: #6B5D40;
   margin-top: 2px;
   line-height: 1.4;
 }
@@ -1683,19 +1694,19 @@ function formatTime(isoStr: string): string {
   gap: 10px;
   padding: 10px 14px;
   font-size: 13px;
-  color: #444;
-  border-radius: 10px;
+  color: #2D2515;
+  border-radius: 2px;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .dropdown-item:hover {
-  background: #F5F3FF;
+  background: rgba(0,0,0,0.04);
 }
 
 .dropdown-item-active {
-  color: #7C3AED;
-  background: #F5F3FF;
+  color: #F5C34B;
+  background: rgba(245, 195, 75, 0.1);
 }
 
 .dropdown-item .check-icon {
@@ -1720,7 +1731,7 @@ function formatTime(isoStr: string): string {
 .dropdown-header-title {
   font-size: 14px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #111111;
 }
 
 /* ─── Auto toggle ─── */
@@ -1733,36 +1744,41 @@ function formatTime(isoStr: string): string {
 
 .auto-toggle-label {
   font-size: 13px;
-  color: #666;
+  color: #6B5D40;
 }
 
 .toggle-switch {
   width: 40px;
   height: 22px;
-  border-radius: 11px;
-  background: #ddd;
+  border-radius: 2px;
+  background: #555;
   position: relative;
   transition: background 0.2s;
+  border: 2px solid #333;
 }
 
 .toggle-switch.toggle-on {
-  background: #7C3AED;
+  background: #2ECC71;
+  border-color: #1E8449;
 }
 
 .toggle-dot {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #fff;
+  width: 16px;
+  height: 14px;
+  border-radius: 2px;
+  background: #E74C3C;
   position: absolute;
   top: 2px;
   left: 2px;
-  transition: left 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  transition: left 0.15s ease, background 0.15s ease;
+  border: 2px solid #C0392B;
+  box-shadow: inset -2px -2px 0 rgba(0,0,0,0.2);
 }
 
 .toggle-on .toggle-dot {
   left: 20px;
+  background: #27AE60;
+  border-color: #1E8449;
 }
 
 /* ─── Model tabs ─── */
@@ -1770,13 +1786,13 @@ function formatTime(isoStr: string): string {
   display: flex;
   gap: 0;
   padding: 0 16px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 2px solid #D4C898;
 }
 
 .model-tab {
   padding: 8px 16px;
   font-size: 13px;
-  color: #888;
+  color: #8B7A5A;
   border-bottom: 2px solid transparent;
   cursor: pointer;
   transition: all 0.15s;
@@ -1787,18 +1803,18 @@ function formatTime(isoStr: string): string {
 }
 
 .model-tab:hover {
-  color: #333;
+  color: #6B5D40;
 }
 
 .model-tab-active {
-  color: #1a1a1a;
+  color: #F5C34B;
   font-weight: 600;
-  border-bottom-color: #1a1a1a;
+  border-bottom-color: #F5C34B;
 }
 
 .model-section-label {
   font-size: 11px;
-  color: #aaa;
+  color: #8B7A5A;
   padding: 12px 16px 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1811,24 +1827,24 @@ function formatTime(isoStr: string): string {
   padding: 10px 14px;
   cursor: pointer;
   transition: background 0.15s;
-  border-radius: 8px;
+  border-radius: 2px;
   margin: 2px 6px;
 }
 
 .model-item:hover {
-  background: #F5F5F5;
+  background: rgba(0,0,0,0.04);
 }
 
 .model-item-active {
-  background: #F3F0FF !important;
+  background: rgba(232, 163, 23, 0.1) !important;
 }
 
 .model-item:last-child {
-  border-radius: 8px;
+  border-radius: 2px;
 }
 
 .model-icon {
-  color: #666;
+  color: #6B5D40;
   margin-top: 2px;
   flex-shrink: 0;
 }
@@ -1836,7 +1852,7 @@ function formatTime(isoStr: string): string {
 .model-name {
   font-size: 13px;
   font-weight: 500;
-  color: #1a1a1a;
+  color: #111111;
   line-height: 1.3;
 }
 
@@ -1844,25 +1860,25 @@ function formatTime(isoStr: string): string {
   display: inline-flex;
   align-items: center;
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: 2px;
   font-size: 10px;
   font-weight: 500;
-  background: #F5F5F5;
-  color: #888;
+  background: rgba(255,255,255,0.08);
+  color: #6B5D40;
   white-space: nowrap;
 }
 
 .model-tag-rec {
-  background: #F3F0FF;
-  color: #7C3AED;
+  background: rgba(232, 163, 23, 0.15);
+  color: #E8A317;
 }
 
 .model-tag-premium {
   font-size: 10px;
   padding: 1px 5px;
-  border-radius: 3px;
-  background: linear-gradient(135deg, #F59E0B, #D97706);
-  color: #fff;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #F5C34B, #C88A0C);
+  color: #5D3A00;
   font-weight: 600;
   letter-spacing: 0.5px;
   line-height: 1.4;
@@ -1880,7 +1896,7 @@ function formatTime(isoStr: string): string {
 
 .model-desc {
   font-size: 12px;
-  color: #999;
+  color: #8B7A5A;
   margin-top: 2px;
   line-height: 1.4;
 }
@@ -1900,9 +1916,9 @@ function formatTime(isoStr: string): string {
   gap: 8px;
   height: 36px;
   padding: 0 12px;
-  border: 1px solid #E5E5E5;
-  border-radius: 10px;
-  background: #FAFAFA;
+  border: 2px solid #D4C898;
+  border-radius: 2px;
+  background: rgba(0,0,0,0.2);
 }
 
 .preset-search-input {
@@ -1911,29 +1927,29 @@ function formatTime(isoStr: string): string {
   outline: none;
   background: transparent;
   font-size: 13px;
-  color: #333;
+  color: #333333;
 }
 
 .preset-search-input::placeholder {
-  color: #bbb;
+  color: #8B7A5A;
 }
 
 .preset-new-btn {
   height: 36px;
   padding: 0 16px;
-  border-radius: 10px;
-  background: #1a1a1a;
+  border-radius: 2px;
+  background: #E8A317;
   color: #fff;
   font-size: 13px;
   font-weight: 500;
-  border: none;
+  border: 2px solid #B87D08;
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s;
 }
 
 .preset-new-btn:hover {
-  background: #333;
+  background: #C88A0C;
 }
 
 .preset-empty {
@@ -1947,7 +1963,7 @@ function formatTime(isoStr: string): string {
 
 .preset-empty p {
   font-size: 13px;
-  color: #aaa;
+  color: #8B7A5A;
 }
 
 /* ─── Chat Conversation View ─── */
@@ -1964,19 +1980,19 @@ function formatTime(isoStr: string): string {
 }
 
 .chat-user-content {
-  background: #f3f0ff;
-  color: #1a1a1a;
+  background: rgba(232, 163, 23, 0.15);
+  color: #1A1508;
   font-size: 15px;
   line-height: 1.7;
   padding: 12px 18px;
-  border-radius: 18px 18px 4px 18px;
+  border-radius: 2px;
   max-width: 70%;
   word-break: break-word;
 }
 
 .chat-time {
   font-size: 12px;
-  color: #bbb;
+  color: #8B7A5A;
   margin-top: 6px;
   padding-right: 4px;
 }
@@ -1991,7 +2007,7 @@ function formatTime(isoStr: string): string {
 .chat-assistant-text {
   font-size: 15px;
   line-height: 1.8;
-  color: #1a1a1a;
+  color: #2D2515;
   max-width: 90%;
   word-break: break-word;
 }
@@ -2007,8 +2023,8 @@ function formatTime(isoStr: string): string {
 .thinking-dot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
-  background: #c4b5fd;
+  border-radius: 2px;
+  background: #F5C34B;
   animation: thinkingBounce 1.4s ease-in-out infinite both;
 }
 
@@ -2020,19 +2036,19 @@ function formatTime(isoStr: string): string {
   0%, 80%, 100% {
     transform: scale(0.6);
     opacity: 0.4;
-    background: #c4b5fd;
+    background: #F5C34B;
   }
   40% {
     transform: scale(1.15);
     opacity: 1;
-    background: #7c3aed;
+    background: #F39C12;
   }
 }
 
 /* ── Streaming cursor ── */
 .streaming-cursor {
   display: inline-block;
-  color: #7c3aed;
+  color: #E8A317;
   font-weight: 500;
   font-size: 16px;
   line-height: 1;
@@ -2050,21 +2066,22 @@ function formatTime(isoStr: string): string {
 .chat-input-bar {
   flex-shrink: 0;
   padding: 12px 0 20px;
-  background: #fff;
-  border-top: 1px solid #f5f5f5;
+  background: transparent;
+  border-top: 2px solid #D4C898;
 }
 
 .chat-input-card {
-  background: #fff;
-  border: 1px solid #e5e5e5;
-  border-radius: 20px;
+  background: #FDF5D6;
+  border: 2px solid #D4C898;
+  border-radius: 2px;
   padding: 14px 16px 10px;
+  box-shadow: 3px 3px 0 0 rgba(0,0,0,0.3);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .chat-input-card:focus-within {
-  border-color: #c4b5fd;
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.06);
+  border-color: #F5C34B;
+  box-shadow: 0 0 0 3px rgba(245, 195, 75, 0.2), 3px 3px 0 0 rgba(0,0,0,0.3);
 }
 
 .chat-input-textarea {
@@ -2076,12 +2093,12 @@ function formatTime(isoStr: string): string {
   resize: none;
   font-size: 15px;
   line-height: 1.6;
-  color: #333;
+  color: #1A1508;
   background: transparent;
 }
 
 .chat-input-textarea::placeholder {
-  color: #bbb;
+  color: #8B7A5A;
 }
 
 .chat-input-toolbar {
@@ -2094,20 +2111,20 @@ function formatTime(isoStr: string): string {
 .chat-tool-btn {
   width: 34px;
   height: 34px;
-  border-radius: 10px;
-  border: 1px solid #e8e8e8;
+  border-radius: 2px;
+  border: 2px solid #D4C898;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #888;
-  background: #fff;
+  color: #6B5D40;
+  background: transparent;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .chat-tool-btn:hover {
-  background: #f5f5f5;
-  color: #555;
+  background: rgba(0,0,0,0.04);
+  color: #F5C34B;
 }
 
 .chat-mode-btn {
@@ -2116,31 +2133,31 @@ function formatTime(isoStr: string): string {
   gap: 5px;
   padding: 0 12px;
   height: 34px;
-  border-radius: 10px;
-  border: 1px solid #e8e8e8;
+  border-radius: 2px;
+  border: 2px solid #D4C898;
   font-size: 13px;
-  color: #666;
-  background: #fff;
+  color: #6B5D40;
+  background: transparent;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .chat-mode-btn:hover {
-  background: #f5f5f5;
+  background: rgba(0,0,0,0.04);
 }
 
 .chat-send-btn {
   width: 38px;
   height: 38px;
-  border-radius: 50%;
-  border: none;
+  border-radius: 2px;
+  border: 2px solid #D4C898;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #e5e5e5;
-  color: #bbb;
-  cursor: not-allowed;
-  transition: all 0.2s;
+  background: transparent;
+  color: #8B7A5A;
+  cursor: pointer;
+  transition: all 0.1s ease;
 }
 
 .chat-send-btn svg {
@@ -2148,10 +2165,11 @@ function formatTime(isoStr: string): string {
 }
 
 .chat-send-active {
-  background: #000 !important;
+  background: #E8A317 !important;
+  border-color: #B87D08 !important;
   color: #fff !important;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  box-shadow: 3px 3px 0 0 #B87D08;
 }
 
 .chat-send-active svg {
@@ -2160,34 +2178,38 @@ function formatTime(isoStr: string): string {
 }
 
 .chat-send-active:hover {
-  background: #222 !important;
+  background: #C88A0C !important;
+  box-shadow: 2px 2px 0 0 #B87D08;
+  transform: translate(1px, 1px);
 }
 
 .chat-optimize-active {
-  color: #7c3aed !important;
-  background: #F3F0FF !important;
+  color: #F5C34B !important;
+  background: rgba(245, 195, 75, 0.1) !important;
+  border-color: #F5C34B !important;
 }
 
-/* ── Home page send button (scoped for proper specificity) ── */
+/* ── Home page send button ── */
 .home-send-btn {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
-  border: none;
+  border-radius: 2px;
+  border: 2px solid #D4C898;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f0f0f0;
-  color: #ccc;
-  cursor: not-allowed;
-  transition: all 0.2s;
+  background: transparent;
+  color: #8B7A5A;
+  cursor: pointer;
+  transition: all 0.1s ease;
 }
 
 .home-send-btn.active {
-  background: #000;
+  background: #E8A317;
+  border-color: #B87D08;
   color: #fff;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  box-shadow: 3px 3px 0 0 #B87D08;
 }
 
 .home-send-btn.active svg {
@@ -2199,17 +2221,20 @@ function formatTime(isoStr: string): string {
 }
 
 .home-send-btn.active:hover {
-  background: #222;
+  background: #C88A0C;
+  box-shadow: 2px 2px 0 0 #B87D08;
+  transform: translate(1px, 1px);
 }
 
 .chat-stop-btn {
-  background: #0a0a0a !important;
+  background: #E8A317 !important;
+  border-color: #B87D08 !important;
   color: #fff !important;
   cursor: pointer !important;
 }
 
 .chat-stop-btn:hover {
-  background: #333 !important;
+  background: #C88A0C !important;
 }
 
 /* ─── Sidebar Conversation Items ─── */
@@ -2218,38 +2243,38 @@ function formatTime(isoStr: string): string {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 2px;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .sidebar-conv-item:hover {
-  background: #f5f5f5;
+  background: rgba(0,0,0,0.04);
 }
 
 .sidebar-conv-active {
-  background: #f3f0ff !important;
+  background: rgba(232, 163, 23, 0.12) !important;
 }
 
 .sidebar-conv-icon {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
-  background: #f3f0ff;
+  border-radius: 2px;
+  background: rgba(232, 163, 23, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #7c3aed;
+  color: #E8A317;
   flex-shrink: 0;
 }
 
 .sidebar-conv-active .sidebar-conv-icon {
-  background: #ede9fe;
+  background: rgba(232, 163, 23, 0.25);
 }
 
 /* ─── Top Bar ─── */
 .topbar {
-  height: 56px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -2264,61 +2289,62 @@ function formatTime(isoStr: string): string {
   gap: 10px;
 }
 
-/* Credits + Subscribe purple group */
+/* Credits + Subscribe red group */
 .topbar-credits-group {
   display: flex;
   align-items: center;
   gap: 6px;
   height: 36px;
   padding: 0 14px;
-  border-radius: 20px;
-  background: #f3f0ff;
+  border-radius: 2px;
+  background: rgba(232, 163, 23, 0.15);
   cursor: pointer;
   transition: all 0.15s;
+  border: 2px solid rgba(232, 163, 23, 0.2);
 }
 
 .topbar-credits-group:hover {
-  background: #ede9fe;
+  background: rgba(232, 163, 23, 0.25);
 }
 
 .topbar-credits-icon {
-  color: #7c3aed;
+  color: #E8A317;
   font-size: 15px;
 }
 
 .topbar-credits-num {
   font-weight: 600;
   font-size: 14px;
-  color: #7c3aed;
+  color: #E8A317;
 }
 
 .topbar-credits-group svg {
-  color: #7c3aed;
+  color: #E8A317;
   opacity: 0.6;
 }
 
 .topbar-group-divider {
   width: 1px;
   height: 16px;
-  background: #d8ccf5;
+  background: rgba(232, 163, 23, 0.3);
   margin: 0 4px;
 }
 
 .topbar-subscribe {
   font-size: 13px;
   font-weight: 600;
-  color: #7c3aed;
+  color: #E8A317;
 }
 
-/* Icon buttons — black */
+/* Icon buttons */
 .topbar-icon-btn {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1a1a1a;
+  color: #6B5D40;
   background: none;
   border: none;
   cursor: pointer;
@@ -2326,16 +2352,16 @@ function formatTime(isoStr: string): string {
 }
 
 .topbar-icon-btn:hover {
-  background: #f5f5f5;
-  color: #000;
+  background: rgba(0,0,0,0.04);
+  color: #1A1508;
 }
 
 /* Avatar */
 .topbar-avatar {
   width: 32px;
   height: 32px;
-  border-radius: 50%;
-  background: #1a1a1a;
+  border-radius: 2px;
+  background: #E8A317;
   color: #fff;
   font-size: 12px;
   font-weight: 600;
@@ -2348,15 +2374,15 @@ function formatTime(isoStr: string): string {
 }
 
 .topbar-avatar:hover {
-  background: #333;
+  background: #C88A0C;
 }
 
-/* ─── Subscription Plans (reference style) ─── */
+/* ─── Subscription Plans ─── */
 .plan-logo {
   width: 48px;
   height: 48px;
-  border-radius: 14px;
-  background: #1a1a1a;
+  border-radius: 2px;
+  background: #E8A317;
   color: #fff;
   font-size: 22px;
   font-weight: 700;
@@ -2364,6 +2390,8 @@ function formatTime(isoStr: string): string {
   align-items: center;
   justify-content: center;
   margin-bottom: 16px;
+  border: 3px solid #B87D08;
+  box-shadow: 3px 3px 0 0 #B87D08;
 }
 
 .plan-grid {
@@ -2373,19 +2401,20 @@ function formatTime(isoStr: string): string {
 }
 
 .plan-card {
-  border: 1px solid #e5e5e5;
-  border-radius: 16px;
+  border: 2px solid #D4C898;
+  border-radius: 2px;
   padding: 28px 24px;
+  background: #FDF5D6;
 }
 
 .plan-card-featured {
-  border: 2px solid #7c3aed;
+  border: 2px solid #F5C34B;
 }
 
 .plan-card-title {
   font-size: 16px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: #111111;
   margin: 0 0 12px;
 }
 
@@ -2395,7 +2424,7 @@ function formatTime(isoStr: string): string {
   gap: 6px;
   font-size: 16px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: #111111;
   margin-bottom: 12px;
 }
 
@@ -2409,28 +2438,28 @@ function formatTime(isoStr: string): string {
 .plan-price-symbol {
   font-size: 16px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #111111;
 }
 
 .plan-price-big {
   font-size: 36px;
   font-weight: 800;
-  color: #1a1a1a;
+  color: #111111;
   letter-spacing: -1px;
 }
 
 .plan-price-unit {
   font-size: 14px;
-  color: #999;
+  color: #6B5D40;
   margin-left: 2px;
 }
 
 .plan-discount-tag {
   font-size: 11px;
   font-weight: 600;
-  color: #ef4444;
-  border: 1px solid #fca5a5;
-  border-radius: 4px;
+  color: #E74C3C;
+  border: 2px solid #C0392B;
+  border-radius: 2px;
   padding: 1px 6px;
   margin-left: 8px;
   white-space: nowrap;
@@ -2438,7 +2467,7 @@ function formatTime(isoStr: string): string {
 
 .plan-price-note {
   font-size: 12px;
-  color: #999;
+  color: #8B7A5A;
   margin-bottom: 16px;
   line-height: 1.5;
 }
@@ -2446,43 +2475,55 @@ function formatTime(isoStr: string): string {
 .plan-action-btn {
   width: 100%;
   height: 44px;
-  border-radius: 10px;
-  border: none;
+  border-radius: 2px;
+  border: 2px solid;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.1s ease;
   margin-bottom: 20px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
 }
 
 .plan-action-disabled {
-  background: #f5f5f5;
-  color: #bbb;
+  background: #D4C898;
+  border-color: #D4C898;
+  color: #8B7A5A;
   cursor: default;
 }
 
 .plan-action-primary {
-  background: #7c3aed;
+  background: #E8A317;
+  border-color: #B87D08;
   color: #fff;
+  box-shadow: 3px 3px 0 0 #B87D08;
 }
 
 .plan-action-primary:hover {
-  background: #6d28d9;
+  background: #C88A0C;
+  box-shadow: 2px 2px 0 0 #B87D08;
+  transform: translate(1px, 1px);
 }
 
 .plan-action-dark {
-  background: #1a1a1a;
+  background: #E8A317;
+  border-color: #B87D08;
   color: #fff;
+  box-shadow: 3px 3px 0 0 #B87D08;
 }
 
 .plan-action-dark:hover {
-  background: #333;
+  background: #C88A0C;
+  box-shadow: 2px 2px 0 0 #B87D08;
+  transform: translate(1px, 1px);
 }
 
 .plan-section-label {
   font-size: 14px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: #111111;
   margin-bottom: 10px;
 }
 
@@ -2491,7 +2532,7 @@ function formatTime(isoStr: string): string {
   padding: 0;
   margin: 0 0 18px;
   font-size: 13px;
-  color: #444;
+  color: #2D2515;
 }
 
 .plan-list li {
@@ -2504,7 +2545,7 @@ function formatTime(isoStr: string): string {
   content: '✓';
   position: absolute;
   left: 0;
-  color: #22c55e;
+  color: #2ECC71;
   font-weight: 600;
 }
 
@@ -2512,13 +2553,13 @@ function formatTime(isoStr: string): string {
   content: '✗';
   position: absolute;
   left: 0;
-  color: #ef4444;
+  color: #E74C3C;
   font-weight: 600;
 }
 
 .plan-sub {
   font-size: 12px;
-  color: #999;
+  color: #8B7A5A;
 }
 
 /* ─── Feedback ─── */
@@ -2530,32 +2571,33 @@ function formatTime(isoStr: string): string {
 
 .feedback-type-btn {
   padding: 6px 16px;
-  border-radius: 20px;
-  border: 1px solid #e5e5e5;
-  background: #fff;
+  border-radius: 2px;
+  border: 2px solid #D4C898;
+  background: transparent;
   font-size: 13px;
-  color: #555;
+  color: #6B5D40;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .feedback-type-btn:hover {
-  border-color: #ccc;
+  border-color: #F5C34B;
 }
 
 .feedback-type-active {
-  background: #f3f0ff;
-  border-color: #c4b5fd;
-  color: #7c3aed;
+  background: rgba(232, 163, 23, 0.15);
+  border-color: #E8A317;
+  color: #E8A317;
 }
 
 .feedback-textarea {
   width: 100%;
-  border: 1px solid #e5e5e5;
-  border-radius: 12px;
+  border: 2px solid #D4C898;
+  border-radius: 2px;
   padding: 12px 14px;
   font-size: 14px;
-  color: #333;
+  color: #1A1508;
+  background: rgba(0,0,0,0.2);
   resize: none;
   outline: none;
   line-height: 1.6;
@@ -2563,26 +2605,32 @@ function formatTime(isoStr: string): string {
 }
 
 .feedback-textarea:focus {
-  border-color: #c4b5fd;
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.06);
+  border-color: #F5C34B;
+  box-shadow: 0 0 0 3px rgba(245, 195, 75, 0.2);
 }
 
 .feedback-submit {
   width: 100%;
   height: 44px;
-  border-radius: 12px;
-  border: none;
-  background: #1a1a1a;
+  border-radius: 2px;
+  border: 2px solid #B87D08;
+  background: #E8A317;
   color: #fff;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   margin-top: 14px;
-  transition: all 0.15s;
+  transition: all 0.1s ease;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  box-shadow: 3px 3px 0 0 #B87D08;
 }
 
 .feedback-submit:hover:not(:disabled) {
-  background: #333;
+  background: #C88A0C;
+  box-shadow: 2px 2px 0 0 #B87D08;
+  transform: translate(1px, 1px);
 }
 
 .feedback-submit:disabled {
@@ -2604,12 +2652,12 @@ function formatTime(isoStr: string): string {
 .empty-sheet p {
   font-size: 15px;
   font-weight: 600;
-  color: #333;
+  color: #111111;
   margin: 0 0 6px;
 }
 
 .empty-sheet span {
   font-size: 13px;
-  color: #999;
+  color: #8B7A5A;
 }
 </style>

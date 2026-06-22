@@ -1,8 +1,7 @@
 """
-DramaForge v2.0 — User Authentication API
+DramaForge v2.0 - User Authentication API
 ==========================================
-Registration, login, token refresh, and user profile endpoints.
-Adapted from IAA project patterns.
+Email verification code login, token refresh, and user profile endpoints.
 """
 
 from __future__ import annotations
@@ -10,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.core.security import (
@@ -19,29 +18,40 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    hash_password,
-    verify_password,
 )
 from app.models.user import User, UserStatus
+from app.services.email_verification_service import (
+    LOGIN_PURPOSE,
+    issue_email_code,
+    normalize_email,
+    verify_email_code,
+)
 
 router = APIRouter(prefix="/user", tags=["User"])
 
+EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+CODE_PATTERN = r"^\d{4,10}$"
 
-# ═══════════════════════════════════════════════════════════════════
-# Request / Response schemas
-# ═══════════════════════════════════════════════════════════════════
+
+class SendEmailCodeRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255, pattern=EMAIL_PATTERN)
+
+
+class SendEmailCodeResponse(BaseModel):
+    sent: bool = True
+    expires_in: int
+    resend_after: int
+
 
 class RegisterRequest(BaseModel):
-    email: str | None = Field(default=None, description="Email address")
-    phone: str | None = Field(default=None, min_length=6, max_length=20, description="Phone number")
-    password: str = Field(..., min_length=6, max_length=128, description="Password")
+    email: str = Field(..., min_length=3, max_length=255, pattern=EMAIL_PATTERN)
+    code: str = Field(..., pattern=CODE_PATTERN, description="Email verification code")
     nickname: str | None = Field(default=None, max_length=128, description="Display name")
 
 
 class LoginRequest(BaseModel):
-    email: str | None = Field(default=None, description="Email address")
-    phone: str | None = Field(default=None, description="Phone number")
-    password: str = Field(..., description="Password")
+    email: str = Field(..., min_length=3, max_length=255, pattern=EMAIL_PATTERN)
+    code: str = Field(..., pattern=CODE_PATTERN, description="Email verification code")
 
 
 class RefreshTokenRequest(BaseModel):
@@ -63,65 +73,63 @@ class UserResponse(BaseModel):
     avatar_url: str | None = None
     status: str
     created_at: datetime
-    # Billing quick summary
     credits: int = 0
     plan_code: str = "free"
 
     model_config = {"from_attributes": True}
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Endpoints
-# ═══════════════════════════════════════════════════════════════════
+def _tokens_for_user(user: User) -> AuthTokens:
+    return AuthTokens(
+        access_token=create_access_token(user.id),
+        refresh_token=create_refresh_token(user.id),
+        expires_in=60 * 24 * 60,
+    )
+
+
+@router.post("/send-login-code", response_model=SendEmailCodeResponse)
+async def send_login_code(
+    request: SendEmailCodeRequest,
+    db: DbSession,
+):
+    """Send a one-time email code for passwordless login or registration."""
+    from app.core.config import settings
+
+    await issue_email_code(db, request.email, LOGIN_PURPOSE)
+    return SendEmailCodeResponse(
+        expires_in=settings.email_code_expire_minutes * 60,
+        resend_after=settings.email_code_resend_seconds,
+    )
+
 
 @router.post("/register", response_model=AuthTokens, status_code=status.HTTP_201_CREATED)
 async def register(
     request: RegisterRequest,
     db: DbSession,
 ):
-    """Register a new user and return JWT tokens."""
-    if not request.email and not request.phone:
+    """Register a new email user after verifying the email code."""
+    email = normalize_email(request.email)
+    existing = await db.execute(select(User).where(User.email == email))
+    if existing.scalar_one_or_none():
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Either email or phone must be provided",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
         )
 
-    # Check for duplicates
-    if request.email:
-        existing = await db.execute(select(User).where(User.email == request.email))
-        if existing.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Email already registered",
-            )
+    try:
+        await verify_email_code(db, email, request.code, LOGIN_PURPOSE)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    if request.phone:
-        existing = await db.execute(select(User).where(User.phone == request.phone))
-        if existing.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Phone already registered",
-            )
-
-    # Create user
     user = User(
-        email=request.email,
-        phone=request.phone,
-        password_hash=hash_password(request.password),
-        nickname=request.nickname or (request.email or request.phone),
+        email=email,
+        password_hash=None,
+        nickname=request.nickname or email,
     )
     db.add(user)
     await db.flush()
 
-    # Generate tokens
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
-
-    return AuthTokens(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=60 * 24 * 60,  # 1 day in seconds
-    )
+    return _tokens_for_user(user)
 
 
 @router.post("/login", response_model=AuthTokens)
@@ -129,26 +137,25 @@ async def login(
     request: LoginRequest,
     db: DbSession,
 ):
-    """Login with email/phone and password."""
-    if not request.email and not request.phone:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Either email or phone must be provided",
-        )
+    """Login with an email verification code. Create the account if needed."""
+    email = normalize_email(request.email)
 
-    # Find user
-    if request.email:
-        result = await db.execute(select(User).where(User.email == request.email))
-    else:
-        result = await db.execute(select(User).where(User.phone == request.phone))
+    try:
+        await verify_email_code(db, email, request.code, LOGIN_PURPOSE)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
-    if not user or not user.password_hash or not verify_password(request.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+    if not user:
+        user = User(
+            email=email,
+            password_hash=None,
+            nickname=email,
         )
+        db.add(user)
+        await db.flush()
 
     if user.status != UserStatus.ACTIVE:
         raise HTTPException(
@@ -156,15 +163,7 @@ async def login(
             detail="Account is disabled",
         )
 
-    # Generate tokens
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
-
-    return AuthTokens(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=60 * 24 * 60,
-    )
+    return _tokens_for_user(user)
 
 
 @router.post("/refresh", response_model=AuthTokens)
@@ -197,28 +196,20 @@ async def refresh_token(
             detail="User not found or disabled",
         )
 
-    access_token = create_access_token(user.id)
-    new_refresh_token = create_refresh_token(user.id)
-
-    return AuthTokens(
-        access_token=access_token,
-        refresh_token=new_refresh_token,
-        expires_in=60 * 24 * 60,
-    )
+    return _tokens_for_user(user)
 
 
 @router.post("/logout")
 async def logout(user: CurrentUser):
-    """Logout (client should clear tokens)."""
+    """Logout. The client clears stored tokens."""
     return {"logged_out": True}
 
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(user: CurrentUser, db: DbSession):
-    """Get current user information (including billing summary)."""
+    """Get current user information, including billing summary."""
     from app.services.billing_service import get_balance, get_user_plan_code, grant_daily_credits_if_needed
 
-    # Auto-grant daily credits
     await grant_daily_credits_if_needed(db, user.id)
     await db.commit()
 

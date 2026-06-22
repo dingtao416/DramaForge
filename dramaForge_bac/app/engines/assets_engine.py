@@ -23,6 +23,10 @@ from app.prompts.character_prompts import (
 from app.services.storage import storage
 
 
+class ImageGenerationError(Exception):
+    """Raised when all image generation variants fail."""
+
+
 class AssetsEngine:
     """Engine for generating character and scene visual assets."""
 
@@ -35,6 +39,7 @@ class AssetsEngine:
         chat_model: str = None,
         chat_api_key: str = None,
         chat_base_url: str = None,
+        chat_options: dict | None = None,
         image_model: str = None,
         image_api_key: str = None,
         image_base_url: str = None,
@@ -58,6 +63,7 @@ class AssetsEngine:
             self._generate_character(
                 ch, synopsis, project_id,
                 chat_model=chat_model, chat_api_key=chat_api_key, chat_base_url=chat_base_url,
+                chat_options=chat_options,
                 image_model=image_model, image_api_key=image_api_key, image_base_url=image_base_url,
                 image_options=image_options,
             )
@@ -67,6 +73,7 @@ class AssetsEngine:
             self._generate_scene(
                 sc, script, project_id,
                 chat_model=chat_model, chat_api_key=chat_api_key, chat_base_url=chat_base_url,
+                chat_options=chat_options,
                 image_model=image_model, image_api_key=image_api_key, image_base_url=image_base_url,
                 image_options=image_options,
             )
@@ -104,6 +111,7 @@ class AssetsEngine:
         chat_model: str = None,
         chat_api_key: str = None,
         chat_base_url: str = None,
+        chat_options: dict | None = None,
         image_model: str = None,
         image_api_key: str = None,
         image_base_url: str = None,
@@ -125,6 +133,7 @@ class AssetsEngine:
             model=chat_model,
             api_key=chat_api_key,
             base_url=chat_base_url,
+            **_extra_chat_kwargs(chat_options),
         )
 
         # Update character fields
@@ -155,6 +164,7 @@ class AssetsEngine:
         chat_model: str = None,
         chat_api_key: str = None,
         chat_base_url: str = None,
+        chat_options: dict | None = None,
         image_model: str = None,
         image_api_key: str = None,
         image_base_url: str = None,
@@ -178,6 +188,7 @@ class AssetsEngine:
             model=chat_model,
             api_key=chat_api_key,
             base_url=chat_base_url,
+            **_extra_chat_kwargs(chat_options),
         )
 
         # Update scene description
@@ -218,7 +229,14 @@ class AssetsEngine:
         image_base_url: str = None,
         image_options: dict | None = None,
     ) -> list[str]:
-        """Regenerate a character's image with optional variants."""
+        """Regenerate a character's image with optional variants.
+
+        Returns:
+            List of generated image URLs.
+
+        Raises:
+            ImageGenerationError: if ALL variants fail.
+        """
         if not prompt:
             prompt = (
                 f"Portrait of {character.name}: {character.description or 'a character'}. "
@@ -226,6 +244,7 @@ class AssetsEngine:
             )
 
         urls = []
+        errors: list[str] = []
         for i in range(variant_count):
             # Slightly vary each prompt
             varied_prompt = prompt
@@ -247,10 +266,24 @@ class AssetsEngine:
                 )
                 urls.append(storage.get_url(image_path))
             except Exception as e:
-                logger.warning(f"Character variant {i} failed: {e}")
+                err_msg = f"Variant {i}: {e}"
+                logger.warning(f"Character image {err_msg}")
+                errors.append(err_msg)
 
         if urls:
             character.reference_images = urls
+            if errors:
+                logger.warning(
+                    f"Character '{character.name}' (id={character.id}): "
+                    f"{len(urls)}/{variant_count} variants succeeded, {len(errors)} failed"
+                )
+        else:
+            detail = "; ".join(errors) if errors else "unknown error"
+            raise ImageGenerationError(
+                f"Character '{character.name}' (id={character.id}): "
+                f"all {variant_count} variant(s) failed — {detail}"
+            )
+
         return urls
 
     async def regenerate_scene_image(
@@ -265,7 +298,14 @@ class AssetsEngine:
         image_base_url: str = None,
         image_options: dict | None = None,
     ) -> list[str]:
-        """Regenerate a scene's image with optional variants."""
+        """Regenerate a scene's image with optional variants.
+
+        Returns:
+            List of generated image URLs.
+
+        Raises:
+            ImageGenerationError: if ALL variants fail.
+        """
         if not prompt:
             prompt = (
                 f"Scene: {scene.name}. {scene.description or 'A dramatic scene'}. "
@@ -273,6 +313,7 @@ class AssetsEngine:
             )
 
         urls = []
+        errors: list[str] = []
         for i in range(variant_count):
             varied_prompt = prompt
             if variant_count > 1:
@@ -293,12 +334,31 @@ class AssetsEngine:
                 )
                 urls.append(storage.get_url(image_path))
             except Exception as e:
-                logger.warning(f"Scene variant {i} failed: {e}")
+                err_msg = f"Variant {i}: {e}"
+                logger.warning(f"Scene image {err_msg}")
+                errors.append(err_msg)
 
         if urls:
             scene.reference_images = urls
+            if errors:
+                logger.warning(
+                    f"Scene '{scene.name}' (id={scene.id}): "
+                    f"{len(urls)}/{variant_count} variants succeeded, {len(errors)} failed"
+                )
+        else:
+            detail = "; ".join(errors) if errors else "unknown error"
+            raise ImageGenerationError(
+                f"Scene '{scene.name}' (id={scene.id}): "
+                f"all {variant_count} variant(s) failed — {detail}"
+            )
+
         return urls
 
 
 # Module-level singleton
 assets_engine = AssetsEngine()
+
+
+def _extra_chat_kwargs(options: dict | None) -> dict:
+    blocked = {"model", "messages", "temperature", "max_tokens", "response_format", "stream"}
+    return {k: v for k, v in (options or {}).items() if k not in blocked}

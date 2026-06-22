@@ -158,6 +158,15 @@ async function saveSceneEdit(data: Partial<SceneDetail>) {
   }
 }
 
+// ── Navigation ──
+
+function goBackToScript() {
+  if (projectStore.currentProject) {
+    projectStore.currentProject.status = ProjectStep.SCRIPT
+  }
+  router.push(`/projects/${projectId}/script`)
+}
+
 // ── Approve ──
 
 async function handleApprove() {
@@ -190,7 +199,7 @@ async function handleApprove() {
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M13.5 2.5l-4 4M8.5 2.5h5v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 3H3.5a1 1 0 00-1 1v8.5a1 1 0 001 1H12a1 1 0 001-1V10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
           {{ isGenerating ? '生成中...' : '生成资产' }}
         </button>
-        <button class="btn btn-outline btn-sm" @click="router.push(`/projects/${projectId}/script`)">
+        <button class="btn btn-outline btn-sm" @click="goBackToScript">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           返回剧本
         </button>
@@ -304,7 +313,7 @@ async function handleApprove() {
       <span>角色和场景设定会应用到整部剧集中，建议调整完毕后再继续</span>
     </div>
     <div class="bar-actions">
-      <button class="btn btn-outline btn-sm" @click="router.push(`/projects/${projectId}/script`)">
+      <button class="btn btn-outline btn-sm" @click="goBackToScript">
         ← 上一步
       </button>
       <button class="btn btn-primary btn-sm" @click="handleApprove" :disabled="approving">
@@ -349,7 +358,7 @@ async function handleApprove() {
   align-items: center;
   gap: 24px;
   margin-bottom: 28px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #FDF4D8;
 }
 
 .assets-tab {
@@ -369,7 +378,7 @@ async function handleApprove() {
 }
 
 .assets-tab.active {
-  color: #1a1a1a;
+  color: #2D2515;
   font-weight: 600;
 }
 
@@ -380,7 +389,7 @@ async function handleApprove() {
   right: 0;
   bottom: -1px;
   height: 2px;
-  background: #1a1a1a;
+  background: #2D2515;
   border-radius: 1px;
 }
 </style>

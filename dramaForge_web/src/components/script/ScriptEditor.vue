@@ -30,7 +30,7 @@ function cancelEdit() {
 </script>
 
 <template>
-  <div class="bg-white border border-gray-200 rounded-[12px]">
+  <div class="bg-[#FEF9E7] border border-gray-200 rounded-[12px]">
     <!-- View mode -->
     <div v-if="!editing" class="p-5">
       <div

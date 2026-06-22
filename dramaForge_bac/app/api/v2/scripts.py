@@ -72,6 +72,7 @@ async def generate_script(
     """AI-generate a structured script from user input."""
     # Consume credits for script generation
     await require_credits(db, user.id, "script_gen", description="剧本 AI 生成")
+    await db.commit()  # release write lock before the AI call
 
     project = await _get_project(project_id, db)
 
@@ -113,6 +114,7 @@ async def generate_script(
         chat_model=resolved.model_id,
         chat_api_key=resolved.api_key,
         chat_base_url=resolved.base_url,
+        chat_options=resolved.raw_params or {},
     )
 
     if old_script and preserve:
@@ -390,6 +392,7 @@ async def generate_script_stream(
                 chat_model=resolved.model_id,
                 chat_api_key=resolved.api_key,
                 chat_base_url=resolved.base_url,
+                chat_options=resolved.raw_params or {},
             ):
                 if event["type"] == "content":
                     content_buf += event["data"]

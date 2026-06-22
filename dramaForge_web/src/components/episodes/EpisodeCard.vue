@@ -19,7 +19,7 @@ function formatDuration(seconds: number) {
 </script>
 
 <template>
-  <div class="bg-white border border-gray-200 rounded-[12px] p-4 flex gap-4 hover:shadow-[0_2px_8px_rgba(0,0,0,0.06)] transition-shadow">
+  <div class="bg-[#FEF9E7] border border-gray-200 rounded-[12px] p-4 flex gap-4 hover:shadow-[0_2px_8px_rgba(0,0,0,0.06)] transition-shadow">
     <!-- 大号序号 -->
     <div class="text-[24px] font-light text-gray-300 w-8 flex items-start justify-center pt-1 shrink-0">
       {{ episode.number }}

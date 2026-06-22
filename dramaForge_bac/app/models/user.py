@@ -74,6 +74,26 @@ class User(Base):
         return f"<User id={self.id} email={self.email} status={self.status.value}>"
 
 
+class EmailVerificationCode(Base):
+    """One-time email verification code for passwordless auth."""
+
+    __tablename__ = "email_verification_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    code_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False, index=True
+    )
+
+    def __repr__(self) -> str:
+        return f"<EmailVerificationCode id={self.id} email={self.email} purpose={self.purpose}>"
+
+
 # ──────────── Conversation ─────────────────────────────────────────
 
 class Conversation(Base):

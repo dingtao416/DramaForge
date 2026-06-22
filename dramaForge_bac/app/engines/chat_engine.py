@@ -116,6 +116,7 @@ class ChatEngine:
         base_url: str = None,
         model: str | None = None,
         temperature: float | None = None,
+        chat_options: dict[str, Any] | None = None,
     ) -> str:
         """
         Non-streaming chat completion. Returns the full assistant response.
@@ -135,6 +136,7 @@ class ChatEngine:
             temperature=temperature,
             api_key=api_key,
             base_url=base_url,
+            **_extra_chat_kwargs(chat_options),
         )
         return resp.content
 
@@ -149,6 +151,7 @@ class ChatEngine:
         base_url: str = None,
         model: str | None = None,
         temperature: float | None = None,
+        chat_options: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """
         Streaming chat completion. Yields SSE-compatible event dicts.
@@ -174,6 +177,7 @@ class ChatEngine:
                 temperature=temperature,
                 api_key=api_key,
                 base_url=base_url,
+                **_extra_chat_kwargs(chat_options),
             ):
                 yield {"type": "content", "data": chunk}
 
@@ -186,3 +190,8 @@ class ChatEngine:
 
 # Module-level singleton
 chat_engine = ChatEngine()
+
+
+def _extra_chat_kwargs(options: dict[str, Any] | None) -> dict[str, Any]:
+    blocked = {"model", "messages", "temperature", "max_tokens", "response_format", "stream"}
+    return {k: v for k, v in (options or {}).items() if k not in blocked}

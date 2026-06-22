@@ -6,6 +6,7 @@ export interface SegmentDetail {
   episode_id: number
   index: number
   status: SegmentStatus
+  style?: string
   video_url: string | null
   audio_url: string | null
   thumbnail_url: string | null

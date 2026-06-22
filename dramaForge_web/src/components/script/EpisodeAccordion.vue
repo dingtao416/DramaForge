@@ -31,7 +31,7 @@ function toggle(id: number) {
     <div
       v-for="ep in episodes"
       :key="ep.id"
-      class="bg-white border border-gray-200 rounded-[12px] overflow-hidden transition-all"
+      class="bg-[#FEF9E7] border border-gray-200 rounded-[12px] overflow-hidden transition-all"
     >
       <!-- Header -->
       <div

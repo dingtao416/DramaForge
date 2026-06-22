@@ -1,13 +1,3 @@
-<!--
-  DramaForge — TopbarActions.vue
-  ================================
-  Shared right-side topbar actions used across all pages:
-  积分+订阅 badge, feedback, notification, messages, avatar.
-
-  Usage:
-    <TopbarActions />
-    <TopbarActions @subscribe="handleSubscribe" />
--->
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { useBillingStore } from '@/stores/billing'
@@ -24,10 +14,13 @@ const router = useRouter()
 const billingStore = useBillingStore()
 const authStore = useAuthStore()
 
+function openAIConfig() {
+  router.push('/settings')
+}
+
 function handleAvatarClick() {
   if (authStore.isLoggedIn) {
-    // Could open a dropdown in the future
-    router.push('/settings')
+    return
   } else {
     router.push('/login')
   }
@@ -36,7 +29,7 @@ function handleAvatarClick() {
 
 <template>
   <div class="tba-root">
-    <!-- Credits + Subscribe (purple capsule) -->
+    <!-- Credits + Subscribe (Mario red capsule) -->
     <div class="tba-credits-group" @click="$emit('subscribe')">
       <span class="tba-credits-icon">✦</span>
       <span class="tba-credits-num">{{ billingStore.credits }}</span>
@@ -60,6 +53,14 @@ function handleAvatarClick() {
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="4.5" width="14" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 6l7 4.5L17 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
 
+    <button class="tba-ai-config" title="AI Config" @click="openAIConfig">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <path d="M8 2.25l1.05 2.68 2.7 1.07-2.7 1.07L8 9.75 6.95 7.07 4.25 6l2.7-1.07L8 2.25z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>
+        <path d="M12.25 9.25l.55 1.4 1.45.6-1.45.6-.55 1.4-.55-1.4-1.45-.6 1.45-.6.55-1.4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+      </svg>
+      <span>AI 配置</span>
+    </button>
+
     <!-- Avatar -->
     <div
       class="tba-avatar"
@@ -78,76 +79,77 @@ function handleAvatarClick() {
   gap: 10px;
 }
 
-/* ── Credits + Subscribe purple capsule ── */
+/* ── Credits + Subscribe red capsule ── */
 .tba-credits-group {
   display: flex;
   align-items: center;
   gap: 6px;
   height: 36px;
   padding: 0 14px;
-  border-radius: 20px;
-  background: #f3f0ff;
+  border-radius: 2px;
+  background: rgba(232, 163, 23, 0.15);
   cursor: pointer;
   transition: all 0.15s;
+  border: 2px solid rgba(232, 163, 23, 0.2);
 }
 .tba-credits-group:hover {
-  background: #ede9fe;
+  background: rgba(232, 163, 23, 0.25);
 }
 
 .tba-credits-icon {
-  color: #7c3aed;
+  color: #E8A317;
   font-size: 15px;
 }
 
 .tba-credits-num {
   font-weight: 600;
   font-size: 14px;
-  color: #7c3aed;
+  color: #E8A317;
 }
 
 .tba-credits-group svg {
-  color: #7c3aed;
+  color: #E8A317;
   opacity: 0.6;
 }
 
 .tba-divider {
   width: 1px;
   height: 16px;
-  background: #d8ccf5;
+  background: rgba(232, 163, 23, 0.3);
   margin: 0 4px;
 }
 
 .tba-subscribe-label {
   font-size: 13px;
   font-weight: 600;
-  color: #7c3aed;
+  color: #E8A317;
 }
 
 /* ── Icon buttons ── */
 .tba-icon-btn {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1a1a1a;
+  color: #6B5D40;
   background: none;
   border: none;
   cursor: pointer;
   transition: all 0.15s;
 }
 .tba-icon-btn:hover {
-  background: #f5f5f5;
-  color: #000;
+  background: rgba(0,0,0,0.04);
+  color: #111111;
 }
 
 /* ── Avatar ── */
 .tba-avatar {
   width: 32px;
   height: 32px;
-  border-radius: 50%;
-  background: #1a1a1a;
+  border-radius: 2px;
+  background: #E8A317;
   color: #fff;
   font-size: 12px;
   font-weight: 600;
@@ -159,6 +161,44 @@ function handleAvatarClick() {
   margin-left: 2px;
 }
 .tba-avatar:hover {
-  background: #333;
+  background: #C88A0C;
+}
+
+.tba-ai-config {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 2px solid #D4C898;
+  border-radius: 2px;
+  background: transparent;
+  color: #6B5D40;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tba-ai-config:hover {
+  border-color: #F5C34B;
+  background: rgba(245, 195, 75, 0.08);
+  color: #F5C34B;
+}
+
+.tba-ai-config svg {
+  color: currentColor;
+}
+
+@media (max-width: 720px) {
+  .tba-ai-config {
+    width: 36px;
+    padding: 0;
+  }
+
+  .tba-ai-config span {
+    display: none;
+  }
 }
 </style>

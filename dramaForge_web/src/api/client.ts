@@ -12,26 +12,64 @@ import type { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosRespon
 
 const TOKEN_KEY = 'df_access_token'
 const REFRESH_TOKEN_KEY = 'df_refresh_token'
+const REMEMBER_LOGIN_KEY = 'df_remember_login'
 
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+function tokenStorage(): Storage {
+  return localStorage.getItem(REMEMBER_LOGIN_KEY) === 'true' ? localStorage : sessionStorage
 }
 
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token)
+function storageWithToken(key: string): Storage | null {
+  if (localStorage.getItem(key)) return localStorage
+  if (sessionStorage.getItem(key)) return sessionStorage
+  return null
+}
+
+function writeToken(key: string, value: string, remember = isRememberLoginEnabled()): void {
+  const target = remember ? localStorage : sessionStorage
+  const stale = remember ? sessionStorage : localStorage
+  stale.removeItem(key)
+  target.setItem(key, value)
+}
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY)
+}
+
+export function setToken(token: string, remember = isRememberLoginEnabled()): void {
+  writeToken(TOKEN_KEY, token, remember)
 }
 
 export function getRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_TOKEN_KEY)
+  return localStorage.getItem(REFRESH_TOKEN_KEY) || sessionStorage.getItem(REFRESH_TOKEN_KEY)
 }
 
-export function setRefreshToken(token: string): void {
-  localStorage.setItem(REFRESH_TOKEN_KEY, token)
+export function setRefreshToken(token: string, remember = isRememberLoginEnabled()): void {
+  writeToken(REFRESH_TOKEN_KEY, token, remember)
+}
+
+export function setRememberLogin(remember: boolean): void {
+  localStorage.setItem(REMEMBER_LOGIN_KEY, remember ? 'true' : 'false')
+}
+
+export function isRememberLoginEnabled(): boolean {
+  return localStorage.getItem(REMEMBER_LOGIN_KEY) === 'true'
+}
+
+export function setAuthTokens(accessToken: string, refreshToken: string, remember: boolean): void {
+  setRememberLogin(remember)
+  setToken(accessToken, remember)
+  setRefreshToken(refreshToken, remember)
+}
+
+export function getTokenStorageRemembered(): boolean {
+  return storageWithToken(REFRESH_TOKEN_KEY) === localStorage || tokenStorage() === localStorage
 }
 
 export function clearTokens(): void {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(REFRESH_TOKEN_KEY)
+  sessionStorage.removeItem(TOKEN_KEY)
+  sessionStorage.removeItem(REFRESH_TOKEN_KEY)
 }
 
 export function isAuthenticated(): boolean {
@@ -81,8 +119,9 @@ apiClient.interceptors.response.use(
             refresh_token: refreshToken,
           })
           const { access_token, refresh_token: newRefresh } = response.data
-          setToken(access_token)
-          setRefreshToken(newRefresh)
+          const remember = getTokenStorageRemembered()
+          setToken(access_token, remember)
+          setRefreshToken(newRefresh, remember)
 
           // Retry original request with new token
           originalRequest.headers.Authorization = `Bearer ${access_token}`

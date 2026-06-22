@@ -1,8 +1,4 @@
 <script setup lang="ts">
-/**
- * ModalOverlay — 全屏覆盖式弹窗
- * 从中间淡入，背景深色遮罩
- */
 import { watch } from 'vue'
 
 const props = defineProps<{
@@ -50,7 +46,7 @@ watch(() => props.visible, (val) => {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.75);
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -61,11 +57,13 @@ watch(() => props.visible, (val) => {
 .modal-panel {
   width: 90%;
   max-height: 90vh;
-  background: #fff;
-  border-radius: 20px;
+  background: #FDF5D6;
+  border: 3px solid #F5C34B;
+  border-radius: 2px;
   overflow-y: auto;
   position: relative;
   padding: 40px 36px 36px;
+  box-shadow: 8px 8px 0 0 rgba(0, 0, 0, 0.5);
 }
 
 .modal-close {
@@ -74,21 +72,22 @@ watch(() => props.visible, (val) => {
   right: 16px;
   width: 36px;
   height: 36px;
-  border-radius: 50%;
-  border: none;
+  border-radius: 2px;
+  border: 2px solid #D4C898;
   background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #999;
+  color: #6B5D40;
   cursor: pointer;
   transition: all 0.15s;
   z-index: 2;
 }
 
 .modal-close:hover {
-  background: #f5f5f5;
-  color: #333;
+  background: rgba(0,0,0,0.04);
+  color: #F5C34B;
+  border-color: #F5C34B;
 }
 
 .modal-header {
@@ -97,16 +96,16 @@ watch(() => props.visible, (val) => {
 }
 
 .modal-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: #1a1a1a;
+  font-size: 20px;
+  font-family: 'Press Start 2P', monospace;
+  color: #111111;
   margin: 0 0 6px;
-  letter-spacing: -0.3px;
+  letter-spacing: 2px;
 }
 
 .modal-subtitle {
   font-size: 14px;
-  color: #999;
+  color: #6B5D40;
   margin: 0;
 }
 
@@ -122,7 +121,7 @@ watch(() => props.visible, (val) => {
 
 .modal-enter-active .modal-panel,
 .modal-leave-active .modal-panel {
-  transition: transform 0.25s ease, opacity 0.25s ease;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
 }
 
 .modal-enter-from,
@@ -131,12 +130,12 @@ watch(() => props.visible, (val) => {
 }
 
 .modal-enter-from .modal-panel {
-  transform: scale(0.95);
+  transform: scale(0.9);
   opacity: 0;
 }
 
 .modal-leave-to .modal-panel {
-  transform: scale(0.95);
+  transform: scale(0.9);
   opacity: 0;
 }
 </style>

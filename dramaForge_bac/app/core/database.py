@@ -19,6 +19,7 @@ Usage:
 
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -38,6 +39,20 @@ async_engine = create_async_engine(
     # would tune these.
     future=True,
 )
+
+# ──────────── SQLite PRAGMAs (concurrency hardening) ──────────────
+# Enable WAL mode + busy timeout so that concurrent reads and writes
+# don't error out with "database is locked". These are applied to
+# every new connection.
+if "sqlite" in settings.database_url:
+    @event.listens_for(async_engine.sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")       # writers don't block readers
+        cursor.execute("PRAGMA busy_timeout=5000")      # wait up to 5 s instead of failing
+        cursor.execute("PRAGMA synchronous=NORMAL")     # safe in WAL mode, much faster
+        cursor.execute("PRAGMA foreign_keys=ON")        # enforce FK constraints
+        cursor.close()
 
 # ──────────── Session Factory ─────────────────────────────────────
 AsyncSessionLocal = async_sessionmaker(

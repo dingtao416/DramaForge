@@ -43,7 +43,7 @@ class AIConfigTests(unittest.TestCase):
         )
         self.assertTrue(has_capability("chat, image", "image"))
 
-    def test_builtin_catalog_covers_image_and_video_provider_types(self):
+    def test_builtin_catalog_covers_chat_image_and_video_provider_types(self):
         provider_types = {item["provider_type"] for item in BUILTIN_CATALOG}
         self.assertIn("openai_compatible", provider_types)
         self.assertIn("replicate", provider_types)
@@ -57,7 +57,7 @@ class AIConfigTests(unittest.TestCase):
             for provider in BUILTIN_CATALOG
             for model in provider.get("models", [])
         }
-        self.assertEqual(capabilities, {"image", "video"})
+        self.assertEqual(capabilities, {"chat", "image", "video"})
 
     def test_chat_completions_image_models(self):
         self.assertTrue(_is_chat_completions_image_model(" sora_image "))

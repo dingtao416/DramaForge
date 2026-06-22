@@ -52,19 +52,23 @@ class UserModelResolver:
         capability_type = (capability_type or "").strip().lower()
         model_hint = normalize_optional_string(model_hint)
 
-        if capability_type in {"image", "video"}:
-            return await self._resolve_media_model(db, user_id, capability_type, model_hint)
+        if capability_type in {"chat", "image", "video"}:
+            resolved = await self._resolve_provider_model(db, user_id, capability_type, model_hint)
+            if resolved:
+                return resolved
+            if capability_type != "chat":
+                return self._fallback_media_model(capability_type)
 
         return await self._resolve_legacy_model(db, user_id, capability_type, model_hint)
 
-    async def _resolve_media_model(
+    async def _resolve_provider_model(
         self,
         db: AsyncSession,
         user_id: int,
         capability_type: str,
         model_hint: str | None,
-    ) -> ResolvedModel:
-        capability = MediaCapability.IMAGE if capability_type == "image" else MediaCapability.VIDEO
+    ) -> ResolvedModel | None:
+        capability = MediaCapability(capability_type)
         stmt = (
             select(AIModelConfig, AIProviderConfig)
             .join(AIProviderConfig, AIModelConfig.provider_id == AIProviderConfig.id)
@@ -93,6 +97,9 @@ class UserModelResolver:
             model, provider = row
             return self._to_resolved_media(model, provider)
 
+        return None
+
+    def _fallback_media_model(self, capability_type: str) -> ResolvedModel:
         fallback_model = settings.image_model if capability_type == "image" else settings.video_model
         return ResolvedModel(
             api_key=normalize_optional_string(settings.laozhang_api_key),

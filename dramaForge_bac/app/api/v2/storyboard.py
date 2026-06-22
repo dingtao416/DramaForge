@@ -127,6 +127,7 @@ async def generate_storyboard(
     """Generate storyboard (segments + shots) for an episode via AI."""
     # Consume credits for storyboard generation
     await require_credits(db, user.id, "storyboard_gen", description="分镜自动生成")
+    await db.commit()  # release write lock before the AI call
 
     episode = await _get_episode(project_id, episode_id, db)
     characters, scenes = await _get_project_assets(project_id, db)
@@ -143,6 +144,8 @@ async def generate_storyboard(
             await db.delete(seg)
         await db.flush()
 
+    chat_resolved = await user_model_resolver.resolve(db, user.id, "chat")
+
     # Generate via VideoEngine
     segments = await video_engine.generate_episode(
         episode=episode,
@@ -150,6 +153,10 @@ async def generate_storyboard(
         scenes=scenes,
         project_id=project_id,
         shots_per_segment=body.shots_per_segment,
+        chat_model=chat_resolved.model_id,
+        chat_api_key=chat_resolved.api_key,
+        chat_base_url=chat_resolved.base_url,
+        chat_options=chat_resolved.raw_params or {},
     )
 
     # Persist to DB
@@ -241,6 +248,7 @@ async def generate_segment(
     """Generate assets and video for a single segment."""
     # Video generation: charge for 5s default video per segment
     await require_credits(db, user.id, "video_default_5s", description="分镜视频生成")
+    await db.commit()  # release write lock before the AI call
 
     segment = await db.get(Segment, segment_id)
     if not segment:
@@ -254,8 +262,10 @@ async def generate_segment(
     characters, scenes = await _get_project_assets(project_id, db)
     episode = await _get_episode(project_id, episode_id, db)
     image_resolved = await user_model_resolver.resolve(db, user.id, "image")
+    tts_resolved = await user_model_resolver.resolve(db, user.id, "tts")
+    video_resolved = await user_model_resolver.resolve(db, user.id, "video")
 
-    # Generate assets
+    # Generate assets (image + audio per shot)
     await video_engine.generate_segment_assets(
         segment=segment,
         characters=characters,
@@ -266,10 +276,29 @@ async def generate_segment(
         image_api_key=image_resolved.api_key,
         image_base_url=image_resolved.base_url,
         image_options=_media_options(image_resolved),
+        tts_model=tts_resolved.model_id,
+        tts_api_key=tts_resolved.api_key,
+        tts_base_url=tts_resolved.base_url,
     )
 
+    # Compose the segment video from shot assets
+    try:
+        await video_engine._generate_segment_video(
+            segment,
+            project_id,
+            episode.number,
+            video_model=video_resolved.model_id,
+            video_api_key=video_resolved.api_key,
+            video_base_url=video_resolved.base_url,
+            video_options=_media_options(video_resolved),
+        )
+    except Exception:
+        segment.status = SegmentStatus.FAILED
+        await db.flush()
+        raise
+
     await db.flush()
-    return {"message": "Segment assets generated", "status": segment.status.value}
+    return {"message": "Segment generated", "status": segment.status.value}
 
 
 @router.post("/projects/{project_id}/episodes/{episode_id}/segments/{segment_id}/regenerate")
@@ -282,6 +311,7 @@ async def regenerate_segment(
 ):
     """Regenerate a segment (assets + video)."""
     await require_credits(db, user.id, "video_default_5s", description="分镜视频重新生成")
+    await db.commit()  # release write lock before the AI call
 
     segment = await db.get(Segment, segment_id)
     if not segment:
@@ -294,6 +324,7 @@ async def regenerate_segment(
     characters, scenes = await _get_project_assets(project_id, db)
     episode = await _get_episode(project_id, episode_id, db)
     image_resolved = await user_model_resolver.resolve(db, user.id, "image")
+    tts_resolved = await user_model_resolver.resolve(db, user.id, "tts")
     video_resolved = await user_model_resolver.resolve(db, user.id, "video")
 
     segment.status = SegmentStatus.GENERATING
@@ -307,6 +338,9 @@ async def regenerate_segment(
         image_api_key=image_resolved.api_key,
         image_base_url=image_resolved.base_url,
         image_options=_media_options(image_resolved),
+        tts_model=tts_resolved.model_id,
+        tts_api_key=tts_resolved.api_key,
+        tts_base_url=tts_resolved.base_url,
     )
     try:
         await video_engine._generate_segment_video(
@@ -337,6 +371,7 @@ async def compose_episode(
     """Compose all segments into a full episode video with optional quality/BGM/subtitle options."""
     # Compositing costs credits
     await require_credits(db, user.id, "video_default_5s", description="剧集合成")
+    await db.commit()  # release write lock before the compose operation
 
     episode = await _get_episode(project_id, episode_id, db)
 
@@ -348,7 +383,7 @@ async def compose_episode(
     result = await db.execute(stmt)
     segments = list(result.scalars().all())
 
-    completed = [s for s in segments if s.status == SegmentStatus.COMPLETED]
+    completed = [s for s in segments if s.status in (SegmentStatus.COMPLETED, SegmentStatus.PARTIAL)]
     if not completed:
         raise HTTPException(status_code=400, detail="No completed segments to compose")
 

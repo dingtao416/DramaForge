@@ -26,6 +26,7 @@ class SegmentStatus(str, enum.Enum):
     PENDING = "pending"
     GENERATING = "generating"
     COMPLETED = "completed"
+    PARTIAL = "partial"   # completed with some shot failures
     FAILED = "failed"
 
 

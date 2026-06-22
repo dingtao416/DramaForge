@@ -15,14 +15,14 @@ const emit = defineEmits<{
     <div class="flex border border-gray-200 rounded-lg overflow-hidden">
       <button
         class="px-4 py-2 text-[13px] font-medium transition-colors"
-        :class="modelValue === 'dialogue' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'"
+        :class="modelValue === 'dialogue' ? 'bg-gray-900 text-white' : 'bg-[#FEF9E7] text-gray-500 hover:bg-gray-50'"
         @click="emit('update:modelValue', 'dialogue')"
       >
         对话型
       </button>
       <button
         class="px-4 py-2 text-[13px] font-medium transition-colors"
-        :class="modelValue === 'narration' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'"
+        :class="modelValue === 'narration' ? 'bg-gray-900 text-white' : 'bg-[#FEF9E7] text-gray-500 hover:bg-gray-50'"
         @click="emit('update:modelValue', 'narration')"
       >
         旁白型

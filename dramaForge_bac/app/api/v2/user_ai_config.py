@@ -421,6 +421,8 @@ async def get_job(job_id: int, user: CurrentUser, db: DbSession):
 
 @router.post("/jobs", response_model=JobResponse, status_code=201)
 async def create_job(data: JobCreate, user: CurrentUser, db: DbSession):
+    if data.capability == MediaCapability.CHAT:
+        raise HTTPException(400, "Text generation does not use media jobs")
     output_path = data.output_path
     if not output_path:
         ext = "png" if data.capability == MediaCapability.IMAGE else "mp4"

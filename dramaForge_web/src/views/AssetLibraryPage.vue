@@ -518,18 +518,18 @@ async function handleDeleteAsset(assetId: number) {
    ══════════════════════════════════════════════════════ */
 .asset-page {
   min-height: 100vh;
-  background: #fff;
+  background: #FDF5D6;
 }
 
 /* ── Top Bar ── */
 .topbar {
   height: 56px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #FDF4D8;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 28px;
-  background: #fff;
+  background: #FDF5D6;
   position: sticky;
   top: 0;
   z-index: 50;
@@ -555,14 +555,14 @@ async function handleDeleteAsset(assetId: number) {
   transition: all 0.15s;
 }
 .back-btn:hover {
-  background: #f5f5f5;
+  background: #FDF4D8;
   color: #333;
 }
 
 .topbar-page-title {
   font-size: 15px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: #2D2515;
   margin: 0;
   letter-spacing: -0.2px;
 }
@@ -591,7 +591,7 @@ async function handleDeleteAsset(assetId: number) {
 .page-title {
   font-size: 26px;
   font-weight: 800;
-  color: #1a1a1a;
+  color: #2D2515;
   letter-spacing: -0.5px;
   margin: 0;
 }
@@ -605,8 +605,8 @@ async function handleDeleteAsset(assetId: number) {
   align-items: center;
   gap: 6px;
   padding: 8px 18px;
-  background: #1a1a1a;
-  color: #fff;
+  background: #2D2515;
+  color: #FFFFFF;
   border: none;
   border-radius: 22px;
   font-size: 13px;
@@ -622,8 +622,8 @@ async function handleDeleteAsset(assetId: number) {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: #FDF5D6;
+  border: 1px solid #D4C898;
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0,0,0,0.1);
   padding: 6px;
@@ -646,7 +646,7 @@ async function handleDeleteAsset(assetId: number) {
   transition: background 0.12s;
 }
 .add-dropdown-item:hover {
-  background: #f5f5f5;
+  background: #FDF4D8;
 }
 .add-dropdown-item svg {
   color: #888;
@@ -678,13 +678,13 @@ async function handleDeleteAsset(assetId: number) {
   transition: all 0.15s;
 }
 .action-btn:hover {
-  background: #f5f5f5;
+  background: #FDF4D8;
   color: #333;
 }
 
 .view-toggle {
   display: flex;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #D4C898;
   border-radius: 10px;
   overflow: hidden;
 }
@@ -694,14 +694,14 @@ async function handleDeleteAsset(assetId: number) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
+  background: #FDF5D6;
   border: none;
   color: #bbb;
   cursor: pointer;
   transition: all 0.15s;
 }
 .toggle-item.active {
-  background: #f5f5f5;
+  background: #FDF4D8;
   color: #333;
 }
 .toggle-item:hover:not(.active) {
@@ -713,7 +713,7 @@ async function handleDeleteAsset(assetId: number) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #FDF4D8;
   margin-bottom: 24px;
 }
 
@@ -738,8 +738,8 @@ async function handleDeleteAsset(assetId: number) {
   margin-bottom: -1px;
 }
 .tab-item.active {
-  color: #1a1a1a;
-  border-bottom-color: #1a1a1a;
+  color: #2D2515;
+  border-bottom-color: #2D2515;
 }
 .tab-item:hover:not(.active) {
   color: #666;
@@ -762,14 +762,14 @@ async function handleDeleteAsset(assetId: number) {
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #D4C898;
   border-radius: 8px;
   font-size: 13px;
   color: #666;
   cursor: pointer;
   position: relative;
   transition: all 0.15s;
-  background: #fff;
+  background: #FDF5D6;
 }
 .filter-dropdown:hover {
   border-color: #ccc;
@@ -779,8 +779,8 @@ async function handleDeleteAsset(assetId: number) {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: #FDF5D6;
+  border: 1px solid #D4C898;
   border-radius: 10px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.08);
   padding: 6px;
@@ -801,12 +801,12 @@ async function handleDeleteAsset(assetId: number) {
   transition: background 0.1s;
 }
 .filter-menu button:hover {
-  background: #f5f5f5;
+  background: #FDF4D8;
 }
 .filter-menu button.selected {
-  color: #7c3aed;
+  color: #E8A317;
   font-weight: 600;
-  background: #F9F5FF;
+  background: rgba(232, 163, 23, 0.08);
 }
 
 /* ══════════════════════════════════════════════════════
@@ -827,7 +827,7 @@ async function handleDeleteAsset(assetId: number) {
   border: 1px solid #ececec;
   border-radius: 12px;
   overflow: hidden;
-  background: #fff;
+  background: #FDF5D6;
   transition: all 0.2s;
 }
 .asset-card:hover {
@@ -839,7 +839,7 @@ async function handleDeleteAsset(assetId: number) {
 .card-thumb {
   position: relative;
   aspect-ratio: 1 / 1;
-  background: #fafafa;
+  background: #FEF9E7;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -867,7 +867,7 @@ async function handleDeleteAsset(assetId: number) {
   justify-content: center;
   width: 100%;
   height: 100%;
-  color: #e5e5e5;
+  color: #D4C898;
 }
 
 .video-badge {
@@ -875,7 +875,7 @@ async function handleDeleteAsset(assetId: number) {
   bottom: 8px;
   left: 8px;
   background: rgba(0,0,0,0.65);
-  color: #fff;
+  color: #2D2515;
   font-size: 11px;
   font-weight: 600;
   padding: 2px 7px;
@@ -887,7 +887,7 @@ async function handleDeleteAsset(assetId: number) {
   bottom: 4px;
   left: 4px;
   background: rgba(0,0,0,0.6);
-  color: #fff;
+  color: #2D2515;
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 3px;
@@ -926,7 +926,7 @@ async function handleDeleteAsset(assetId: number) {
   box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
 .card-action-btn:hover {
-  background: #fff;
+  background: #FDF5D6;
   color: #333;
   box-shadow: 0 2px 8px rgba(0,0,0,0.12);
 }
@@ -967,14 +967,14 @@ async function handleDeleteAsset(assetId: number) {
   align-items: center;
   gap: 14px;
   padding: 10px 14px;
-  border: 1px solid #f0f0f0;
+  border: 1px solid #FDF4D8;
   border-radius: 12px;
   transition: all 0.15s;
   cursor: pointer;
 }
 .list-item:hover {
-  background: #fafafa;
-  border-color: #e5e5e5;
+  background: #FEF9E7;
+  border-color: #D4C898;
 }
 
 .list-thumb {
@@ -982,7 +982,7 @@ async function handleDeleteAsset(assetId: number) {
   height: 52px;
   border-radius: 10px;
   overflow: hidden;
-  background: #f5f5f5;
+  background: #FDF4D8;
   flex-shrink: 0;
   position: relative;
 }
@@ -1047,7 +1047,7 @@ async function handleDeleteAsset(assetId: number) {
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #7c3aed;
+  border: 3px solid #E8A317;
   border-top-color: transparent;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
@@ -1080,7 +1080,7 @@ async function handleDeleteAsset(assetId: number) {
 }
 
 .modal-box {
-  background: #fff;
+  background: #FDF5D6;
   border-radius: 20px;
   width: 100%;
   max-width: 720px;
@@ -1098,7 +1098,7 @@ async function handleDeleteAsset(assetId: number) {
 .modal-title {
   font-size: 20px;
   font-weight: 800;
-  color: #1a1a1a;
+  color: #2D2515;
   margin: 0;
 }
 .modal-close {
@@ -1115,7 +1115,7 @@ async function handleDeleteAsset(assetId: number) {
   justify-content: center;
   transition: all 0.15s;
 }
-.modal-close:hover { background: #f5f5f5; color: #333; }
+.modal-close:hover { background: #FDF4D8; color: #333; }
 
 .modal-body {
   display: flex;
@@ -1140,18 +1140,18 @@ async function handleDeleteAsset(assetId: number) {
 .form-label {
   font-size: 13px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: #2D2515;
 }
 .form-input {
   height: 42px;
   padding: 0 14px;
-  border: 1.5px solid #e5e5e5;
+  border: 1.5px solid #D4C898;
   border-radius: 10px;
   font-size: 14px;
   color: #333;
   outline: none;
   transition: border-color 0.15s;
-  font-family: inherit;
+  font-family: var(--font-sans);
 }
 .form-input::placeholder { color: #ccc; }
 .form-input:focus { border-color: #4f46e5; }
@@ -1162,13 +1162,13 @@ async function handleDeleteAsset(assetId: number) {
 .form-textarea {
   width: 100%;
   padding: 12px 14px;
-  border: 1.5px solid #e5e5e5;
+  border: 1.5px solid #D4C898;
   border-radius: 10px;
   font-size: 14px;
   color: #333;
   outline: none;
   resize: vertical;
-  font-family: inherit;
+  font-family: var(--font-sans);
   line-height: 1.5;
   transition: border-color 0.15s;
 }
@@ -1190,14 +1190,14 @@ async function handleDeleteAsset(assetId: number) {
 .form-select {
   height: 42px;
   padding: 0 14px;
-  border: 1.5px solid #e5e5e5;
+  border: 1.5px solid #D4C898;
   border-radius: 10px;
   font-size: 14px;
   color: #333;
   outline: none;
-  background: #fff;
+  background: #FDF5D6;
   cursor: pointer;
-  font-family: inherit;
+  font-family: var(--font-sans);
   appearance: auto;
   transition: border-color 0.15s;
 }
@@ -1208,16 +1208,16 @@ async function handleDeleteAsset(assetId: number) {
   align-items: center;
   justify-content: center;
   height: 42px;
-  border: 1.5px solid #e5e5e5;
+  border: 1.5px solid #D4C898;
   border-radius: 10px;
-  background: #fafafa;
+  background: #FEF9E7;
   font-size: 14px;
   font-weight: 600;
   color: #333;
   cursor: pointer;
   transition: all 0.15s;
 }
-.form-upload-btn:hover { background: #f0f0f0; border-color: #ccc; }
+.form-upload-btn:hover { background: #FDF4D8; border-color: #ccc; }
 
 /* ── Preview Panel ── */
 .modal-preview {
@@ -1230,15 +1230,15 @@ async function handleDeleteAsset(assetId: number) {
 .preview-label {
   font-size: 13px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: #2D2515;
 }
 .preview-box {
   width: 220px;
   height: 220px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #D4C898;
   border-radius: 12px;
   overflow: hidden;
-  background: #fafafa;
+  background: #FEF9E7;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1271,23 +1271,23 @@ async function handleDeleteAsset(assetId: number) {
 }
 .modal-btn-cancel {
   padding: 10px 24px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #D4C898;
   border-radius: 10px;
-  background: #fff;
+  background: #FDF5D6;
   font-size: 14px;
   font-weight: 600;
   color: #666;
   cursor: pointer;
   transition: all 0.15s;
 }
-.modal-btn-cancel:hover { background: #f5f5f5; }
+.modal-btn-cancel:hover { background: #FDF4D8; }
 
 .modal-btn-submit {
   padding: 10px 28px;
   border: none;
   border-radius: 10px;
-  background: #1a1a1a;
-  color: #fff;
+  background: #2D2515;
+  color: #FFFFFF;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;

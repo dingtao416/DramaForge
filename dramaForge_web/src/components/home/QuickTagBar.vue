@@ -13,7 +13,7 @@ const emit = defineEmits<{
     <button
       v-for="tag in tags"
       :key="tag"
-      class="h-[36px] px-5 rounded-full text-[13px] border border-gray-200 text-gray-500 bg-white hover:border-primary-300 hover:text-primary-600 hover:bg-primary-50/60 transition-all cursor-pointer"
+      class="h-[36px] px-5 rounded-[2px] text-[13px] border-2 border-[#D4C898] text-gray-600 bg-transparent hover:border-[#F5C34B] hover:text-[#F5C34B] hover:bg-[rgba(241,196,15,0.08)] transition-all cursor-pointer"
       @click="emit('select', tag)"
     >
       {{ tag }}

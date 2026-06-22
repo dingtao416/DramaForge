@@ -23,6 +23,8 @@ export interface ShotDetail {
   transition: string
   image_prompt: string
   video_prompt: string
+  emotion?: string
+  narration?: string
   image_url: string | null
   audio_url: string | null
   video_url: string | null
@@ -43,6 +45,8 @@ export interface ShotUpdate {
   transition?: string
   image_prompt?: string
   video_prompt?: string
+  emotion?: string
+  narration?: string
 }
 
 export interface StoryboardDetail {

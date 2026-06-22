@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useProjectStore } from '@/stores/project'
 import { episodesApi } from '@/api/episodes'
 import type { EpisodeOverview } from '@/types/episode'
+import { ProjectStep } from '@/types/enums'
 import EmptyState from '@/components/common/EmptyState.vue'
 
 const route = useRoute()
 const router = useRouter()
+const projectStore = useProjectStore()
 const projectId = Number(route.params.id)
 
 const episodes = ref<EpisodeOverview[]>([])
@@ -37,6 +40,13 @@ const totalSegments = computed(() =>
 )
 
 const regeneratingEpId = ref<number | null>(null)
+
+function goBackToAssets() {
+  if (projectStore.currentProject) {
+    projectStore.currentProject.status = ProjectStep.ASSETS
+  }
+  router.push(`/projects/${projectId}/assets`)
+}
 
 function handleExportEpisode(epId: number) {
   router.push(`/projects/${projectId}/episodes/${epId}/storyboard`)
@@ -107,7 +117,7 @@ function getThumbnailGradient(index: number) {
         <span class="header-badge">{{ episodes.length }} 集</span>
       </div>
       <div class="header-right">
-        <button class="header-btn" @click="router.push(`/projects/${projectId}/assets`)">
+        <button class="header-btn" @click="goBackToAssets">
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
             <rect x="1.5" y="1.5" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.3"/>
             <circle cx="5.5" cy="5.5" r="1.5" stroke="currentColor" stroke-width="1"/>
@@ -306,7 +316,7 @@ function getThumbnailGradient(index: number) {
                 <path d="M4.8 1l.8 2.5" stroke="currentColor" stroke-width="1.2"/>
                 <path d="M10.5 4.5l2-1M8.5 8.5l2 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
               </svg>
-              {{ regeneratingEpId === ep.id ? '生成中...' : 'AI重写' }}
+              {{ regeneratingEpId === ep.id ? '生成中...' : '分镜生成' }}
             </button>
           </div>
         </div>
@@ -326,7 +336,7 @@ function getThumbnailGradient(index: number) {
         <span>点击剧集卡片进入分镜编辑器，可细调每个分镜的画面和台词</span>
       </div>
       <div class="bottom-actions">
-        <button class="bottom-btn" @click="router.push(`/projects/${projectId}/assets`)">
+        <button class="bottom-btn" @click="goBackToAssets">
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
             <path d="M9 2.5L4.5 7.5 9 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
@@ -364,7 +374,7 @@ function getThumbnailGradient(index: number) {
 .header-title {
   font-size: 22px;
   font-weight: 800;
-  color: #1a1a1a;
+  color: #2D2515;
   letter-spacing: -0.4px;
   margin: 0;
   display: flex;
@@ -373,15 +383,15 @@ function getThumbnailGradient(index: number) {
 }
 
 .header-icon {
-  color: #7c3aed;
+  color: #E8A317;
 }
 
 .header-badge {
   display: inline-flex;
   align-items: center;
   padding: 3px 12px;
-  background: #F3F0FF;
-  color: #7c3aed;
+  background: rgba(232, 163, 23, 0.08);
+  color: #E8A317;
   font-size: 13px;
   font-weight: 600;
   border-radius: 20px;
@@ -399,8 +409,8 @@ function getThumbnailGradient(index: number) {
   gap: 6px;
   height: 34px;
   padding: 0 14px;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: #FDF5D6;
+  border: 1px solid #D4C898;
   border-radius: 10px;
   font-size: 13px;
   font-weight: 500;
@@ -409,8 +419,8 @@ function getThumbnailGradient(index: number) {
   transition: all 0.15s;
 }
 .header-btn:hover {
-  background: #fafafa;
-  border-color: #d1d5db;
+  background: #FEF9E7;
+  border-color: #A89870;
   color: #333;
 }
 
@@ -427,15 +437,15 @@ function getThumbnailGradient(index: number) {
   align-items: center;
   gap: 12px;
   padding: 14px 18px;
-  background: #fff;
-  border: 1px solid #f0f0f0;
+  background: #FDF5D6;
+  border: 1px solid #FDF4D8;
   border-radius: 14px;
   flex: 1;
   min-width: 150px;
   transition: all 0.2s;
 }
 .stat-card:hover {
-  border-color: #e5e5e5;
+  border-color: #D4C898;
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 
@@ -448,7 +458,7 @@ function getThumbnailGradient(index: number) {
   justify-content: center;
   flex-shrink: 0;
 }
-.stat-icon--purple { background: #F3F0FF; color: #7c3aed; }
+.stat-icon--purple { background: rgba(232, 163, 23, 0.08); color: #E8A317; }
 .stat-icon--blue   { background: #EFF6FF; color: #3b82f6; }
 .stat-icon--green  { background: #F0FDF4; color: #22c55e; }
 .stat-icon--amber  { background: #FFFBEB; color: #f59e0b; }
@@ -463,7 +473,7 @@ function getThumbnailGradient(index: number) {
 .stat-value {
   font-size: 16px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: #2D2515;
   letter-spacing: -0.2px;
 }
 
@@ -492,8 +502,8 @@ function getThumbnailGradient(index: number) {
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #e5e5e5;
-  border-top-color: #7c3aed;
+  border: 3px solid #D4C898;
+  border-top-color: #E8A317;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
@@ -523,8 +533,8 @@ function getThumbnailGradient(index: number) {
 /* ═══ Episode Card ═══ */
 .episode-card {
   display: flex;
-  background: #fff;
-  border: 1px solid #f0f0f0;
+  background: #FDF5D6;
+  border: 1px solid #FDF4D8;
   border-radius: 16px;
   overflow: hidden;
   cursor: pointer;
@@ -532,7 +542,7 @@ function getThumbnailGradient(index: number) {
 }
 .episode-card:hover {
   border-color: #e0d5f5;
-  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.08);
+  box-shadow: 0 4px 20px rgba(232, 163, 23, 0.08);
   transform: translateY(-1px);
 }
 
@@ -580,7 +590,7 @@ function getThumbnailGradient(index: number) {
   padding: 3px 8px;
   background: rgba(0,0,0,0.55);
   backdrop-filter: blur(6px);
-  color: #fff;
+  color: #2D2515;
   font-size: 11px;
   font-weight: 600;
   border-radius: 6px;
@@ -595,7 +605,7 @@ function getThumbnailGradient(index: number) {
   height: 22px;
   border-radius: 50%;
   background: rgba(34, 197, 94, 0.9);
-  color: #fff;
+  color: #2D2515;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -622,7 +632,7 @@ function getThumbnailGradient(index: number) {
 .card-title {
   font-size: 15px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #2D2515;
   margin: 0;
   line-height: 1.4;
   display: -webkit-box;
@@ -692,24 +702,24 @@ function getThumbnailGradient(index: number) {
   color: #999;
 }
 .action-btn--ghost:hover {
-  background: #f5f5f5;
+  background: #FDF4D8;
   color: #555;
 }
 
 .action-btn--outline {
-  background: #fff;
+  background: #FDF5D6;
   color: #555;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #D4C898;
 }
 .action-btn--outline:hover {
-  background: #fafafa;
-  border-color: #d1d5db;
+  background: #FEF9E7;
+  border-color: #A89870;
   color: #333;
 }
 
 .action-btn--primary {
-  background: #1a1a1a;
-  color: #fff;
+  background: #2D2515;
+  color: #FFFFFF;
 }
 .action-btn--primary:hover {
   background: #333;
@@ -723,8 +733,8 @@ function getThumbnailGradient(index: number) {
   right: 0;
   bottom: 0;
   height: 56px;
-  background: #fff;
-  border-top: 1px solid #f0f0f0;
+  background: #FDF5D6;
+  border-top: 1px solid #FDF4D8;
   display: flex;
   align-items: center;
   padding: 0 32px;
@@ -744,11 +754,11 @@ function getThumbnailGradient(index: number) {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: #F3F0FF;
+  background: rgba(232, 163, 23, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #7c3aed;
+  color: #E8A317;
   flex-shrink: 0;
 }
 
@@ -765,8 +775,8 @@ function getThumbnailGradient(index: number) {
   gap: 6px;
   height: 34px;
   padding: 0 16px;
-  background: #fff;
-  border: 1px solid #e5e5e5;
+  background: #FDF5D6;
+  border: 1px solid #D4C898;
   border-radius: 10px;
   font-size: 13px;
   font-weight: 500;
@@ -775,8 +785,8 @@ function getThumbnailGradient(index: number) {
   transition: all 0.15s;
 }
 .bottom-btn:hover {
-  background: #fafafa;
-  border-color: #d1d5db;
+  background: #FEF9E7;
+  border-color: #A89870;
   color: #333;
 }
 </style>

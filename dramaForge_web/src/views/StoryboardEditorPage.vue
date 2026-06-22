@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { useStoryboardStore } from '@/stores/storyboard'
 import { useAssetsStore } from '@/stores/assets'
+import { useUserAIConfigStore } from '@/stores/user-ai-config'
 import { storyboardApi } from '@/api/storyboard'
 import LoadingOverlay from '@/components/common/LoadingOverlay.vue'
 import TopbarActions from '@/components/common/TopbarActions.vue'
@@ -20,17 +21,40 @@ const route = useRoute()
 const router = useRouter()
 const sbStore = useStoryboardStore()
 const assetsStore = useAssetsStore()
+const aiConfigStore = useUserAIConfigStore()
 
 const projectId = Number(route.params.id)
 const episodeId = Number(route.params.epId)
 
-// ── Model selection ──
+// ── Asset lock state (episode-scoped) ──
+const lockedCharacterIds = ref(new Set<number>())
+
+function toggleCharacterLock(charId: number) {
+  const next = new Set(lockedCharacterIds.value)
+  if (next.has(charId)) {
+    next.delete(charId)
+  } else {
+    next.add(charId)
+  }
+  lockedCharacterIds.value = next
+}
+
+// ── Model selection (dynamic from user config) ──
+const modelOptions = computed(() => {
+  const models = aiConfigStore.modelsByType.video
+  if (!models.length) return []
+  return models.map(m => ({
+    value: String(m.model_id || m.id),
+    label: `${m.provider_name} · ${m.display_name || m.model_id}`,
+  }))
+})
 const selectedModel = ref('seedance-2.0')
-const modelOptions = [
-  { value: 'seedance-2.0', label: 'Seedance 2.0 · Fast' },
-  { value: 'veo-3.1-fast', label: 'veo-3.1-fast' },
-  { value: 'veo3', label: 'veo3' },
-]
+// Sync selectedModel when modelOptions load
+watch(modelOptions, (opts) => {
+  if (opts.length && !opts.find(o => o.value === selectedModel.value)) {
+    selectedModel.value = opts[0].value
+  }
+}, { immediate: true })
 
 // ── Editing state ──
 const editingShot = ref(false)
@@ -93,6 +117,7 @@ onMounted(async () => {
   await Promise.all([
     sbStore.fetchStoryboard(projectId, episodeId),
     assetsStore.fetchAssets(projectId),
+    aiConfigStore.fetchProviders(),
   ])
   document.addEventListener('keydown', onKeydown)
 })
@@ -143,11 +168,27 @@ function handleSelectShot(_shot: ShotDetail, index: number) {
 }
 
 // ── Asset selection ──
-function handleSelectCharacter(_char: CharacterDetail) {
-  // TODO: insert character reference into current shot
+const selectedCharacterId = ref<number | undefined>()
+const selectedSceneId = ref<number | undefined>()
+
+function handleSelectCharacter(char: CharacterDetail) {
+  selectedCharacterId.value = char.id
+  selectedSceneId.value = undefined
 }
-function handleSelectScene(_scene: SceneDetail) {
-  // TODO: insert scene reference into current shot
+function handleSelectScene(scene: SceneDetail) {
+  selectedSceneId.value = scene.id
+  selectedCharacterId.value = undefined
+}
+function handleSelectNarrator() {
+  selectedCharacterId.value = undefined
+  selectedSceneId.value = undefined
+}
+function handleAddAsset() {
+  router.push(`/projects/${projectId}/assets`)
+}
+
+function handlePreviewDownload(url: string) {
+  if (url) window.open(url, '_blank')
 }
 
 // ── Edit / Save ──
@@ -162,6 +203,8 @@ function handleEditScript() {
       time_of_day: sbStore.currentShot.time_of_day,
       duration: sbStore.currentShot.duration,
       dialogue: sbStore.currentShot.dialogue,
+      emotion: sbStore.currentShot.emotion,
+      narration: sbStore.currentShot.narration,
       scene_ref: sbStore.currentShot.scene_ref,
       background: sbStore.currentShot.background,
     })
@@ -431,11 +474,14 @@ watch(() => sbStore.currentSegmentIndex, () => {
         <div class="sb-topbar-sep" />
 
         <!-- Model selector -->
-        <select v-model="selectedModel" class="sb-model-select">
+        <select v-if="modelOptions.length" v-model="selectedModel" class="sb-model-select">
           <option v-for="opt in modelOptions" :key="opt.value" :value="opt.value">
             {{ opt.label }}
           </option>
         </select>
+        <router-link v-else to="/settings" class="text-[12px] text-purple-500 hover:text-purple-700 underline">
+          配置视频模型
+        </router-link>
 
         <!-- Export -->
         <button class="sb-btn sb-btn--outline" :disabled="exporting" @click="handleExport">
@@ -571,95 +617,118 @@ watch(() => sbStore.currentSegmentIndex, () => {
       <AssetPanel
         :characters="assetsStore.characters"
         :scenes="assetsStore.scenes"
+        :selected-character-id="selectedCharacterId"
+        :selected-scene-id="selectedSceneId"
+        :locked-character-ids="lockedCharacterIds"
         @select-character="handleSelectCharacter"
         @select-scene="handleSelectScene"
+        @select-narrator="handleSelectNarrator"
+        @add-asset="handleAddAsset"
+        @toggle-lock="toggleCharacterLock"
       />
 
-      <!-- CENTER: Script / Editor -->
-      <div class="sb-center">
-        <template v-if="sbStore.storyboard && sbStore.storyboard.segments.length">
-          <!-- Batch generate banner -->
-          <div v-if="anySegmentPending && !generatingAll" class="sb-batch-banner">
-            <div class="sb-batch-info">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"/>
-                <path d="M8 5v3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-                <circle cx="8" cy="12" r="0.7" fill="currentColor"/>
-              </svg>
-              <span>{{ pendingSegmentCount }} 个片段待生成素材</span>
+      <div class="sb-workspace">
+        <div class="sb-content">
+          <!-- CENTER: Script / Editor -->
+          <div class="sb-center">
+            <template v-if="sbStore.storyboard && sbStore.storyboard.segments.length">
+              <!-- Batch generate banner -->
+              <div v-if="anySegmentPending && !generatingAll" class="sb-batch-banner">
+                <div class="sb-batch-info">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"/>
+                    <path d="M8 5v3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                    <circle cx="8" cy="12" r="0.7" fill="currentColor"/>
+                  </svg>
+                  <span>{{ pendingSegmentCount }} 个片段待生成素材</span>
+                </div>
+                <button class="sb-btn sb-btn--primary sb-btn--sm" @click="handleGenerateAll">
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                    <polygon points="3.5,1.5 3.5,11.5 10.5,6.5" fill="currentColor"/>
+                  </svg>
+                  全部生成
+                </button>
+              </div>
+
+              <!-- Batch progress -->
+              <div v-if="generatingAll" class="sb-batch-banner sb-batch-banner--active">
+                <div class="flex items-center gap-2">
+                  <div class="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                  <span class="text-[13px] text-purple-600 font-medium">{{ generatingAllProgress || '正在生成...' }}</span>
+                </div>
+              </div>
+
+              <!-- Shot Editor (when editing) -->
+              <ShotEditor
+                v-if="editingShot && sbStore.currentShot"
+                :shot="sbStore.currentShot"
+                :characters="assetsStore.characters"
+                :scenes="assetsStore.scenes"
+                @save="handleSaveShot"
+                @cancel="handleCancelEdit"
+              />
+              <!-- Storyboard Script (normal view) -->
+              <StoryboardScript
+                v-else
+                :segment="sbStore.currentSegment"
+                :segment-index="sbStore.currentSegmentIndex"
+                :generating="generatingSegmentIds.has(sbStore.currentSegment?.id || -1)"
+                :adding-shot="addingShot"
+                :deleting-shot-id="deletingShotId"
+                :locked-character-ids="lockedCharacterIds"
+                @edit-script="handleEditScript"
+                @generate-segment="handleGenerateSegment()"
+                @regenerate="handleRegenerateSegment"
+                @select-shot="handleSelectShot"
+                @add-shot="handleAddShot"
+                @delete-shot="handleDeleteShot"
+              />
+            </template>
+
+            <!-- Loading skeleton -->
+            <div v-else-if="sbStore.loading" class="sb-center-inner p-6">
+              <div v-for="n in 3" :key="n" class="animate-pulse mb-6">
+                <div class="h-5 bg-gray-200 rounded w-24 mb-3" />
+                <div class="h-3 bg-gray-100 rounded w-full mb-2" />
+                <div class="h-3 bg-gray-100 rounded w-3/4 mb-2" />
+                <div class="h-3 bg-gray-100 rounded w-1/2" />
+              </div>
             </div>
-            <button class="sb-btn sb-btn--primary sb-btn--sm" @click="handleGenerateAll">
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                <polygon points="3.5,1.5 3.5,11.5 10.5,6.5" fill="currentColor"/>
-              </svg>
-              全部生成
-            </button>
-          </div>
 
-          <!-- Batch progress -->
-          <div v-if="generatingAll" class="sb-batch-banner sb-batch-banner--active">
-            <div class="flex items-center gap-2">
-              <div class="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-              <span class="text-[13px] text-purple-600 font-medium">{{ generatingAllProgress || '正在生成...' }}</span>
+            <!-- Empty state (no storyboard yet) -->
+            <div v-else-if="!sbStore.loading" class="sb-empty">
+              <div class="sb-empty-icon">
+                <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+                  <rect x="4" y="8" width="48" height="36" rx="6" stroke="#A89870" stroke-width="2.5"/>
+                  <polygon points="22,18 22,34 38,26" fill="#A89870"/>
+                </svg>
+              </div>
+              <h3 class="sb-empty-title">尚未生成分镜脚本</h3>
+              <p class="sb-empty-desc">AI 将根据剧本和角色场景设定自动拆分镜头</p>
+              <button class="sb-btn sb-btn--primary sb-btn--lg" @click="handleGenerateStoryboard">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M2 4l6-3 6 3v8l-6 3-6-3V4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+                  <polygon points="6.5,6 6.5,11 10.5,8.5" fill="currentColor"/>
+                </svg>
+                生成分镜脚本
+              </button>
             </div>
           </div>
 
-          <!-- Shot Editor (when editing) -->
-          <ShotEditor
-            v-if="editingShot && sbStore.currentShot"
-            :shot="sbStore.currentShot"
-            @save="handleSaveShot"
-            @cancel="handleCancelEdit"
-          />
-          <!-- Storyboard Script (normal view) -->
-          <StoryboardScript
-            v-else
-            :segment="sbStore.currentSegment"
-            :segment-index="sbStore.currentSegmentIndex"
-            :generating="generatingSegmentIds.has(sbStore.currentSegment?.id || -1)"
-            :adding-shot="addingShot"
-            :deleting-shot-id="deletingShotId"
-            @edit-script="handleEditScript"
-            @generate-segment="handleGenerateSegment()"
-            @regenerate="handleRegenerateSegment"
-            @select-shot="handleSelectShot"
-            @add-shot="handleAddShot"
-            @delete-shot="handleDeleteShot"
-          />
-        </template>
-
-        <!-- Empty state (no storyboard yet) -->
-        <div v-else-if="!sbStore.loading" class="sb-empty">
-          <div class="sb-empty-icon">
-            <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-              <rect x="4" y="8" width="48" height="36" rx="6" stroke="#d1d5db" stroke-width="2.5"/>
-              <polygon points="22,18 22,34 38,26" fill="#d1d5db"/>
-            </svg>
-          </div>
-          <h3 class="sb-empty-title">尚未生成分镜脚本</h3>
-          <p class="sb-empty-desc">AI 将根据剧本和角色场景设定自动拆分镜头</p>
-          <button class="sb-btn sb-btn--primary sb-btn--lg" @click="handleGenerateStoryboard">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M2 4l6-3 6 3v8l-6 3-6-3V4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-              <polygon points="6.5,6 6.5,11 10.5,8.5" fill="currentColor"/>
-            </svg>
-            生成分镜脚本
-          </button>
+          <!-- RIGHT: Preview Panel -->
+          <PreviewPanel :shot="sbStore.currentShot" @download="handlePreviewDownload" />
         </div>
+
+        <!-- ═══ Bottom Timeline ═══ -->
+        <Timeline
+          v-if="sbStore.storyboard && sbStore.storyboard.segments.length"
+          :segments="sbStore.storyboard.segments"
+          :current-index="sbStore.currentSegmentIndex"
+          :total-duration="totalDuration"
+          @select="sbStore.selectSegment"
+        />
       </div>
-
-      <!-- RIGHT: Preview Panel -->
-      <PreviewPanel :shot="sbStore.currentShot" />
     </div>
-
-    <!-- ═══ Bottom Timeline ═══ -->
-    <Timeline
-      v-if="sbStore.storyboard && sbStore.storyboard.segments.length"
-      :segments="sbStore.storyboard.segments"
-      :current-index="sbStore.currentSegmentIndex"
-      :total-duration="totalDuration"
-      @select="sbStore.selectSegment"
-    />
 
     <!-- ═══ Toast ═══ -->
     <Transition name="toast">
@@ -676,7 +745,7 @@ watch(() => sbStore.currentSegmentIndex, () => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: #FDF5D6;
   overflow: hidden;
   position: relative;
 }
@@ -684,13 +753,13 @@ watch(() => sbStore.currentSegmentIndex, () => {
 /* ═══ Top Bar ═══ */
 .sb-topbar {
   height: 52px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #FDF4D8;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
   flex-shrink: 0;
-  background: #fff;
+  background: #FDF5D6;
   z-index: 10;
 }
 
@@ -710,16 +779,16 @@ watch(() => sbStore.currentSegmentIndex, () => {
   border: none;
   cursor: pointer;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: 2px;
   transition: all 0.15s;
   font-weight: 500;
 }
-.sb-back-btn:hover { color: #333; background: #f5f5f5; }
+.sb-back-btn:hover { color: #333; background: #FDF4D8; }
 
 .sb-topbar-sep {
   width: 1px;
   height: 22px;
-  background: #e8e8e8;
+  background: #D4C898;
   margin: 0 14px;
 }
 
@@ -732,16 +801,16 @@ watch(() => sbStore.currentSegmentIndex, () => {
 .sb-topbar-ep {
   font-size: 13px;
   font-weight: 600;
-  color: #7c3aed;
-  background: #F3F0FF;
+  color: #E8A317;
+  background: rgba(232, 163, 23, 0.08);
   padding: 2px 10px;
-  border-radius: 6px;
+  border-radius: 2px;
 }
 
 .sb-topbar-title {
   font-size: 14px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #2D2515;
 }
 
 .sb-topbar-right {
@@ -753,18 +822,18 @@ watch(() => sbStore.currentSegmentIndex, () => {
 .sb-model-select {
   height: 34px;
   font-size: 13px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #D4C898;
   border-radius: 9px;
   padding: 0 12px;
-  background: #fff;
+  background: #FDF5D6;
   outline: none;
   color: #555;
   cursor: pointer;
   font-weight: 500;
   transition: border-color 0.15s;
 }
-.sb-model-select:hover { border-color: #d1d5db; }
-.sb-model-select:focus { border-color: #7c3aed; }
+.sb-model-select:hover { border-color: #A89870; }
+.sb-model-select:focus { border-color: #E8A317; }
 
 /* ── Topbar buttons ── */
 .sb-btn {
@@ -794,19 +863,19 @@ watch(() => sbStore.currentSegmentIndex, () => {
 }
 
 .sb-btn--outline {
-  background: #fff;
+  background: #FDF5D6;
   color: #555;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #D4C898;
 }
 .sb-btn--outline:hover:not(:disabled) {
-  background: #fafafa;
-  border-color: #d1d5db;
+  background: #FEF9E7;
+  border-color: #A89870;
   color: #333;
 }
 
 .sb-btn--primary {
-  background: #1a1a1a;
-  color: #fff;
+  background: #2D2515;
+  color: #FFFFFF;
 }
 .sb-btn--primary:hover:not(:disabled) {
   background: #333;
@@ -817,7 +886,7 @@ watch(() => sbStore.currentSegmentIndex, () => {
   height: 42px;
   padding: 0 24px;
   font-size: 14px;
-  border-radius: 10px;
+  border-radius: 2px;
 }
 
 /* ═══ Main 3-col ═══ */
@@ -828,10 +897,35 @@ watch(() => sbStore.currentSegmentIndex, () => {
   min-height: 0;
 }
 
+.sb-workspace {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #f3f4f6;
+}
+
+.sb-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
 .sb-center {
   flex: 1;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   min-width: 0;
+  min-height: 0;
+}
+
+.sb-center > :deep(*) {
+  min-height: 0;
 }
 
 /* ═══ Batch Banner ═══ */
@@ -845,8 +939,8 @@ watch(() => sbStore.currentSegmentIndex, () => {
   border-bottom: 1px solid #FDE68A;
 }
 .sb-batch-banner--active {
-  background: #F3F0FF;
-  border-bottom-color: #c4b5fd;
+  background: rgba(232, 163, 23, 0.08);
+  border-bottom-color: #D4C898;
 }
 
 .sb-batch-info {
@@ -858,7 +952,7 @@ watch(() => sbStore.currentSegmentIndex, () => {
   font-weight: 500;
 }
 .sb-batch-banner--active .sb-batch-info {
-  color: #6d28d9;
+  color: #C88A0C;
 }
 
 /* ═══ Empty State ═══ */
@@ -869,7 +963,7 @@ watch(() => sbStore.currentSegmentIndex, () => {
   justify-content: center;
   height: 100%;
   gap: 12px;
-  background: #fafafa;
+  background: #FEF9E7;
 }
 
 .sb-empty-icon { margin-bottom: 4px; }
@@ -894,16 +988,16 @@ watch(() => sbStore.currentSegmentIndex, () => {
   left: 50%;
   transform: translateX(-50%);
   padding: 10px 24px;
-  border-radius: 10px;
+  border-radius: 2px;
   font-size: 13px;
   font-weight: 500;
   z-index: 100;
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
   pointer-events: none;
 }
-.sb-toast--success { background: #1a1a1a; color: #fff; }
+.sb-toast--success { background: #2D2515; color: #FFFFFF; }
 .sb-toast--error   { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
-.sb-toast--info    { background: #F3F0FF; color: #6d28d9; border: 1px solid #c4b5fd; }
+.sb-toast--info    { background: rgba(232, 163, 23, 0.08); color: #C88A0C; border: 1px solid #D4C898; }
 
 .toast-enter-active { transition: all 0.3s ease; }
 .toast-leave-active { transition: all 0.3s ease; }
@@ -913,8 +1007,8 @@ watch(() => sbStore.currentSegmentIndex, () => {
 /* ═══ Compose Options Panel ═══ */
 .sb-compose-options {
   padding: 14px 20px;
-  background: #fafafa;
-  border-bottom: 1px solid #f0f0f0;
+  background: #FEF9E7;
+  border-bottom: 1px solid #FDF4D8;
   display: flex;
   flex-shrink: 0;
 }
@@ -956,12 +1050,12 @@ watch(() => sbStore.currentSegmentIndex, () => {
   font-size: 12px;
   font-weight: 500;
   color: #777;
-  border-radius: 5px;
+  border-radius: 2px;
   cursor: pointer;
   transition: all 0.15s;
 }
 .sb-option-tab.active {
-  background: #fff;
+  background: #FDF5D6;
   color: #333;
   box-shadow: 0 1px 2px rgba(0,0,0,0.08);
 }
@@ -969,35 +1063,35 @@ watch(() => sbStore.currentSegmentIndex, () => {
 .sb-option-select {
   height: 30px;
   font-size: 12px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #D4C898;
   border-radius: 7px;
   padding: 0 8px;
-  background: #fff;
+  background: #FDF5D6;
   color: #555;
   outline: none;
 }
 .sb-option-select-sm {
   height: 26px;
   font-size: 11px;
-  border: 1px solid #e5e5e5;
-  border-radius: 6px;
+  border: 1px solid #D4C898;
+  border-radius: 2px;
   padding: 0 6px;
-  background: #fff;
+  background: #FDF5D6;
   color: #555;
 }
 
 .sb-option-input {
   height: 30px;
   font-size: 12px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #D4C898;
   border-radius: 7px;
   padding: 0 10px;
-  background: #fff;
+  background: #FDF5D6;
   color: #333;
   outline: none;
   width: 200px;
 }
-.sb-option-input:focus { border-color: #7c3aed; }
+.sb-option-input:focus { border-color: #E8A317; }
 
 .sb-bgm-row {
   display: flex;
@@ -1011,13 +1105,13 @@ watch(() => sbStore.currentSegmentIndex, () => {
   height: 30px;
   padding: 0 12px;
   font-size: 12px;
-  border: 1px dashed #d1d5db;
+  border: 1px dashed #A89870;
   border-radius: 7px;
   cursor: pointer;
   color: #777;
   transition: all 0.15s;
 }
-.sb-upload-btn:hover { border-color: #7c3aed; color: #7c3aed; }
+.sb-upload-btn:hover { border-color: #E8A317; color: #E8A317; }
 .sb-upload-btn.uploading { opacity: 0.5; pointer-events: none; }
 
 .sb-bgm-volume {
@@ -1045,8 +1139,8 @@ watch(() => sbStore.currentSegmentIndex, () => {
   color: #888;
   border: none;
 }
-.sb-btn--ghost:hover { color: #555; background: #f5f5f5; }
-.sb-btn--ghost.sb-btn--active { color: #7c3aed; background: #F3F0FF; }
+.sb-btn--ghost:hover { color: #555; background: #FDF4D8; }
+.sb-btn--ghost.sb-btn--active { color: #E8A317; background: rgba(232, 163, 23, 0.08); }
 
 .hidden { display: none; }
 </style>

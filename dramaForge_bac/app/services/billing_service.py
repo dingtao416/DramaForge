@@ -99,13 +99,7 @@ async def consume_credits(
 
     bal = await get_or_create_balance(db, user_id)
 
-    if bal.balance < cost:
-        raise InsufficientCreditsError(
-            required=cost,
-            available=bal.balance,
-            service_type=service_type,
-        )
-
+    # 不再检查积分余额，始终允许生成（余额可为负数）
     bal.balance -= cost
     bal.total_spent += cost
 

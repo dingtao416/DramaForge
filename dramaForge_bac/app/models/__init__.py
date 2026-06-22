@@ -16,7 +16,7 @@ from app.models.character import Character
 from app.models.scene import SceneLocation
 from app.models.segment import Segment
 from app.models.shot import Shot
-from app.models.user import User, Conversation, Message
+from app.models.user import User, Conversation, EmailVerificationCode, Message
 from app.models.billing import Plan, Subscription, CreditBalance, CreditTransaction
 from app.models.payment import PaymentOrder, UserAgreement
 from app.models.user_ai_config import UserAPIKey, UserModelConfig
@@ -53,6 +53,7 @@ __all__ = [
     "Shot",
     "User",
     "Conversation",
+    "EmailVerificationCode",
     "Message",
     "Plan",
     "Subscription",

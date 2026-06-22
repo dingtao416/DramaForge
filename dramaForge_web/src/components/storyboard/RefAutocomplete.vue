@@ -97,7 +97,7 @@ function handleBlur() {
       v-show="multiple || !modelValue || showDropdown"
       ref="inputRef"
       v-model="inputValue"
-      class="w-full h-[32px] px-3 border border-gray-200 rounded-[8px] text-[13px] outline-none focus:border-primary-500 bg-white transition-colors"
+      class="w-full h-[32px] px-3 border border-gray-200 rounded-[8px] text-[13px] outline-none focus:border-primary-500 bg-[#FEF9E7] transition-colors"
       :placeholder="placeholder || `输入 @ 引用${type === 'character' ? '角色' : '场景'}`"
       @input="onInput"
       @focus="showDropdown = true"
@@ -109,7 +109,7 @@ function handleBlur() {
     <Transition name="fade">
       <div
         v-if="showDropdown && filtered.length"
-        class="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-[8px] shadow-[0_4px_16px_rgba(0,0,0,0.08)] max-h-[200px] overflow-y-auto"
+        class="absolute z-50 top-full left-0 right-0 mt-1 bg-[#FEF9E7] border border-gray-200 rounded-[8px] shadow-[0_4px_16px_rgba(0,0,0,0.08)] max-h-[200px] overflow-y-auto"
       >
         <div
           v-for="item in filtered"

@@ -112,6 +112,29 @@ class StorageService:
 
         return f"/storage/{relative.as_posix()}"
 
+    def storage_path_from_url(self, url: str) -> Path | None:
+        """
+        Convert a /storage/... URL back to a local filesystem path.
+
+        E.g. /storage/projects/1/ep001/images/shot_0000.png
+             → Path('<storage_dir>/projects/1/ep001/images/shot_0000.png')
+
+        Returns None if the URL cannot be resolved to a valid filesystem path.
+        """
+        if not url:
+            return None
+        url = url.strip()
+        # Handle /storage/... prefixed URLs
+        prefix = "/storage/"
+        if url.startswith(prefix):
+            relative = url[len(prefix):].lstrip("/")
+            return Path(settings.storage_dir) / relative
+        # If it is already a filesystem path, return it directly
+        p = Path(url)
+        if p.exists():
+            return p
+        return None
+
     def exists(self, path: Path) -> bool:
         """Check if a file exists."""
         return path.exists()

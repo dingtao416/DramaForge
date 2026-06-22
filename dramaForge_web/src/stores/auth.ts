@@ -1,37 +1,46 @@
 /**
- * DramaForge — Auth Store (Pinia)
- * User login state management.
+ * DramaForge Auth Store
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { login, register, logout, getCurrentUser } from '@/api/auth'
+import { login, register, logout, getCurrentUser, sendLoginCode } from '@/api/auth'
 import { isAuthenticated, clearTokens } from '@/api/client'
 import type { LoginRequest, RegisterRequest, UserInfo } from '@/api/auth'
 
 export const useAuthStore = defineStore('auth', () => {
-  // ═══════ State ═══════
   const user = ref<UserInfo | null>(null)
   const isLoading = ref(false)
+  const isSendingCode = ref(false)
   const error = ref<string | null>(null)
 
-  // ═══════ Getters ═══════
   const isLoggedIn = computed(() => !!user.value)
   const displayName = computed(() => {
     if (!user.value) return ''
     if (user.value.nickname) return user.value.nickname
     if (user.value.email) return user.value.email.split('@')[0]
-    if (user.value.phone) return '用户' + user.value.phone.slice(-4)
-    return '用户' + user.value.id
+    if (user.value.phone) return `用户${user.value.phone.slice(-4)}`
+    return `用户${user.value.id}`
   })
 
-  // ═══════ Actions ═══════
+  async function requestLoginCode(email: string): Promise<number | null> {
+    isSendingCode.value = true
+    error.value = null
+    try {
+      const result = await sendLoginCode({ email })
+      return result.resend_after
+    } catch (e: any) {
+      error.value = e.response?.data?.detail || e.message || '验证码发送失败'
+      return null
+    } finally {
+      isSendingCode.value = false
+    }
+  }
 
-  /** Login */
-  async function doLogin(credentials: LoginRequest): Promise<boolean> {
+  async function doLogin(credentials: LoginRequest, remember = true): Promise<boolean> {
     isLoading.value = true
     error.value = null
     try {
-      await login(credentials)
+      await login(credentials, remember)
       await fetchUser()
       return true
     } catch (e: any) {
@@ -42,12 +51,11 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /** Register */
-  async function doRegister(data: RegisterRequest): Promise<boolean> {
+  async function doRegister(data: RegisterRequest, remember = true): Promise<boolean> {
     isLoading.value = true
     error.value = null
     try {
-      await register(data)
+      await register(data, remember)
       await fetchUser()
       return true
     } catch (e: any) {
@@ -58,7 +66,6 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /** Logout */
   async function doLogout(): Promise<void> {
     try {
       await logout()
@@ -67,7 +74,6 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /** Fetch current user from API */
   async function fetchUser(): Promise<void> {
     if (!isAuthenticated()) {
       user.value = null
@@ -84,7 +90,6 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /** Initialize — check stored token on app start */
   async function initialize(): Promise<void> {
     if (isAuthenticated()) {
       await fetchUser()
@@ -98,9 +103,11 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user,
     isLoading,
+    isSendingCode,
     error,
     isLoggedIn,
     displayName,
+    requestLoginCode,
     doLogin,
     doRegister,
     doLogout,

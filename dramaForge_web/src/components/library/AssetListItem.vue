@@ -14,7 +14,7 @@ function formatDate(dateStr: string) {
 </script>
 
 <template>
-  <div class="bg-white border border-gray-200 rounded-[12px] p-3 flex items-center gap-4 hover:border-gray-300 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)] transition-all cursor-pointer">
+  <div class="bg-[#FEF9E7] border border-gray-200 rounded-[12px] p-3 flex items-center gap-4 hover:border-gray-300 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)] transition-all cursor-pointer">
     <!-- Thumbnail -->
     <div class="w-12 h-12 rounded-[8px] overflow-hidden bg-gray-100 shrink-0">
       <img

@@ -8,6 +8,9 @@ BUILTIN_CATALOG = [
         "base_url": "https://api.laozhang.ai/v1",
         "priority": 10,
         "models": [
+            {"model_id": "gpt-4.1-mini", "display_name": "GPT-4.1 Mini", "capability": "chat", "is_default": True},
+            {"model_id": "claude-sonnet-4-20250514", "display_name": "Claude Sonnet 4", "capability": "chat"},
+            {"model_id": "deepseek-v3.1", "display_name": "DeepSeek V3.1", "capability": "chat"},
             {"model_id": "gpt-image-1-mini", "display_name": "GPT Image Mini", "capability": "image", "is_default": True},
             {"model_id": "sora_image", "display_name": "Sora Image", "capability": "image"},
             {"model_id": "veo-3.1-fast", "display_name": "Veo 3.1 Fast", "capability": "video", "is_default": True},
@@ -22,6 +25,17 @@ BUILTIN_CATALOG = [
         "priority": 20,
         "models": [
             {
+                "model_id": "gpt-4.1-mini",
+                "display_name": "GPT-4.1 Mini",
+                "capability": "chat",
+                "is_default": True,
+            },
+            {
+                "model_id": "gpt-4o",
+                "display_name": "GPT-4o",
+                "capability": "chat",
+            },
+            {
                 "model_id": "gpt-image-1",
                 "display_name": "GPT Image",
                 "capability": "image",
@@ -35,6 +49,40 @@ BUILTIN_CATALOG = [
                 "is_default": True,
                 "default_params_json": {"seconds": "8", "size": "1280x720"},
             },
+        ],
+    },
+    {
+        "name": "DeepSeek Text",
+        "provider_type": "openai_compatible",
+        "auth_type": "bearer",
+        "base_url": "https://api.deepseek.com/v1",
+        "priority": 30,
+        "models": [
+            {"model_id": "deepseek-chat", "display_name": "DeepSeek Chat", "capability": "chat", "is_default": True},
+            {"model_id": "deepseek-reasoner", "display_name": "DeepSeek Reasoner", "capability": "chat"},
+        ],
+    },
+    {
+        "name": "Qwen DashScope Text",
+        "provider_type": "openai_compatible",
+        "auth_type": "bearer",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "priority": 35,
+        "models": [
+            {"model_id": "qwen-plus", "display_name": "Qwen Plus", "capability": "chat", "is_default": True},
+            {"model_id": "qwen-max", "display_name": "Qwen Max", "capability": "chat"},
+            {"model_id": "qwen-turbo", "display_name": "Qwen Turbo", "capability": "chat"},
+        ],
+    },
+    {
+        "name": "Volcengine Ark Text",
+        "provider_type": "openai_compatible",
+        "auth_type": "bearer",
+        "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        "priority": 36,
+        "models": [
+            {"model_id": "doubao-seed-1-6", "display_name": "Doubao Seed 1.6", "capability": "chat", "is_default": True},
+            {"model_id": "deepseek-v3-250324", "display_name": "DeepSeek V3 on Ark", "capability": "chat"},
         ],
     },
     {

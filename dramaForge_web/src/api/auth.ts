@@ -1,25 +1,27 @@
 /**
  * DramaForge Auth API
- * ====================
- * Registration, login, logout, and user profile functions.
  */
-import apiClient, { setToken, setRefreshToken, clearTokens } from './client'
+import apiClient, { setAuthTokens, clearTokens } from './client'
 
-// ═══════════════════════════════════════════════════════════════════
-// Types
-// ═══════════════════════════════════════════════════════════════════
+export interface SendLoginCodeRequest {
+  email: string
+}
+
+export interface SendLoginCodeResponse {
+  sent: boolean
+  expires_in: number
+  resend_after: number
+}
 
 export interface RegisterRequest {
-  email?: string
-  phone?: string
-  password: string
+  email: string
+  code: string
   nickname?: string
 }
 
 export interface LoginRequest {
-  email?: string
-  phone?: string
-  password: string
+  email: string
+  code: string
 }
 
 export interface AuthTokens {
@@ -37,34 +39,29 @@ export interface UserInfo {
   avatar_url: string | null
   status: string
   created_at: string
-  // Billing summary
   credits: number
   plan_code: string
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// API Functions
-// ═══════════════════════════════════════════════════════════════════
+export async function sendLoginCode(data: SendLoginCodeRequest): Promise<SendLoginCodeResponse> {
+  const response = await apiClient.post<SendLoginCodeResponse>('/user/send-login-code', data)
+  return response.data
+}
 
-/** Register a new user and store tokens */
-export async function register(data: RegisterRequest): Promise<AuthTokens> {
+export async function register(data: RegisterRequest, remember = true): Promise<AuthTokens> {
   const response = await apiClient.post<AuthTokens>('/user/register', data)
   const tokens = response.data
-  setToken(tokens.access_token)
-  setRefreshToken(tokens.refresh_token)
+  setAuthTokens(tokens.access_token, tokens.refresh_token, remember)
   return tokens
 }
 
-/** Login with email/phone + password and store tokens */
-export async function login(data: LoginRequest): Promise<AuthTokens> {
+export async function login(data: LoginRequest, remember = true): Promise<AuthTokens> {
   const response = await apiClient.post<AuthTokens>('/user/login', data)
   const tokens = response.data
-  setToken(tokens.access_token)
-  setRefreshToken(tokens.refresh_token)
+  setAuthTokens(tokens.access_token, tokens.refresh_token, remember)
   return tokens
 }
 
-/** Logout and clear tokens */
 export async function logout(): Promise<void> {
   try {
     await apiClient.post('/user/logout')
@@ -73,7 +70,6 @@ export async function logout(): Promise<void> {
   }
 }
 
-/** Get current user profile */
 export async function getCurrentUser(): Promise<UserInfo> {
   const response = await apiClient.get<UserInfo>('/user/me')
   return response.data

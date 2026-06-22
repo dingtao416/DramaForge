@@ -43,6 +43,7 @@ class ScriptEngine:
         chat_model: str = None,
         chat_api_key: str = None,
         chat_base_url: str = None,
+        chat_options: dict[str, Any] | None = None,
     ) -> dict:
         """
         AI-generate a structured script from user's creative input.
@@ -75,6 +76,7 @@ class ScriptEngine:
             model=chat_model,
             api_key=chat_api_key,
             base_url=chat_base_url,
+            **_extra_chat_kwargs(chat_options),
         )
 
         raw_json = self._parse_json_from_text(resp.content)
@@ -91,6 +93,7 @@ class ScriptEngine:
         chat_model: str = None,
         chat_api_key: str = None,
         chat_base_url: str = None,
+        chat_options: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """
         AI-generate a structured script with streaming progress.
@@ -124,6 +127,7 @@ class ScriptEngine:
                 model=chat_model,
                 api_key=chat_api_key,
                 base_url=chat_base_url,
+                **_extra_chat_kwargs(chat_options),
             ):
                 full_content += chunk
                 yield {"type": "content", "data": chunk}
@@ -429,3 +433,8 @@ class ScriptEngine:
 
 # Module-level singleton
 script_engine = ScriptEngine()
+
+
+def _extra_chat_kwargs(options: dict[str, Any] | None) -> dict[str, Any]:
+    blocked = {"model", "messages", "temperature", "max_tokens", "response_format", "stream"}
+    return {k: v for k, v in (options or {}).items() if k not in blocked}

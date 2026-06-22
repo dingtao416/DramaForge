@@ -26,6 +26,19 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24  # 1 day
     jwt_refresh_expire_days: int = 7
 
+    # ----- Email Verification Login -----
+    email_code_expire_minutes: int = 10
+    email_code_resend_seconds: int = 60
+    email_code_max_attempts: int = 5
+    email_code_length: int = 6
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
+
     # ----- Database -----
     database_url: str = "sqlite+aiosqlite:///./storage/dramaforge.db"
 
@@ -116,7 +129,7 @@ class Settings(BaseSettings):
         return path
 
     class Config:
-        env_file = ".env"
+        env_file = ("../.env", ".env")
         env_file_encoding = "utf-8"
 
 

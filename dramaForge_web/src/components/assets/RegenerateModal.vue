@@ -109,7 +109,7 @@ function handleConfirm() {
 }
 
 .reg-panel {
-  background: #fff;
+  background: #FDF5D6;
   border-radius: 18px;
   width: 460px;
   max-width: 92vw;
@@ -127,7 +127,7 @@ function handleConfirm() {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: #F5F3FF;
+  background: rgba(232, 163, 23, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -192,15 +192,15 @@ function handleConfirm() {
   resize: vertical;
   outline: none;
   transition: border-color 0.15s;
-  font-family: inherit;
+  font-family: var(--font-sans);
   line-height: 1.7;
   box-sizing: border-box;
 }
 .reg-textarea:focus {
-  border-color: #A78BFA;
+  border-color: #F5C34B;
 }
 .reg-textarea::placeholder {
-  color: #D1D5DB;
+  color: #A89870;
 }
 
 .reg-progress {
@@ -208,15 +208,15 @@ function handleConfirm() {
   align-items: center;
   gap: 10px;
   padding: 0 24px 16px;
-  color: #7C3AED;
+  color: #E8A317;
   font-size: 13px;
   font-weight: 500;
 }
 .reg-spinner {
   width: 18px;
   height: 18px;
-  border: 2.5px solid #EDE9FE;
-  border-top-color: #7C3AED;
+  border: 2.5px solid rgba(232, 163, 23, 0.1);
+  border-top-color: #E8A317;
   border-radius: 50%;
   animation: regSpin 0.6s linear infinite;
 }

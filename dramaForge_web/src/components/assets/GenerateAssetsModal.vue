@@ -151,7 +151,7 @@ function handleGenerate() {
 
 /* ── Panel ── */
 .gen-panel {
-  background: #fff;
+  background: #FDF5D6;
   border-radius: 20px;
   width: 520px;
   max-width: 92vw;
@@ -229,17 +229,17 @@ function handleGenerate() {
   padding: 14px 8px;
   border-radius: 12px;
   border: 2px solid #E5E7EB;
-  background: #fff;
+  background: #FDF5D6;
   cursor: pointer;
   transition: all 0.2s;
 }
 .gen-style-card:hover {
-  border-color: #D1D5DB;
+  border-color: #A89870;
   background: #F9FAFB;
 }
 .gen-style-card.active {
-  border-color: #7C3AED;
-  background: #F5F3FF;
+  border-color: #E8A317;
+  background: rgba(232, 163, 23, 0.08);
 }
 .gen-style-icon {
   font-size: 24px;
@@ -251,7 +251,7 @@ function handleGenerate() {
   color: #6B7280;
 }
 .gen-style-card.active .gen-style-label {
-  color: #7C3AED;
+  color: #E8A317;
 }
 
 /* Target */
@@ -264,7 +264,7 @@ function handleGenerate() {
   padding: 10px 0;
   border-radius: 10px;
   border: 2px solid #E5E7EB;
-  background: #fff;
+  background: #FDF5D6;
   font-size: 14px;
   font-weight: 600;
   color: #6B7280;
@@ -272,12 +272,12 @@ function handleGenerate() {
   transition: all 0.2s;
 }
 .gen-target-btn:hover {
-  border-color: #D1D5DB;
+  border-color: #A89870;
 }
 .gen-target-btn.active {
-  border-color: #7C3AED;
-  background: #F5F3FF;
-  color: #7C3AED;
+  border-color: #E8A317;
+  background: rgba(232, 163, 23, 0.08);
+  color: #E8A317;
 }
 .gen-target-hint {
   font-size: 12px;
@@ -299,8 +299,8 @@ function handleGenerate() {
 .gen-progress-spinner {
   width: 28px;
   height: 28px;
-  border: 3px solid #EDE9FE;
-  border-top-color: #7C3AED;
+  border: 3px solid rgba(232, 163, 23, 0.1);
+  border-top-color: #E8A317;
   border-radius: 50%;
   animation: genSpin 0.7s linear infinite;
 }
@@ -310,7 +310,7 @@ function handleGenerate() {
 .gen-progress-text {
   font-size: 14px;
   font-weight: 600;
-  color: #7C3AED;
+  color: #E8A317;
   margin: 0;
   text-align: center;
 }
@@ -324,7 +324,7 @@ function handleGenerate() {
 .gen-progress-fill {
   height: 100%;
   width: 60%;
-  background: linear-gradient(90deg, #A78BFA, #7C3AED);
+  background: linear-gradient(90deg, #F5C34B, #E8A317);
   border-radius: 2px;
   animation: genBarPulse 1.2s ease-in-out infinite;
 }

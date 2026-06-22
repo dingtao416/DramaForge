@@ -26,7 +26,7 @@ from app.schemas.assets import (
     SceneRegenerateRequest,
     AssetsGenerateRequest,
 )
-from app.engines.assets_engine import assets_engine
+from app.engines.assets_engine import assets_engine, ImageGenerationError
 from app.services.user_model_resolver import user_model_resolver
 from app.core.security import CurrentUser, DbSession
 from app.core.billing_deps import require_credits
@@ -96,10 +96,6 @@ async def generate_assets(
     body: AssetsGenerateRequest = AssetsGenerateRequest(),
 ):
     """Generate all character + scene assets from the approved script."""
-    # Each asset generation counts as image_default cost
-    # We charge once up-front; could be per-image in future
-    await require_credits(db, user.id, "image_default", description="素材批量生成")
-
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -129,7 +125,7 @@ async def generate_assets(
     chat_resolved = await user_model_resolver.resolve(db, user.id, "chat")
     image_resolved = await user_model_resolver.resolve(db, user.id, "image")
 
-    # Generate assets
+    # Generate assets (errors on individual items don't stop the batch)
     updated_chars, updated_scenes = await assets_engine.generate_all_assets(
         script=script,
         characters=characters,
@@ -138,11 +134,21 @@ async def generate_assets(
         chat_model=chat_resolved.model_id,
         chat_api_key=chat_resolved.api_key,
         chat_base_url=chat_resolved.base_url,
+        chat_options=chat_resolved.raw_params or {},
         image_model=image_resolved.model_id,
         image_api_key=image_resolved.api_key,
         image_base_url=image_resolved.base_url,
         image_options=_media_options(image_resolved),
     )
+
+    if not updated_chars and not updated_scenes:
+        raise HTTPException(status_code=502, detail={
+            "code": "IMAGE_GENERATION_FAILED",
+            "message": "所有素材生成均失败，请检查 AI 配置或稍后重试",
+        })
+
+    # Only charge credits if at least some assets were generated
+    await require_credits(db, user.id, "image_default", description="素材批量生成")
 
     await db.flush()
 
@@ -195,8 +201,6 @@ async def regenerate_character(
     body: CharacterRegenerateRequest = CharacterRegenerateRequest(),
 ):
     """Regenerate a character's image."""
-    await require_credits(db, user.id, "image_default", description="角色图片重新生成")
-
     character = await db.get(Character, char_id)
     if not character or character.project_id != project_id:
         raise HTTPException(status_code=404, detail="Character not found")
@@ -204,16 +208,25 @@ async def regenerate_character(
     # Resolve user's image model & credentials
     resolved = await user_model_resolver.resolve(db, user.id, "image")
 
-    await assets_engine.regenerate_character_image(
-        character=character,
-        project_id=project_id,
-        prompt=body.prompt,
-        variant_count=body.variant_count,
-        image_model=resolved.model_id,
-        image_api_key=resolved.api_key,
-        image_base_url=resolved.base_url,
-        image_options=_media_options(resolved),
-    )
+    try:
+        urls = await assets_engine.regenerate_character_image(
+            character=character,
+            project_id=project_id,
+            prompt=body.prompt,
+            variant_count=body.variant_count,
+            image_model=resolved.model_id,
+            image_api_key=resolved.api_key,
+            image_base_url=resolved.base_url,
+            image_options=_media_options(resolved),
+        )
+    except ImageGenerationError as e:
+        raise HTTPException(status_code=502, detail={
+            "code": "IMAGE_GENERATION_FAILED",
+            "message": str(e),
+        })
+
+    # Only charge credits on success
+    await require_credits(db, user.id, "image_default", description="角色图片重新生成")
 
     await db.flush()
     await db.refresh(character)
@@ -262,8 +275,6 @@ async def regenerate_scene(
     body: SceneRegenerateRequest = SceneRegenerateRequest(),
 ):
     """Regenerate a scene's image."""
-    await require_credits(db, user.id, "image_default", description="场景图片重新生成")
-
     scene = await db.get(SceneLocation, scene_id)
     if not scene or scene.project_id != project_id:
         raise HTTPException(status_code=404, detail="Scene not found")
@@ -271,16 +282,25 @@ async def regenerate_scene(
     # Resolve user's image model & credentials
     resolved = await user_model_resolver.resolve(db, user.id, "image")
 
-    await assets_engine.regenerate_scene_image(
-        scene=scene,
-        project_id=project_id,
-        prompt=body.prompt,
-        variant_count=body.variant_count,
-        image_model=resolved.model_id,
-        image_api_key=resolved.api_key,
-        image_base_url=resolved.base_url,
-        image_options=_media_options(resolved),
-    )
+    try:
+        urls = await assets_engine.regenerate_scene_image(
+            scene=scene,
+            project_id=project_id,
+            prompt=body.prompt,
+            variant_count=body.variant_count,
+            image_model=resolved.model_id,
+            image_api_key=resolved.api_key,
+            image_base_url=resolved.base_url,
+            image_options=_media_options(resolved),
+        )
+    except ImageGenerationError as e:
+        raise HTTPException(status_code=502, detail={
+            "code": "IMAGE_GENERATION_FAILED",
+            "message": str(e),
+        })
+
+    # Only charge credits on success
+    await require_credits(db, user.id, "image_default", description="场景图片重新生成")
 
     await db.flush()
     await db.refresh(scene)

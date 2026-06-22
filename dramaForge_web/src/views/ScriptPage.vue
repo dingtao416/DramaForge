@@ -477,7 +477,7 @@ function onEpisodeToggle(epId: number, event: Event) {
 .script-section-title {
   font-size: 16px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: #2D2515;
   margin-bottom: 16px;
 }
 
@@ -495,7 +495,7 @@ function onEpisodeToggle(epId: number, event: Event) {
 .script-summary-label {
   font-size: 14px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: #2D2515;
   margin-bottom: 4px;
 }
 .script-summary-value {
@@ -526,7 +526,7 @@ function onEpisodeToggle(epId: number, event: Event) {
   border: 1px solid #E5E7EB;
   border-radius: 12px;
   overflow: hidden;
-  background: #fff;
+  background: #FDF5D6;
 }
 .script-episode {
   border-bottom: 1px solid #F3F4F6;
@@ -535,7 +535,7 @@ function onEpisodeToggle(epId: number, event: Event) {
   border-bottom: none;
 }
 .script-episode[open] {
-  background: #FAFAFA;
+  background: #FEF9E7;
 }
 .script-episode-summary {
   display: flex;
@@ -564,13 +564,13 @@ details[open] > .script-episode-summary .script-episode-arrow {
   transform: rotate(90deg);
 }
 .script-episode-label {
-  color: #7c3aed;
+  color: #E8A317;
   font-weight: 600;
   flex-shrink: 0;
 }
 .script-episode-title {
   font-weight: 500;
-  color: #1a1a1a;
+  color: #2D2515;
   flex: 1;
 }
 .script-episode-chars {
@@ -601,7 +601,7 @@ details[open] > .script-episode-summary .script-episode-arrow {
   align-items: center;
   justify-content: center;
   padding: 16px 0;
-  color: #D1D5DB;
+  color: #A89870;
   font-size: 12px;
   letter-spacing: 6px;
 }
@@ -612,7 +612,7 @@ details[open] > .script-episode-summary .script-episode-arrow {
   align-items: baseline;
   gap: 10px;
   padding: 10px 0 6px 0;
-  border-left: 3px solid #A78BFA;
+  border-left: 3px solid #F5C34B;
   padding-left: 14px;
   margin: 8px 0;
 }
@@ -621,8 +621,8 @@ details[open] > .script-episode-summary .script-episode-arrow {
   align-items: center;
   padding: 2px 10px;
   border-radius: 6px;
-  background: #EDE9FE;
-  color: #7C3AED;
+  background: rgba(232, 163, 23, 0.1);
+  color: #E8A317;
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
@@ -648,7 +648,7 @@ details[open] > .script-episode-summary .script-episode-arrow {
   gap: 4px;
   font-size: 13px;
   font-weight: 700;
-  color: #7C3AED;
+  color: #E8A317;
   white-space: nowrap;
   min-width: 60px;
 }
@@ -658,7 +658,7 @@ details[open] > .script-episode-summary .script-episode-arrow {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #A78BFA;
+  background: #F5C34B;
 }
 .fmt-dialogue-text {
   font-size: 15px;
@@ -740,7 +740,7 @@ details[open] > .script-episode-summary .script-episode-arrow {
   justify-content: center;
 }
 .rewrite-panel {
-  background: #fff;
+  background: #FDF5D6;
   border-radius: 20px;
   width: 90%;
   max-width: 720px;
@@ -765,7 +765,7 @@ details[open] > .script-episode-summary .script-episode-arrow {
 }
 .rewrite-subtitle {
   font-size: 13px;
-  color: #7C3AED;
+  color: #E8A317;
   margin: 4px 0 0;
   font-weight: 600;
 }
@@ -796,6 +796,6 @@ details[open] > .script-episode-summary .script-episode-arrow {
   color: #374151;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: inherit;
+  font-family: var(--font-sans);
 }
 </style>

@@ -21,7 +21,7 @@ const fields = computed(() => [
 </script>
 
 <template>
-  <div class="bg-white border border-gray-200 rounded-[12px] p-6">
+  <div class="bg-[#FEF9E7] border border-gray-200 rounded-[12px] p-6">
     <h2 class="text-[16px] font-semibold text-gray-900 mb-5">剧本摘要</h2>
 
     <div class="space-y-6">

@@ -16,7 +16,7 @@ const router = useRouter()
 
 <template>
   <aside
-    class="border-r border-[#EBEBEB] bg-white flex flex-col shrink-0 transition-all duration-200"
+    class="border-r border-[#D4C898] bg-[#FEF9E7] flex flex-col shrink-0 transition-all duration-200"
     :class="collapsed ? 'w-0 overflow-hidden border-r-0' : 'w-[240px]'"
   >
     <!-- Top: Logo + collapse -->
@@ -64,7 +64,7 @@ const router = useRouter()
   <!-- Expand button when collapsed -->
   <button
     v-if="collapsed"
-    class="absolute left-3 top-4 z-20 w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-50 cursor-pointer shadow-sm transition-colors"
+    class="absolute left-3 top-4 z-20 w-8 h-8 rounded-lg bg-[#FEF9E7] border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-50 cursor-pointer shadow-sm transition-colors"
     @click="emit('update:collapsed', false)"
   >
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="2" x2="6" y2="14" stroke="currentColor" stroke-width="1.5"/></svg>

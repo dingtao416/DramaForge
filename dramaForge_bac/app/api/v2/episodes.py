@@ -134,6 +134,9 @@ async def regenerate_episode(
     """Regenerate a single episode's content via AI, preserving downstream data."""
     if user:
         await require_credits(db, user.id, "script_gen", description="剧集内容重新生成")
+        # Commit credits immediately to release the SQLite write lock during the AI call below.
+        # If the AI call fails later, credits are already spent (fail-fast billing).
+        await db.commit()
 
     episode = await db.get(Episode, episode_id)
     if not episode:
@@ -161,8 +164,10 @@ async def regenerate_episode(
         chat_model = resolved.model_id
         chat_api_key = resolved.api_key
         chat_base_url = resolved.base_url
+        chat_options = resolved.raw_params or {}
     else:
         chat_model = chat_api_key = chat_base_url = None
+        chat_options = {}
 
     # Build context from the script and sibling episodes
     sibling_summaries = []
@@ -212,6 +217,11 @@ async def regenerate_episode(
         model=chat_model,
         api_key=chat_api_key,
         base_url=chat_base_url,
+        **{
+            k: v
+            for k, v in chat_options.items()
+            if k not in {"model", "messages", "temperature", "max_tokens", "response_format", "stream"}
+        },
     )
 
     # Update episode

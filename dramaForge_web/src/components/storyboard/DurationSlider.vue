@@ -54,7 +54,7 @@ function onInput(e: Event) {
   -webkit-appearance: none;
   appearance: none;
   height: 4px;
-  background: #e8e8e8;
+  background: #D4C898;
   border-radius: 2px;
   outline: none;
   position: relative;
@@ -65,7 +65,7 @@ function onInput(e: Event) {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #7C3AED;
+  background: #E8A317;
   border: 2px solid #fff;
   box-shadow: 0 1px 4px rgba(0,0,0,0.15);
   cursor: pointer;
@@ -76,7 +76,7 @@ function onInput(e: Event) {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #7C3AED;
+  background: #E8A317;
   border: 2px solid #fff;
   box-shadow: 0 1px 4px rgba(0,0,0,0.15);
   cursor: pointer;

@@ -429,7 +429,7 @@ watch(uploadFile, () => {
               <!-- File selected, not yet parsed -->
               <div class="wb-file-info">
                 <div class="wb-file-icon-box">
-                  <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="5" y="2" width="18" height="24" rx="3" stroke="#7c3aed" stroke-width="1.6"/><path d="M9 8h10M9 13h8M9 18h6" stroke="#7c3aed" stroke-width="1.4" stroke-linecap="round"/></svg>
+                  <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="5" y="2" width="18" height="24" rx="3" stroke="#E8A317" stroke-width="1.6"/><path d="M9 8h10M9 13h8M9 18h6" stroke="#E8A317" stroke-width="1.4" stroke-linecap="round"/></svg>
                 </div>
                 <div class="wb-file-detail">
                   <span class="wb-file-name">{{ uploadFile.name }}</span>
@@ -703,18 +703,18 @@ watch(uploadFile, () => {
    ══════════════════════════════════════════════════════ */
 .workbench-page {
   min-height: 100vh;
-  background: #fff;
+  background: #FDF5D6;
 }
 
 /* ── Top Bar ── */
 .wb-topbar {
   height: 56px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #FDF4D8;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 28px;
-  background: #fff;
+  background: #FDF5D6;
   position: sticky;
   top: 0;
   z-index: 50;
@@ -737,7 +737,7 @@ watch(uploadFile, () => {
   cursor: pointer;
   transition: all 0.15s;
 }
-.wb-back-btn:hover { background: #f5f5f5; color: #333; }
+.wb-back-btn:hover { background: #FDF4D8; color: #333; }
 
 /* ── Main ── */
 .wb-main {
@@ -766,7 +766,7 @@ watch(uploadFile, () => {
 .wb-hero-title {
   font-size: 34px;
   font-weight: 800;
-  color: #1a1a1a;
+  color: #2D2515;
   letter-spacing: -0.5px;
   margin: 0 0 10px;
 }
@@ -780,7 +780,7 @@ watch(uploadFile, () => {
    Card Area (Tabs + Upload/AI)
    ══════════════════════════════════════════════════════ */
 .wb-card-area {
-  border: 1px solid #e5e5e5;
+  border: 1px solid #D4C898;
   border-radius: 16px;
   overflow: hidden;
   margin-bottom: 16px;
@@ -789,7 +789,7 @@ watch(uploadFile, () => {
 /* ── Tabs ── */
 .wb-tabs {
   display: flex;
-  border-bottom: 1px solid #e5e5e5;
+  border-bottom: 1px solid #D4C898;
 }
 .wb-tab {
   flex: 1;
@@ -798,7 +798,7 @@ watch(uploadFile, () => {
   justify-content: center;
   gap: 8px;
   padding: 16px 0;
-  background: #fafafa;
+  background: #FEF9E7;
   border: none;
   font-size: 14px;
   font-weight: 600;
@@ -808,11 +808,11 @@ watch(uploadFile, () => {
   position: relative;
 }
 .wb-tab.active {
-  background: #fff;
-  color: #1a1a1a;
+  background: #FDF5D6;
+  color: #2D2515;
 }
 .wb-tab:not(:last-child) {
-  border-right: 1px solid #e5e5e5;
+  border-right: 1px solid #D4C898;
 }
 .wb-tab.active::after {
   content: '';
@@ -821,7 +821,7 @@ watch(uploadFile, () => {
   left: 20%;
   right: 20%;
   height: 2px;
-  background: #1a1a1a;
+  background: #2D2515;
   border-radius: 1px;
 }
 .wb-tab-badge {
@@ -846,15 +846,15 @@ watch(uploadFile, () => {
   padding: 40px;
   text-align: center;
   transition: all 0.2s;
-  background: #fafafa;
+  background: #FEF9E7;
 }
 .wb-upload-zone.dragging {
-  border-color: #7c3aed;
-  background: #F9F5FF;
+  border-color: #E8A317;
+  background: rgba(232, 163, 23, 0.08);
 }
 .wb-upload-zone.has-file {
   border-style: solid;
-  border-color: #7c3aed;
+  border-color: #E8A317;
   background: #FDFBFF;
 }
 .wb-upload-hint {
@@ -867,18 +867,18 @@ watch(uploadFile, () => {
   align-items: center;
   gap: 8px;
   padding: 10px 28px;
-  border: 1.5px solid #1a1a1a;
+  border: 1.5px solid #2D2515;
   border-radius: 24px;
-  background: #fff;
+  background: #FDF5D6;
   font-size: 14px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #2D2515;
   cursor: pointer;
   transition: all 0.15s;
 }
 .wb-upload-btn:hover {
-  background: #1a1a1a;
-  color: #fff;
+  background: #2D2515;
+  color: #FFFFFF;
 }
 
 /* ── File Info ── */
@@ -909,7 +909,7 @@ watch(uploadFile, () => {
   height: 28px;
   border-radius: 50%;
   border: none;
-  background: #f5f5f5;
+  background: #FDF4D8;
   color: #999;
   font-size: 13px;
   cursor: pointer;
@@ -929,8 +929,8 @@ watch(uploadFile, () => {
   padding: 12px 36px;
   border: none;
   border-radius: 12px;
-  background: #1a1a1a;
-  color: #fff;
+  background: #2D2515;
+  color: #FFFFFF;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
@@ -982,18 +982,18 @@ watch(uploadFile, () => {
 }
 .wb-genre-tag, .wb-episode-tag {
   padding: 6px 16px;
-  border: 1.5px solid #e5e5e5;
+  border: 1.5px solid #D4C898;
   border-radius: 20px;
-  background: #fff;
+  background: #FDF5D6;
   font-size: 13px;
   color: #666;
   cursor: pointer;
   transition: all 0.15s;
 }
 .wb-genre-tag.active, .wb-episode-tag.active {
-  border-color: #7c3aed;
-  background: #F9F5FF;
-  color: #7c3aed;
+  border-color: #E8A317;
+  background: rgba(232, 163, 23, 0.08);
+  color: #E8A317;
   font-weight: 600;
 }
 .wb-genre-tag:hover:not(.active), .wb-episode-tag:hover:not(.active) {
@@ -1006,18 +1006,18 @@ watch(uploadFile, () => {
 .wb-textarea {
   width: 100%;
   padding: 14px 16px;
-  border: 1.5px solid #e5e5e5;
+  border: 1.5px solid #D4C898;
   border-radius: 12px;
   font-size: 14px;
   color: #333;
   resize: vertical;
   outline: none;
   transition: border-color 0.15s;
-  font-family: inherit;
+  font-family: var(--font-sans);
   line-height: 1.6;
 }
 .wb-textarea::placeholder { color: #ccc; }
-.wb-textarea:focus { border-color: #7c3aed; }
+.wb-textarea:focus { border-color: #E8A317; }
 
 /* ── Stream Preview ── */
 .wb-cancel-btn {
@@ -1032,7 +1032,7 @@ watch(uploadFile, () => {
   border: 1.5px solid #E5E7EB;
   border-radius: 12px;
   overflow: hidden;
-  background: #FAFAFA;
+  background: #FEF9E7;
 }
 .wb-stream-label {
   display: flex;
@@ -1041,13 +1041,13 @@ watch(uploadFile, () => {
   padding: 10px 16px;
   font-size: 12px;
   font-weight: 600;
-  color: #7C3AED;
-  background: #F5F3FF;
-  border-bottom: 1px solid #EDE9FE;
+  color: #E8A317;
+  background: rgba(232, 163, 23, 0.08);
+  border-bottom: 1px solid rgba(232, 163, 23, 0.1);
 }
 .wb-stream-phase {
   font-weight: 400;
-  color: #A78BFA;
+  color: #F5C34B;
   font-size: 11px;
   margin-left: auto;
 }
@@ -1089,7 +1089,7 @@ watch(uploadFile, () => {
   transition: all 0.3s;
 }
 .wb-gen-stat.active {
-  background: #EDE9FE;
+  background: rgba(232, 163, 23, 0.1);
 }
 .wb-gen-stat-num {
   font-size: 18px;
@@ -1097,14 +1097,14 @@ watch(uploadFile, () => {
   color: #9CA3AF;
 }
 .wb-gen-stat.active .wb-gen-stat-num {
-  color: #7C3AED;
+  color: #E8A317;
 }
 .wb-gen-stat-label {
   font-size: 11px;
   color: #9CA3AF;
 }
 .wb-gen-synopsis {
-  background: #fff;
+  background: #FDF5D6;
   border: 1px solid #F3F4F6;
   border-radius: 10px;
   padding: 12px;
@@ -1122,13 +1122,13 @@ watch(uploadFile, () => {
 }
 .wb-gen-progress-bar {
   height: 3px;
-  background: #EDE9FE;
+  background: rgba(232, 163, 23, 0.1);
   border-radius: 2px;
   overflow: hidden;
 }
 .wb-gen-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #A78BFA, #7C3AED);
+  background: linear-gradient(90deg, #F5C34B, #E8A317);
   border-radius: 2px;
   transition: width 0.5s ease;
 }
@@ -1148,7 +1148,7 @@ watch(uploadFile, () => {
 .wb-section-title {
   font-size: 20px;
   font-weight: 800;
-  color: #1a1a1a;
+  color: #2D2515;
   margin: 0;
 }
 .wb-header-actions {
@@ -1159,29 +1159,29 @@ watch(uploadFile, () => {
 
 .wb-manage-btn {
   padding: 6px 18px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #D4C898;
   border-radius: 8px;
-  background: #fff;
+  background: #FDF5D6;
   font-size: 13px;
   font-weight: 500;
   color: #666;
   cursor: pointer;
   transition: all 0.15s;
 }
-.wb-manage-btn:hover { border-color: #ccc; background: #fafafa; }
+.wb-manage-btn:hover { border-color: #ccc; background: #FEF9E7; }
 
 .wb-seed-btn {
   padding: 6px 16px;
-  border: 1px solid #7c3aed;
+  border: 1px solid #E8A317;
   border-radius: 8px;
-  background: #F9F5FF;
-  color: #7c3aed;
+  background: rgba(232, 163, 23, 0.08);
+  color: #E8A317;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
 }
-.wb-seed-btn:hover { background: #EDE9FE; }
+.wb-seed-btn:hover { background: rgba(232, 163, 23, 0.1); }
 .wb-seed-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Empty state */
@@ -1196,14 +1196,14 @@ watch(uploadFile, () => {
   padding: 10px 28px;
   border: none;
   border-radius: 12px;
-  background: #7c3aed;
-  color: #fff;
+  background: #E8A317;
+  color: #2D2515;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
 }
-.wb-seed-btn-lg:hover { background: #6d28d9; }
+.wb-seed-btn-lg:hover { background: #C88A0C; }
 .wb-seed-btn-lg:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .wb-project-grid {
@@ -1224,7 +1224,7 @@ watch(uploadFile, () => {
   overflow: hidden;
   cursor: pointer;
   transition: all 0.2s;
-  background: #fff;
+  background: #FDF5D6;
 }
 .wb-project-card:hover {
   border-color: #ddd;
@@ -1259,7 +1259,7 @@ watch(uploadFile, () => {
   left: 10px;
   padding: 3px 10px;
   background: #ef4444;
-  color: #fff;
+  color: #2D2515;
   font-size: 11px;
   font-weight: 600;
   border-radius: 4px;
@@ -1274,7 +1274,7 @@ watch(uploadFile, () => {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  color: #fff;
+  color: #2D2515;
   text-align: center;
 }
 .wb-project-cover-icon {
@@ -1308,7 +1308,7 @@ watch(uploadFile, () => {
 .wb-project-name {
   font-size: 14px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: #2D2515;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1322,7 +1322,7 @@ watch(uploadFile, () => {
   gap: 0;
 }
 .wb-project-genre {
-  color: #7c3aed;
+  color: #E8A317;
   font-weight: 500;
 }
 .wb-meta-sep {
@@ -1347,7 +1347,7 @@ watch(uploadFile, () => {
 .wb-spinner-lg {
   width: 32px;
   height: 32px;
-  border: 3px solid #7c3aed;
+  border: 3px solid #E8A317;
   border-top-color: transparent;
   border-radius: 50%;
   animation: wbspin 0.7s linear infinite;
@@ -1381,7 +1381,7 @@ watch(uploadFile, () => {
   width: 48px;
   height: 48px;
   border-radius: 12px;
-  background: #F3F0FF;
+  background: rgba(232, 163, 23, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1396,7 +1396,7 @@ watch(uploadFile, () => {
   border: 1.5px solid #e5e7eb;
   border-radius: 16px;
   overflow: hidden;
-  background: #fff;
+  background: #FDF5D6;
   box-shadow: 0 1px 3px rgba(0,0,0,0.03);
 }
 
@@ -1433,7 +1433,7 @@ watch(uploadFile, () => {
 }
 .wb-meta-dot {
   margin: 0 6px;
-  color: #d1d5db;
+  color: #A89870;
 }
 
 /* Preview Content */
@@ -1489,10 +1489,10 @@ watch(uploadFile, () => {
   transition: background 0.15s;
 }
 .wb-line-dialogue:hover {
-  background: #F5F3FF;
+  background: rgba(232, 163, 23, 0.08);
 }
 .wb-char-name {
-  color: #7C3AED;
+  color: #E8A317;
   font-weight: 700;
   font-size: 13px;
   flex-shrink: 0;
@@ -1500,7 +1500,7 @@ watch(uploadFile, () => {
   text-align: right;
 }
 .wb-dialogue-sep {
-  color: #d1d5db;
+  color: #A89870;
   margin: 0 2px;
 }
 .wb-dialogue-text {
@@ -1541,7 +1541,7 @@ watch(uploadFile, () => {
   padding: 6px 16px;
   border: 1px solid #e5e7eb;
   border-radius: 20px;
-  background: #fff;
+  background: #FDF5D6;
   font-size: 13px;
   color: #6B7280;
   cursor: pointer;
@@ -1550,7 +1550,7 @@ watch(uploadFile, () => {
 .wb-expand-btn:hover {
   background: #f9fafb;
   color: #374151;
-  border-color: #d1d5db;
+  border-color: #A89870;
 }
 .wb-expand-btn svg {
   transition: transform 0.2s;
@@ -1573,8 +1573,8 @@ watch(uploadFile, () => {
   padding: 14px 48px;
   border: none;
   border-radius: 14px;
-  background: linear-gradient(135deg, #7C3AED, #6D28D9);
-  color: #fff;
+  background: linear-gradient(135deg, #E8A317, #C88A0C);
+  color: #2D2515;
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;

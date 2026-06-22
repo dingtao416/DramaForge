@@ -24,7 +24,7 @@ function formatDate(dateStr: string) {
     <div
       v-for="asset in assets"
       :key="asset.id"
-      class="bg-white border border-gray-200 rounded-[12px] overflow-hidden group hover:border-gray-300 hover:shadow-[0_2px_8px_rgba(0,0,0,0.06)] transition-all"
+      class="bg-[#FEF9E7] border border-gray-200 rounded-[12px] overflow-hidden group hover:border-gray-300 hover:shadow-[0_2px_8px_rgba(0,0,0,0.06)] transition-all"
     >
       <!-- Image -->
       <div class="aspect-square bg-gray-100 overflow-hidden">

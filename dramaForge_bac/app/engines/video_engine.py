@@ -52,6 +52,7 @@ class VideoEngine:
         chat_model: str = None,
         chat_api_key: str = None,
         chat_base_url: str = None,
+        chat_options: dict | None = None,
     ) -> list[dict]:
         """
         Use LLM to split an episode into structured segments and shots.
@@ -90,6 +91,7 @@ class VideoEngine:
             model=chat_model,
             api_key=chat_api_key,
             base_url=chat_base_url,
+            **_extra_chat_kwargs(chat_options),
         )
 
         # Parse and resolve references
@@ -268,25 +270,32 @@ class VideoEngine:
 
     def _decide_video_strategy(self, segment: Segment) -> str:
         """
-        Decide the video generation strategy for a segment.
-
-        Returns:
-            "ai_video" — use AI video generation (motion shots)
-            "img2video" — convert image to video with Ken Burns
-            "static_compose" — static image + audio via FFmpeg
+        (deprecated) Decide the video generation strategy for a segment.
+        Kept for backward compatibility.  Prefer per-shot strategy via
+        :meth:`_decide_shot_strategy`.
         """
         if not segment.shots:
             return "static_compose"
-
-        # Check if any shot has camera movement
         has_motion = any(
             (s.camera_movement and s.camera_movement != "static")
             for s in segment.shots
         )
-
         if has_motion:
             return "ai_video"
+        return "static_compose"
 
+    def _decide_shot_strategy(self, shot: Shot) -> str:
+        """
+        Decide the video generation strategy for a single shot.
+
+        Returns:
+            "ai_video" — use AI video generation (Sora / Veo / etc.)
+            "static_compose" — image + optional audio via FFmpeg
+        """
+        has_motion = shot.camera_movement and shot.camera_movement != "static"
+        has_prompt = bool(shot.video_prompt or shot.image_prompt)
+        if has_motion and has_prompt:
+            return "ai_video"
         return "static_compose"
 
     async def _generate_segment_video(
@@ -299,55 +308,211 @@ class VideoEngine:
         video_base_url: str = None,
         video_options: dict | None = None,
     ) -> str:
-        """Generate video for a segment based on strategy."""
+        """
+        Compose a segment video from its shots.
+
+        Per-shot strategy:
+        - static_compose: image + audio → clip (Ken Burns + subtitle + colour)
+        - ai_video:       AI video generation for motion shots
+
+        All shot clips are composed in parallel, then concatenated with
+        smooth transitions (xfade).  Failed shots produce a placeholder.
+        """
         from app.services.ffmpeg import ffmpeg_service
 
-        strategy = self._decide_video_strategy(segment)
-        logger.info(f"VideoEngine: segment={segment.id} strategy={strategy}")
-
         output_path = storage.segment_video_path(project_id, ep_num, segment.index)
+        seg_dir = output_path.parent
 
-        if strategy == "static_compose":
-            # Compose each shot: image + audio → clip, then concat
-            clip_paths = []
-            for shot in segment.shots:
-                if shot.image_url:
-                    image_file = storage.storage_path_from_url(shot.image_url) if hasattr(storage, 'storage_path_from_url') else shot.image_url
-                    audio_file = shot.audio_url if shot.audio_url else None
-                    clip_path = storage.segment_video_path(
-                        project_id, ep_num, segment.index
-                    ).parent / f"shot_{shot.index:04d}.mp4"
+        # ── 1. Compose each shot clip in parallel ──
+        sem = asyncio.Semaphore(4)  # Limit concurrent FFmpeg processes
 
+        async def _compose_one_shot(shot: Shot) -> tuple[int, str | None, str, float]:
+            """
+            Compose a single shot clip.  Returns (shot_index, clip_path_or_None,
+            transition, duration).  clip_path is None on failure.
+            """
+            async with sem:
+                strategy = self._decide_shot_strategy(shot)
+                shot_clip = seg_dir / f"shot_{shot.index:04d}.mp4"
+                duration = shot.duration or 5.0
+
+                if strategy == "ai_video":
+                    video_prompt = shot.video_prompt or shot.image_prompt or ""
+                    if video_prompt:
+                        logger.info(
+                            f"VideoEngine: shot={shot.id} ai_video "
+                            f"prompt_len={len(video_prompt)}"
+                        )
+                        try:
+                            await ai_hub.video.generate(
+                                prompt=video_prompt,
+                                output_path=str(shot_clip),
+                                model=video_model,
+                                api_key=video_api_key,
+                                base_url=video_base_url,
+                                raw_params={
+                                    "duration": duration,
+                                    **((video_options or {}).get("raw_params") or {}),
+                                },
+                                **{
+                                    k: v
+                                    for k, v in (video_options or {}).items()
+                                    if k != "raw_params"
+                                },
+                            )
+                            shot.shot_status = "completed"
+                            return (shot.index, str(shot_clip), shot.transition or "cut", duration)
+                        except Exception as e:
+                            logger.error(
+                                f"VideoEngine: shot={shot.id} ai_video FAILED: {e}"
+                            )
+                            shot.shot_status = "failed"
+                            shot.error_message = str(e)[:500]
+
+                # static_compose (or ai_video fallback)
+                image_file = storage.storage_path_from_url(shot.image_url)
+                if not image_file:
+                    logger.warning(f"VideoEngine: shot={shot.id} no image")
+                    return (shot.index, None, shot.transition or "cut", duration)
+
+                audio_file = (
+                    storage.storage_path_from_url(shot.audio_url)
+                    if shot.audio_url
+                    else None
+                )
+
+                try:
                     await ffmpeg_service.compose_static_video(
                         image_path=str(image_file),
                         audio_path=str(audio_file) if audio_file else None,
-                        duration=shot.duration or 5.0,
-                        output_path=str(clip_path),
+                        duration=duration,
+                        output_path=str(shot_clip),
+                        camera_movement=shot.camera_movement or "static",
+                        time_of_day=shot.time_of_day or "day",
+                        subtitle_text=shot.dialogue or None,
                     )
-                    clip_paths.append(str(clip_path))
-
-            if clip_paths:
-                await ffmpeg_service.concat_segments(clip_paths, str(output_path))
-
-        elif strategy == "ai_video":
-            # Use AI video generation for the first shot's prompt
-            if segment.shots:
-                shot = segment.shots[0]
-                video_prompt = shot.video_prompt or shot.image_prompt or ""
-                if video_prompt:
-                    result = await ai_hub.video.generate(
-                        prompt=video_prompt,
-                        output_path=str(output_path),
-                        model=video_model,
-                        api_key=video_api_key,
-                        base_url=video_base_url,
-                        raw_params={"duration": shot.duration or 5, **((video_options or {}).get("raw_params") or {})},
-                        **{k: v for k, v in (video_options or {}).items() if k != "raw_params"},
+                    shot.shot_status = "completed"
+                    return (shot.index, str(shot_clip), shot.transition or "cut", duration)
+                except Exception as e:
+                    logger.error(
+                        f"VideoEngine: shot={shot.id} static_compose FAILED: {e}"
                     )
+                    shot.shot_status = "failed"
+                    shot.error_message = str(e)[:500]
+                    return (shot.index, None, shot.transition or "cut", duration)
 
+        # Run all shots in parallel
+        results = await asyncio.gather(
+            *[_compose_one_shot(s) for s in segment.shots],
+            return_exceptions=True,
+        )
+
+        # ── 2. Collect results; generate placeholders for failures ──
+        clip_data: list[tuple[str, str, float]] = []
+        failed_shots = 0
+
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"VideoEngine: shot composition exception: {result}")
+                failed_shots += 1
+                continue
+
+            shot_idx, clip_path, transition, duration = result
+            if clip_path:
+                clip_data.append((clip_path, transition, duration))
+            else:
+                # Generate a placeholder clip for the failed shot
+                placeholder = seg_dir / f"shot_{shot_idx:04d}_placeholder.mp4"
+                try:
+                    await self._create_placeholder_clip(
+                        str(placeholder), duration, shot_idx
+                    )
+                    clip_data.append((str(placeholder), "cut", duration))
+                except Exception as e:
+                    logger.error(f"VideoEngine: placeholder clip failed: {e}")
+                failed_shots += 1
+
+        if not clip_data:
+            raise ValueError(f"No clips generated for segment {segment.id}")
+
+        # ── 3. Concatenate with transitions ──
+        await ffmpeg_service.concat_with_transitions(
+            clip_data, str(output_path), transition_duration=0.5
+        )
+
+        # ── 4. Optional: mix segment with BGM (ducking) ──
+        bgm_dir = storage.project_path(project_id) / "bgm"
+        bgm_path = None
+        if bgm_dir.exists():
+            for ext in ("mp3", "wav", "m4a", "aac", "ogg"):
+                candidate = bgm_dir / f"background.{ext}"
+                if candidate.exists():
+                    bgm_path = str(candidate)
+                    break
+
+        if bgm_path:
+            try:
+                mixed_output = seg_dir / f"segment_{segment.index:04d}_mixed.mp4"
+                # Extract audio from composed video, mix with BGM, mux back
+                await ffmpeg_service.mix_audio_with_ducking(
+                    main_audio_path=str(output_path),
+                    bgm_path=bgm_path,
+                    output_path=str(mixed_output),
+                )
+                # Replace with mixed version
+                import shutil
+                shutil.move(str(mixed_output), str(output_path))
+                logger.info(
+                    f"VideoEngine: segment={segment.id} BGM ducking applied"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"VideoEngine: segment={segment.id} BGM ducking failed: {e}"
+                )
+
+        # ── 5. Finalise ──
         segment.video_url = storage.get_url(output_path)
-        segment.status = SegmentStatus.COMPLETED
+        if failed_shots > 0:
+            segment.status = SegmentStatus.PARTIAL
+            logger.warning(
+                f"VideoEngine: segment={segment.id} PARTIAL — "
+                f"{failed_shots}/{len(segment.shots)} shots failed"
+            )
+        else:
+            segment.status = SegmentStatus.COMPLETED
+
         return str(output_path)
+
+    async def _create_placeholder_clip(
+        self, output_path: str, duration: float, shot_index: int,
+        width: int = 1080, height: int = 1920,
+    ) -> str:
+        """Create a placeholder video for a failed shot."""
+        from app.services.ffmpeg import ffmpeg_service
+
+        cmd = [
+            ffmpeg_service.ffmpeg, "-y",
+            "-f", "lavfi",
+            "-i", f"color=c=black:s={width}x{height}:d={duration}:r=30",
+            "-vf",
+            (
+                f"drawtext=text='Shot {shot_index}: Generation Failed'"
+                f":fontcolor=red:fontsize=36"
+                f":x=(w-tw)/2:y=(h-th)/2,"
+                f"drawtext=text='(Placeholder)'"
+                f":fontcolor=gray:fontsize=24"
+                f":x=(w-tw)/2:y=(h-th)/2+40"
+            ),
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "28",
+            "-pix_fmt", "yuv420p",
+            "-an",
+            output_path,
+        ]
+        await ffmpeg_service._run(cmd)
+        logger.info(f"VideoEngine: placeholder clip → {output_path}")
+        return output_path
 
     # ═══════════════════════════════════════════════════════════════
     # Spec 26: Full generation pipeline
@@ -364,6 +529,7 @@ class VideoEngine:
         chat_model: str = None,
         chat_api_key: str = None,
         chat_base_url: str = None,
+        chat_options: dict | None = None,
         image_model: str = None,
         image_api_key: str = None,
         image_base_url: str = None,
@@ -390,6 +556,7 @@ class VideoEngine:
         segments_data = await self.split_storyboard(
             episode, characters, scenes, shots_per_segment,
             chat_model=chat_model, chat_api_key=chat_api_key, chat_base_url=chat_base_url,
+            chat_options=chat_options,
         )
 
         # Step 2: Create ORM objects (caller is responsible for DB session)
@@ -427,6 +594,7 @@ class VideoEngine:
         image_model: str = None,
         image_api_key: str = None,
         image_base_url: str = None,
+        image_options: dict | None = None,
         tts_model: str = None,
         tts_api_key: str = None,
         tts_base_url: str = None,
@@ -533,3 +701,8 @@ class VideoEngine:
 
 # Module-level singleton
 video_engine = VideoEngine()
+
+
+def _extra_chat_kwargs(options: dict | None) -> dict:
+    blocked = {"model", "messages", "temperature", "max_tokens", "response_format", "stream"}
+    return {k: v for k, v in (options or {}).items() if k not in blocked}

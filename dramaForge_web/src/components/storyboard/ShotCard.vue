@@ -14,8 +14,8 @@ const emit = defineEmits<{
 
 <template>
   <div
-    class="bg-white border rounded-[12px] p-4 cursor-pointer transition-all"
-    :class="active ? 'border-primary-400 ring-2 ring-primary-100 shadow-sm' : 'border-gray-200 hover:border-gray-300 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]'"
+    class="bg-[#FEF9E7] border rounded-[2px] p-4 cursor-pointer transition-all"
+    :class="active ? 'border-primary-400 border-2 border-[#D4C898] !shadow-pixel' : 'border-[#D4C898] hover:border-[#D4C898] hover:shadow-[2px_2px_0_0_rgba(0,0,0,0.1)]'"
     @click="emit('select')"
   >
     <!-- Header -->

@@ -1,4 +1,4 @@
-export type MediaCapability = 'image' | 'video'
+export type MediaCapability = 'chat' | 'image' | 'video'
 
 export type MediaJobStatus = 'created' | 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 

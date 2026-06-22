@@ -87,7 +87,7 @@ const mainImage = computed(() => props.scene.reference_images?.[0])
   align-items: center;
   justify-content: center;
   font-size: 40px;
-  color: #D1D5DB;
+  color: #A89870;
 }
 
 /* Action buttons */
@@ -126,16 +126,16 @@ const mainImage = computed(() => props.scene.reference_images?.[0])
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 .scene-action-btn:hover {
-  background: #fff;
-  color: #7C3AED;
-  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.2);
+  background: #FDF5D6;
+  color: #E8A317;
+  box-shadow: 0 4px 12px rgba(232, 163, 23, 0.2);
 }
 .scene-action-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
 .scene-action-spin {
-  color: #7C3AED !important;
+  color: #E8A317 !important;
 }
 
 /* Info */

@@ -57,6 +57,10 @@ function toggleFullscreen() {
   videoRef.value?.requestFullscreen?.()
 }
 
+function openSource() {
+  if (props.src) window.open(props.src, '_blank')
+}
+
 function formatTime(s: number) {
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)
@@ -69,7 +73,7 @@ const progress = computed(() =>
 </script>
 
 <template>
-  <div class="relative bg-black rounded-[8px] overflow-hidden">
+  <div class="relative bg-black rounded-[2px] overflow-hidden">
     <video
       v-if="src"
       ref="videoRef"
@@ -89,8 +93,8 @@ const progress = computed(() =>
     <!-- Controls overlay -->
     <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3">
       <!-- Progress bar -->
-      <div class="h-1 bg-white/30 rounded-full mb-2 cursor-pointer" @click="seek">
-        <div class="h-full bg-white rounded-full transition-all" :style="{ width: `${progress}%` }" />
+      <div class="h-1 bg-[#FEF9E7]/30 rounded-full mb-2 cursor-pointer" @click="seek">
+        <div class="h-full bg-[#FEF9E7] rounded-full transition-all" :style="{ width: `${progress}%` }" />
       </div>
 
       <div class="flex items-center gap-3 text-white">
@@ -103,7 +107,7 @@ const progress = computed(() =>
         <div class="flex-1" />
         <button class="text-[14px] cursor-pointer opacity-80 hover:opacity-100">🔈</button>
         <button class="text-[14px] cursor-pointer opacity-80 hover:opacity-100" @click="toggleFullscreen">🔲</button>
-        <button class="text-[14px] cursor-pointer opacity-80 hover:opacity-100">⬇</button>
+        <button class="text-[14px] cursor-pointer opacity-80 hover:opacity-100" @click="openSource">⬇</button>
       </div>
     </div>
   </div>

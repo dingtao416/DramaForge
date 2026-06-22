@@ -86,7 +86,7 @@ const mainImage = computed(() => props.character.reference_images?.[0])
   align-items: center;
   justify-content: center;
   font-size: 40px;
-  color: #D1D5DB;
+  color: #A89870;
 }
 
 .char-role-badge {
@@ -95,8 +95,8 @@ const mainImage = computed(() => props.character.reference_images?.[0])
   left: 8px;
   padding: 3px 10px;
   border-radius: 6px;
-  background: #7C3AED;
-  color: #fff;
+  background: #E8A317;
+  color: #2D2515;
   font-size: 11px;
   font-weight: 600;
 }
@@ -138,16 +138,16 @@ const mainImage = computed(() => props.character.reference_images?.[0])
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 .char-action-btn:hover {
-  background: #fff;
-  color: #7C3AED;
-  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.2);
+  background: #FDF5D6;
+  color: #E8A317;
+  box-shadow: 0 4px 12px rgba(232, 163, 23, 0.2);
 }
 .char-action-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
 .char-action-spin {
-  color: #7C3AED !important;
+  color: #E8A317 !important;
 }
 
 /* Info */

@@ -104,7 +104,7 @@ function formatDate(dateStr: string) {
 
           <div class="flex items-center gap-2 mb-3">
             <span class="badge badge-primary">{{ VideoStyleLabel[p.style] }}</span>
-            <span class="badge" style="background:#f5f5f5;color:#666">{{ DramaGenreLabel[p.genre] }}</span>
+            <span class="badge" style="background:#FDF4D8;color:#666">{{ DramaGenreLabel[p.genre] }}</span>
           </div>
 
           <div class="flex items-center justify-between text-[12px] text-gray-400">
@@ -141,7 +141,7 @@ function formatDate(dateStr: string) {
   opacity: 1;
 }
 .duplicate-btn:hover {
-  background: #f5f5f5;
+  background: #FDF4D8;
   color: #666;
 }
 .duplicate-btn:disabled {

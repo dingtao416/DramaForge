@@ -1,7 +1,4 @@
 <script setup lang="ts">
-/**
- * BottomSheet — 从底部滑出的悬浮窗
- */
 import { watch } from 'vue'
 
 const props = defineProps<{
@@ -14,7 +11,6 @@ const emit = defineEmits<{
   close: []
 }>()
 
-// Prevent body scroll when open
 watch(() => props.visible, (val) => {
   document.body.style.overflow = val ? 'hidden' : ''
 })
@@ -46,7 +42,7 @@ watch(() => props.visible, (val) => {
 .sheet-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.6);
   z-index: 1000;
   display: flex;
   align-items: flex-end;
@@ -57,11 +53,13 @@ watch(() => props.visible, (val) => {
 .sheet-panel {
   width: 100%;
   max-width: 640px;
-  background: #fff;
-  border-radius: 20px 20px 0 0;
+  background: #FDF5D6;
+  border-top: 3px solid #F5C34B;
+  border-radius: 2px 2px 0 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 -4px 0 0 rgba(0, 0, 0, 0.3);
 }
 
 .sheet-header {
@@ -73,29 +71,30 @@ watch(() => props.visible, (val) => {
 }
 
 .sheet-title {
-  font-size: 17px;
-  font-weight: 700;
-  color: #1a1a1a;
+  font-size: 16px;
+  font-family: 'Press Start 2P', monospace;
+  color: #111111;
   margin: 0;
 }
 
 .sheet-close {
   width: 32px;
   height: 32px;
-  border-radius: 10px;
-  border: none;
-  background: #f5f5f5;
+  border-radius: 2px;
+  border: 2px solid #D4C898;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #666;
+  color: #6B5D40;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .sheet-close:hover {
-  background: #eee;
-  color: #333;
+  background: rgba(0,0,0,0.04);
+  color: #F5C34B;
+  border-color: #F5C34B;
 }
 
 .sheet-body {
@@ -112,7 +111,7 @@ watch(() => props.visible, (val) => {
 
 .sheet-enter-active .sheet-panel,
 .sheet-leave-active .sheet-panel {
-  transition: transform 0.3s ease;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .sheet-enter-from,
