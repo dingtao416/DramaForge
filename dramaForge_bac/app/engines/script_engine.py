@@ -301,6 +301,7 @@ class ScriptEngine:
     def _parse_json_from_text(text: str) -> dict:
         """Extract and parse JSON from LLM output, with fallback strategies."""
         import json as _json
+        import re
 
         # Strategy 1: Direct parse
         try:
@@ -325,6 +326,16 @@ class ScriptEngine:
         if start >= 0 and end > start:
             try:
                 return _json.loads(text[start:end + 1])
+            except _json.JSONDecodeError:
+                pass
+
+        # Strategy 4: Fix common LLM JSON issues
+        if start >= 0 and end > start:
+            try:
+                candidate = text[start:end + 1]
+                candidate = re.sub(r',\s*}', '}', candidate)
+                candidate = re.sub(r',\s*]', ']', candidate)
+                return _json.loads(candidate)
             except _json.JSONDecodeError:
                 pass
 

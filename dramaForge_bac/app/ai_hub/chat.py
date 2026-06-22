@@ -247,11 +247,15 @@ class ChatService:
 
 def _parse_json(text: str) -> dict:
     """Best-effort JSON extraction from LLM output."""
+    import re
+
+    # Strategy 1: Direct parse
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # Try markdown fenced blocks
+
+    # Strategy 2: Extract from ```json ... ``` or ``` ... ``` blocks
     for fence in ("```json", "```"):
         if fence in text:
             inner = text.split(fence, 1)[1].split("```", 1)[0].strip()
@@ -259,4 +263,22 @@ def _parse_json(text: str) -> dict:
                 return json.loads(inner)
             except json.JSONDecodeError:
                 continue
+
+    # Strategy 3: Find first { to last }
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            pass
+
+    # Strategy 4: Try fixing common LLM JSON issues (trailing commas, unquoted keys)
+    try:
+        fixed = re.sub(r',\s*}', '}', text[start:end + 1] if start >= 0 and end > start else text)
+        fixed = re.sub(r',\s*]', ']', fixed)
+        return json.loads(fixed)
+    except (json.JSONDecodeError, UnboundLocalError):
+        pass
+
     raise ValueError(f"Cannot parse JSON from LLM output (length={len(text)})")
