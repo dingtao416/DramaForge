@@ -69,6 +69,11 @@ export const scriptsApi = {
     return api.post<ScriptDetail>(`/projects/${projectId}/script/approve`)
   },
 
+  /** 取消正在进行的剧本生成 */
+  cancelGeneration(projectId: number) {
+    return api.post<{ message: string; status: string }>(`/projects/${projectId}/script/cancel-generation`)
+  },
+
   /** 导出剧本 */
   async exportScript(projectId: number, format: 'docx' | 'txt' = 'docx') {
     const token = getToken()

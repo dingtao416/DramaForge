@@ -4,8 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
 import { useScriptStore } from '@/stores/script'
 import { useGenerationStore } from '@/stores/generation'
-import { scriptsApi } from '@/api/scripts'
-import { ProjectStep } from '@/types/enums'
+import { DramaGenreLabel, ProjectStep } from '@/types/enums'
 import LoadingOverlay from '@/components/common/LoadingOverlay.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
@@ -16,10 +15,6 @@ const scriptStore = useScriptStore()
 const genStore = useGenerationStore()
 
 const projectId = Number(route.params.id)
-const rewriting = ref(false)
-const rewriteContent = ref('')
-const exporting = ref(false)
-let rewriteAbortController: AbortController | null = null
 
 // Check if generation is still running for this project
 const genRunning = ref(false)
@@ -86,37 +81,99 @@ const styleTags = computed(() => {
   return style ? (styleTagsMap[style] || style) : ''
 })
 
-async function handleRewrite() {
-  if (rewriting.value) return
-  rewriting.value = true
-  rewriteContent.value = ''
-
-  rewriteAbortController = new AbortController()
+const rawScriptPayload = computed<Record<string, any>>(() => {
+  const raw = scriptStore.script?.raw_content
+  if (!raw) return {}
 
   try {
-    await scriptStore.rewriteNarrationStream(
-      projectId,
-      {
-        onContent: (chunk: string) => {
-          rewriteContent.value += chunk
-        },
-        onDone: (content: string) => {
-          scriptStore.fetchScript(projectId)
-        },
-        onError: (errMsg: string) => {
-          console.error('Narration rewrite failed:', errMsg)
-        },
-      },
-      rewriteAbortController.signal,
-    )
-  } catch (e: any) {
-    if (e.name !== 'AbortError') {
-      console.error('Narration rewrite failed:', e)
-    }
-  } finally {
-    rewriting.value = false
-    rewriteAbortController = null
+    return JSON.parse(raw)
+  } catch {
+    return {}
   }
+})
+
+const originalIdea = computed(() => {
+  const projectDescription = projectStore.currentProject?.description?.trim()
+  const scriptSeed = scriptStore.script?.one_liner?.trim() || scriptStore.script?.synopsis?.trim()
+  return projectDescription || scriptSeed || '暂无原始创意'
+})
+
+const summaryStats = computed(() => {
+  const script = scriptStore.script
+  const project = projectStore.currentProject
+  const summary = rawScriptPayload.value.script_summary || {}
+  const genre = summary.story_type || script?.genre || (project?.genre ? DramaGenreLabel[project.genre] : '')
+
+  return [
+    { label: '自定义集数', value: summary.custom_episode_count ? String(summary.custom_episode_count) : script?.episodes?.length ? String(script.episodes.length) : '未设置' },
+    { label: '故事类型', value: genre || '未设置' },
+    { label: '目标受众', value: summary.target_audience || '未设置' },
+  ]
+})
+
+const summaryBlocks = computed(() => {
+  const script = scriptStore.script
+  if (!script) return []
+  const summary = rawScriptPayload.value.script_summary || {}
+
+  return [
+    { label: '核心梗', value: summary.core_hook || script.setting },
+    { label: '一句话故事', value: summary.one_sentence_story || script.one_liner },
+    { label: '人物小传', value: summary.character_biographies || script.protagonist },
+    { label: '故事背景', value: script.background },
+    { label: '故事概览', value: summary.story_overview || script.synopsis },
+    { label: '视频风格', value: styleTags.value },
+  ].filter(item => item.value && item.value.trim())
+})
+
+const copying = ref(false)
+const copySucceeded = ref(false)
+
+async function handleCopy() {
+  if (copying.value) return
+  const script = scriptStore.script
+  if (!script) return
+
+  // Build full script text
+  const lines: string[] = []
+  const project = projectStore.currentProject
+  if (project?.title) lines.push(`《${project.title}》剧本`, '')
+  if (script.protagonist) lines.push(`主角：${script.protagonist}`)
+  if (script.genre) lines.push(`类型：${script.genre}`)
+  if (script.synopsis) lines.push(`梗概：${script.synopsis}`)
+  if (script.background) lines.push(`背景：${script.background}`)
+  lines.push('')
+
+  for (const ep of (script.episodes || [])) {
+    lines.push(`第${ep.number}集：${ep.title || ''}`)
+    if (ep.content) {
+      lines.push(ep.content)
+      lines.push('')
+    }
+  }
+
+  const fullText = lines.join('\n')
+  copying.value = true
+  copySucceeded.value = false
+  try {
+    await navigator.clipboard.writeText(fullText)
+  } catch {
+    // Fallback for older browsers or non-HTTPS
+    const textarea = document.createElement('textarea')
+    textarea.value = fullText
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+  } finally {
+    copying.value = false
+  }
+  copySucceeded.value = true
+  window.setTimeout(() => {
+    copySucceeded.value = false
+  }, 1600)
 }
 
 const advancing = ref(false)
@@ -124,7 +181,6 @@ const advancing = ref(false)
 async function goToAssets() {
   advancing.value = true
   try {
-    // Advance project status to ASSETS
     if (projectStore.currentProject) {
       projectStore.currentProject.status = ProjectStep.ASSETS
     }
@@ -134,24 +190,6 @@ async function goToAssets() {
     router.push(`/projects/${projectId}/assets`)
   } finally {
     advancing.value = false
-  }
-}
-
-function cancelRewrite() {
-  if (rewriteAbortController) {
-    rewriteAbortController.abort()
-    rewriteAbortController = null
-  }
-}
-
-async function handleExport(format: 'docx' | 'txt') {
-  exporting.value = true
-  try {
-    await scriptsApi.exportScript(projectId, format)
-  } catch (e: any) {
-    console.error('Export failed:', e)
-  } finally {
-    exporting.value = false
   }
 }
 
@@ -178,7 +216,7 @@ function formatScriptContent(raw: string): FormattedLine[] {
     // Scene description: △ ... or △（...）...
     if (/^△/.test(trimmed)) {
       const text = trimmed.replace(/^△\s*/, '')
-      const metaMatch = text.match(/^（([^）]*)）/ )
+      const metaMatch = text.match(/^[（(]([^）)]*)[）)]/)
       result.push({
         type: 'scene',
         text: metaMatch ? text.slice(metaMatch[0].length).trim() : text,
@@ -212,7 +250,8 @@ function formatScriptContent(raw: string): FormattedLine[] {
     }
 
     // Character dialogue: **角色名**（...）："台词"  or 角色名：台词
-    const dialogueMatch = trimmed.match(/^\*\*(.+?)\*\*\s*(?:（([^）]*)）)?\s*[：:]\s*[""](.+)[""]$/)
+    // Supports both regular "" and smart "" quotes, full-width and half-width punctuation
+    const dialogueMatch = trimmed.match(/^\*\*(.+?)\*\*\s*(?:[（(]([^）)]*)[）)])?\s*[：:]\s*["“”](.+)["“”]$/)
     if (dialogueMatch) {
       result.push({
         type: 'dialogue',
@@ -227,7 +266,7 @@ function formatScriptContent(raw: string): FormattedLine[] {
     if (simpleDialogue && !/^[>△♪*]/.test(trimmed)) {
       result.push({
         type: 'dialogue',
-        text: simpleDialogue[2].replace(/^[""]|[""]$/g, ''),
+        text: simpleDialogue[2].replace(/^[""“”]|[""“”]$/g, ''),
         meta: simpleDialogue[1],
       })
       continue
@@ -249,6 +288,30 @@ function formatScriptContent(raw: string): FormattedLine[] {
 // ── Episode expand/collapse ──
 const expandedEpisodes = ref(new Set<number>())
 const allExpanded = ref(false)
+const initializedScriptId = ref<number | null>(null)
+
+watch(
+  () => scriptStore.script,
+  (script) => {
+    if (!script || initializedScriptId.value === script.id) return
+    initializedScriptId.value = script.id
+    const firstEpisodeId = script.episodes?.[0]?.id
+    expandedEpisodes.value = firstEpisodeId ? new Set([firstEpisodeId]) : new Set()
+    allExpanded.value = script.episodes?.length === 1
+  },
+)
+
+function toggleEpisode(epId: number) {
+  if (expandedEpisodes.value.has(epId)) {
+    expandedEpisodes.value.delete(epId)
+  } else {
+    expandedEpisodes.value.add(epId)
+  }
+  // Trigger reactivity
+  expandedEpisodes.value = new Set(expandedEpisodes.value)
+  const eps = scriptStore.script?.episodes || []
+  allExpanded.value = eps.length > 0 && eps.every(ep => expandedEpisodes.value.has(ep.id))
+}
 
 function toggleAllEpisodes() {
   if (allExpanded.value) {
@@ -259,47 +322,15 @@ function toggleAllEpisodes() {
     eps.forEach(ep => expandedEpisodes.value.add(ep.id))
     allExpanded.value = true
   }
-}
-
-function onEpisodeToggle(epId: number, event: Event) {
-  const details = event.target as HTMLDetailsElement
-  if (details.open) {
-    expandedEpisodes.value.add(epId)
-  } else {
-    expandedEpisodes.value.delete(epId)
-  }
-  // Check if all are now open
-  const eps = scriptStore.script?.episodes || []
-  allExpanded.value = eps.length > 0 && eps.every(ep => expandedEpisodes.value.has(ep.id))
+  expandedEpisodes.value = new Set(expandedEpisodes.value)
 }
 </script>
 
 <template>
   <LoadingOverlay :visible="initialLoading || scriptStore.loading" message="正在加载剧本..." />
   <LoadingOverlay :visible="genRunning" :message="`AI 正在生成剧本...（${genProgressContent.length} 字）`" />
-  <!-- Streaming rewrite overlay -->
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="rewriting" class="rewrite-overlay">
-        <div class="rewrite-panel">
-          <div class="rewrite-header">
-            <div>
-              <h3 class="rewrite-title">正在改写为旁白型...</h3>
-              <p class="rewrite-subtitle">{{ rewriteContent.length }} 字已生成</p>
-            </div>
-            <button class="rewrite-cancel-btn" @click="cancelRewrite">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>
-              停止
-            </button>
-          </div>
-          <pre class="rewrite-content">{{ rewriteContent }}</pre>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
 
-  <div class="page-container" style="max-width: 860px;">
-    <!-- Empty state -->
+  <div class="script-page-shell">
     <EmptyState
       v-if="!initialLoading && !scriptStore.loading && !scriptStore.script"
       title="暂无剧本"
@@ -307,119 +338,108 @@ function onEpisodeToggle(epId: number, event: Event) {
       icon="📝"
     />
 
-    <template v-if="scriptStore.script">
-      <!-- Meta info: two rows like target -->
-      <div class="script-meta">
-        <div class="script-meta-row">
-          <span class="script-meta-label">视频风格：</span>
-          <span class="script-meta-value">{{ styleTags }}</span>
-        </div>
-        <div class="script-meta-row">
-          <span class="script-meta-label">画面比例：</span>
-          <span class="script-meta-value">{{ projectStore.currentProject?.aspect_ratio || '9:16' }}</span>
-        </div>
+    <article v-if="scriptStore.script" class="script-document">
+      <div class="script-document-actions" aria-label="剧本操作">
+        <button
+          class="script-action-btn"
+          type="button"
+          :class="{ success: copySucceeded }"
+          :disabled="copying"
+          :aria-busy="copying"
+          @click="handleCopy"
+        >
+          <span class="script-action-icon">{{ copySucceeded ? '✓' : '⧉' }}</span>
+          <span>{{ copying ? '复制中' : copySucceeded ? '已复制' : '复制全部' }}</span>
+        </button>
       </div>
 
-      <!-- Script summary card -->
-      <div class="script-section">
-        <h2 class="script-section-title">剧本摘要</h2>
-        <div class="script-summary-card">
-          <div class="script-summary-list">
-            <div
-              v-for="item in [
-                { label: '主角', value: scriptStore.script.protagonist },
-                { label: '故事类型', value: scriptStore.script.genre },
-                { label: '故事梗概', value: scriptStore.script.synopsis },
-                { label: '故事背景', value: scriptStore.script.background },
-                { label: '故事设定', value: scriptStore.script.setting },
-                { label: '一句话故事', value: scriptStore.script.one_liner },
-              ]"
-              :key="item.label"
-              class="script-summary-item"
-            >
+      <details class="script-document-section" open>
+        <summary class="script-document-summary">
+          <span class="script-section-caret">›</span>
+          <span class="script-section-heading">原始创意</span>
+        </summary>
+        <div class="script-section-body">
+          <p class="script-long-text">{{ originalIdea }}</p>
+        </div>
+      </details>
+
+      <details class="script-document-section">
+        <summary class="script-document-summary">
+          <span class="script-section-caret">›</span>
+          <span class="script-section-heading">剧本摘要</span>
+        </summary>
+        <div class="script-section-body">
+          <div class="script-summary-stats">
+            <div v-for="item in summaryStats" :key="item.label" class="script-summary-stat">
               <div class="script-summary-label">{{ item.label }}</div>
-              <div class="script-summary-value">{{ item.value || '未设置' }}</div>
+              <div class="script-summary-value">{{ item.value }}</div>
+            </div>
+          </div>
+          <div class="script-summary-blocks">
+            <div v-for="item in summaryBlocks" :key="item.label" class="script-summary-block">
+              <div class="script-summary-label">{{ item.label }}</div>
+              <div class="script-summary-value">{{ item.value }}</div>
             </div>
           </div>
         </div>
-      </div>
+      </details>
 
-      <!-- Script content: episodes with expand/collapse -->
-      <div class="script-section">
-        <div class="script-content-header">
-          <h2 class="script-section-title" style="margin-bottom:0">剧本内容:</h2>
-          <div class="script-content-actions">
-            <button class="btn btn-ghost btn-sm" @click="toggleAllEpisodes">
-              {{ allExpanded ? '收起全部' : '展开全部' }}
-            </button>
-            <button class="btn btn-ghost btn-sm" :disabled="exporting" @click="handleExport('txt')">
-              {{ exporting ? '导出中...' : '导出 TXT' }}
-            </button>
-            <button class="btn btn-outline btn-sm" :disabled="exporting" @click="handleExport('docx')">
-              {{ exporting ? '导出中...' : '导出 DOCX' }}
-            </button>
-            <button
-              class="btn btn-outline btn-sm"
-              :disabled="rewriting"
-              @click="handleRewrite"
-            >
-              改写为旁白型剧本
-            </button>
+      <section class="script-document-section">
+        <div class="script-content-heading">
+          <div class="script-content-title">
+            <span class="script-section-heading">分集剧本</span>
           </div>
+          <button
+            class="script-inline-btn"
+            type="button"
+            :aria-expanded="allExpanded"
+            @click="toggleAllEpisodes"
+          >
+            <span class="script-action-icon">{{ allExpanded ? '−' : '+' }}</span>
+            <span>{{ allExpanded ? '收起全部' : '展开全部' }}</span>
+          </button>
         </div>
+
         <div class="script-episodes">
           <details
-            v-for="(ep, idx) in scriptStore.script.episodes"
+            v-for="ep in scriptStore.script.episodes"
             :key="ep.id"
             class="script-episode"
-            :open="idx === 0 || expandedEpisodes.has(ep.id)"
-            @toggle="onEpisodeToggle(ep.id, $event)"
+            :open="expandedEpisodes.has(ep.id)"
           >
-            <summary class="script-episode-summary">
-              <svg class="script-episode-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M4.5 2.5L8 6L4.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              <span class="script-episode-label">第{{ ep.number }}集</span>
+            <summary class="script-episode-summary" @click.prevent="toggleEpisode(ep.id)">
+              <span class="script-episode-arrow">›</span>
+              <span class="script-episode-index">{{ ep.number }}.</span>
               <span class="script-episode-title">{{ ep.title || '无标题' }}</span>
-              <span class="script-episode-chars">{{ (ep.content || '').length }} 字</span>
             </summary>
-            <div v-if="!ep.content" class="script-episode-empty">（暂无内容）</div>
+            <div v-if="!ep.content" class="script-episode-empty">暂无内容</div>
             <div v-else class="script-episode-content">
               <template v-for="(line, li) in formatScriptContent(ep.content)" :key="li">
-                <!-- Empty line -->
                 <div v-if="line.type === 'empty'" class="fmt-empty" />
-                <!-- Separator -->
                 <div v-else-if="line.type === 'separator'" class="fmt-separator">
-                  <span>✦ ✦ ✦</span>
+                  <span>---</span>
                 </div>
-                <!-- Scene description -->
                 <div v-else-if="line.type === 'scene'" class="fmt-scene">
                   <span v-if="line.meta" class="fmt-scene-tag">{{ line.meta }}</span>
                   <span class="fmt-scene-text">{{ line.text }}</span>
                 </div>
-                <!-- Dialogue -->
                 <div v-else-if="line.type === 'dialogue'" class="fmt-dialogue">
                   <span class="fmt-dialogue-speaker">{{ line.meta }}</span>
                   <span class="fmt-dialogue-text">{{ line.text }}</span>
                 </div>
-                <!-- Action -->
                 <div v-else-if="line.type === 'action'" class="fmt-action">{{ line.text }}</div>
-                <!-- Music -->
                 <div v-else-if="line.type === 'music'" class="fmt-music">
                   <span class="fmt-music-icon">♪</span>
                   <span>{{ line.text }}</span>
                 </div>
-                <!-- Hook -->
                 <div v-else-if="line.type === 'hook'" class="fmt-hook">
                   <span class="fmt-hook-icon">🎣</span>
                   <span>{{ line.text }}</span>
                 </div>
-                <!-- Preview -->
                 <div v-else-if="line.type === 'preview'" class="fmt-preview">
                   <span class="fmt-preview-icon">📺</span>
                   <span>{{ line.text }}</span>
                 </div>
-                <!-- Plain text -->
                 <div v-else class="fmt-text">{{ line.text }}</div>
               </template>
             </div>
@@ -428,19 +448,22 @@ function onEpisodeToggle(epId: number, event: Event) {
             暂无剧集内容
           </div>
         </div>
-      </div>
-    </template>
+      </section>
+    </article>
   </div>
 
-  <!-- Bottom bar -->
-  <div v-if="scriptStore.script" class="bottom-action-bar">
-    <div class="bar-hint">
-      <div class="bar-icon">🤖</div>
-      <span>剧本内容整理完毕，可以进行下一步了</span>
+  <div v-if="scriptStore.script" class="bottom-action-bar script-bottom-bar">
+    <div class="bar-hint script-bar-hint">
+      <div class="bar-icon script-bar-icon">✓</div>
+      <div class="script-bar-copy">
+        <strong>剧本已就绪</strong>
+        <span>确认内容后进入角色、场景资产生成</span>
+      </div>
     </div>
     <div class="bar-actions">
-      <button class="btn btn-primary btn-sm" :disabled="advancing" @click="goToAssets">
-        {{ advancing ? '提交中...' : '下一步' }}
+      <button class="script-next-btn" type="button" :disabled="advancing" @click="goToAssets">
+        <span>{{ advancing ? '提交中' : '下一步' }}</span>
+        <span class="script-next-icon">→</span>
       </button>
     </div>
   </div>
@@ -728,74 +751,532 @@ details[open] > .script-episode-summary .script-episode-arrow {
   line-height: 1.8;
 }
 
-/* ── Rewrite Streaming Overlay ── */
-.rewrite-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+.script-page-shell {
+  min-height: calc(100vh - 56px);
+  padding: 28px 0 116px;
+  background:
+    linear-gradient(180deg, #f6f0de 0%, #eef1f4 42%, #e8ecef 100%);
+}
+
+.script-document {
+  position: relative;
+  width: min(940px, calc(100vw - 96px));
+  margin: 0 auto;
+  padding: 42px 58px 88px;
+  border: 1px solid rgba(26, 21, 8, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 54px rgba(30, 35, 45, 0.12);
+  color: #182235;
+  font-size: 14px;
+  line-height: 1.85;
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.script-document-actions {
+  position: sticky;
+  top: 76px;
+  z-index: 4;
   display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  height: 0;
+  margin-bottom: 8px;
+  pointer-events: none;
+}
+
+.script-action-btn,
+.script-inline-btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-}
-.rewrite-panel {
-  background: #FDF5D6;
-  border-radius: 20px;
-  width: 90%;
-  max-width: 720px;
-  max-height: 85vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
-}
-.rewrite-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 24px 28px 16px;
-  border-bottom: 1px solid #F3F4F6;
-}
-.rewrite-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #111827;
-  margin: 0;
-}
-.rewrite-subtitle {
+  gap: 7px;
+  min-width: 92px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(24, 34, 53, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #526071;
+  box-shadow: 0 8px 24px rgba(31, 41, 55, 0.08);
   font-size: 13px;
-  color: #E8A317;
-  margin: 4px 0 0;
   font-weight: 600;
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif !important;
+  letter-spacing: 0;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
 }
-.rewrite-cancel-btn {
+
+.script-action-btn {
+  pointer-events: auto;
+}
+
+.script-action-btn:hover:not(:disabled),
+.script-inline-btn:hover:not(:disabled) {
+  border-color: rgba(232, 163, 23, 0.38);
+  background: #fff8e2;
+  color: #2d2515;
+  box-shadow: 0 10px 28px rgba(184, 125, 8, 0.16);
+  transform: translateY(-1px);
+}
+
+.script-action-btn:active:not(:disabled),
+.script-inline-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 5px 14px rgba(31, 41, 55, 0.1);
+}
+
+.script-action-btn:focus-visible,
+.script-inline-btn:focus-visible,
+.script-next-btn:focus-visible,
+.script-episode-summary:focus-visible,
+.script-document-summary:focus-visible {
+  outline: 3px solid rgba(93, 173, 226, 0.34);
+  outline-offset: 3px;
+}
+
+.script-action-btn.success {
+  border-color: rgba(46, 204, 113, 0.38);
+  background: #edf9f2;
+  color: #1f7a45;
+}
+
+.script-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.script-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+  transform: none;
+}
+
+.script-document-section {
+  margin-top: 34px;
+}
+
+.script-document-section:first-of-type {
+  margin-top: 0;
+}
+
+.script-document-summary {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border: none;
+  gap: 10px;
+  width: fit-content;
+  min-height: 40px;
   border-radius: 10px;
-  background: #FEF2F2;
-  color: #DC2626;
-  font-size: 13px;
-  font-weight: 600;
+  list-style: none;
   cursor: pointer;
-  transition: all 0.15s;
+  user-select: none;
+  transition: color 0.16s ease, background 0.16s ease;
 }
-.rewrite-cancel-btn:hover {
-  background: #FEE2E2;
+
+.script-document-summary:hover {
+  color: #b87d08;
 }
-.rewrite-content {
-  padding: 16px 28px 24px;
-  margin: 0;
-  flex: 1;
-  overflow-y: auto;
-  font-size: 14px;
-  line-height: 1.9;
-  color: #374151;
+
+.script-document-summary::-webkit-details-marker {
+  display: none;
+}
+
+.script-document-summary.static {
+  cursor: default;
+}
+
+.script-section-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: #f3f5f7;
+  color: #475569;
+  font-size: 18px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+details[open] > .script-document-summary .script-section-caret,
+.script-section-caret.open {
+  transform: rotate(90deg);
+  background: #fff2c4;
+  color: #b87d08;
+}
+
+.script-section-heading {
+  color: #182235;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.script-section-body {
+  padding: 18px 0 0 32px;
+}
+
+.script-long-text,
+.script-summary-value {
+  color: #253145;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: var(--font-sans);
+}
+
+.script-summary-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 26px;
+}
+
+.script-summary-stat {
+  min-height: 82px;
+  padding: 14px 16px;
+  border: 1px solid rgba(24, 34, 53, 0.08);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.script-summary-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.script-summary-label {
+  margin-bottom: 6px;
+  color: #667789;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.script-summary-value {
+  font-size: 14px;
+  line-height: 1.85;
+}
+
+.script-content-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.script-episodes {
+  gap: 0;
+  margin-top: 22px;
+  padding-left: 32px;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
+}
+
+.script-episode {
+  position: relative;
+  border-bottom: 1px solid rgba(24, 34, 53, 0.08);
+  background: transparent;
+}
+
+.script-episode:last-child {
+  border-bottom: none;
+}
+
+.script-episode[open] {
+  background: transparent;
+}
+
+.script-episode-summary {
+  gap: 10px;
+  min-height: 52px;
+  padding: 12px 10px 12px 0;
+  border-radius: 10px;
+  color: #182235;
+  font-size: 15px;
+  line-height: 1.5;
+  transition: color 0.16s ease, transform 0.16s ease;
+}
+
+.script-episode-summary:hover {
+  background: transparent;
+  color: #b87d08;
+}
+
+.script-episode-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: #f3f5f7;
+  color: #475569;
+  font-size: 16px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+details[open] > .script-episode-summary .script-episode-arrow {
+  transform: rotate(90deg);
+  background: #fff2c4;
+  color: #b87d08;
+}
+
+.script-episode-index {
+  color: #b87d08;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.script-episode-title {
+  min-width: 0;
+  color: inherit;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.script-episode-content {
+  padding: 6px 0 30px 32px;
+}
+
+.script-episode-empty {
+  padding: 14px 0 22px 32px;
+  color: #8a97a8;
+}
+
+.fmt-empty {
+  height: 14px;
+}
+
+.fmt-separator {
+  justify-content: flex-start;
+  padding: 12px 0;
+  color: #8a97a8;
+  letter-spacing: 0;
+}
+
+.fmt-scene,
+.fmt-dialogue,
+.fmt-action,
+.fmt-music,
+.fmt-hook,
+.fmt-preview,
+.fmt-text {
+  margin: 0;
+  padding: 2px 0;
+  border-left: none;
+  background: transparent;
+  color: #253145;
+  font-size: 14px;
+  line-height: 1.85;
+}
+
+.fmt-scene {
+  align-items: baseline;
+  gap: 9px;
+}
+
+.fmt-scene-tag {
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: #eef5fb;
+  color: #426f91;
+  padding: 1px 7px;
+}
+
+.fmt-dialogue-speaker {
+  min-width: 60px;
+  color: #182235;
+}
+
+.fmt-dialogue-speaker::before {
+  display: none;
+}
+
+.fmt-dialogue-text {
+  color: #253145;
+}
+
+.fmt-hook,
+.fmt-preview {
+  font-weight: 400;
+}
+
+.fmt-hook {
+  border-radius: 8px;
+  background: #fff7db;
+  color: #7a4f07;
+}
+
+.fmt-preview {
+  border-radius: 8px;
+  background: #edf7ff;
+  color: #255f88;
+}
+
+.script-bottom-bar {
+  height: 68px;
+  padding: 10px 34px;
+  border-top: 1px solid rgba(24, 34, 53, 0.12);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 -16px 42px rgba(30, 35, 45, 0.12);
+  backdrop-filter: blur(14px);
+}
+
+.script-bar-hint {
+  gap: 12px;
+  color: #526071;
+}
+
+.script-bar-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #edf9f2;
+  color: #1f7a45;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.script-bar-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.script-bar-copy strong {
+  color: #182235;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.script-bar-copy span {
+  color: #667789;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.script-next-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 128px;
+  height: 44px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 10px;
+  background: #1f2937;
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(31, 41, 55, 0.22);
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif !important;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.script-next-btn:hover:not(:disabled) {
+  background: #111827;
+  box-shadow: 0 14px 32px rgba(17, 24, 39, 0.28);
+  transform: translateY(-1px);
+}
+
+.script-next-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 8px 18px rgba(17, 24, 39, 0.22);
+}
+
+.script-next-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+  transform: none;
+}
+
+.script-next-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  line-height: 1;
+}
+
+@media (max-width: 760px) {
+  .script-page-shell {
+    padding: 10px 0 134px;
+  }
+
+  .script-document {
+    width: calc(100vw - 24px);
+    padding: 24px 18px 58px;
+    border-radius: 14px;
+  }
+
+  .script-document-actions {
+    position: static;
+    height: auto;
+    justify-content: flex-end;
+    margin-bottom: 18px;
+  }
+
+  .script-summary-stats {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .script-section-body,
+  .script-episodes {
+    padding-left: 0;
+  }
+
+  .script-episode-content {
+    padding-left: 28px;
+  }
+
+  .script-bottom-bar {
+    align-items: stretch;
+    height: auto;
+    min-height: 96px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .script-bottom-bar .bar-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .script-next-btn {
+    width: 100%;
+  }
+
+  .script-bar-copy span {
+    font-size: 11px;
+  }
 }
 </style>

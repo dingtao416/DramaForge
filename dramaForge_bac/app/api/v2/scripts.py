@@ -285,6 +285,20 @@ async def get_generate_status(project_id: int, user: CurrentUser):
     }
 
 
+@router.post("/projects/{project_id}/script/cancel-generation")
+async def cancel_generation(project_id: int, user: CurrentUser):
+    """
+    Cancel an ongoing script generation for a project.
+    The background task will stop and NOT save partial results to DB.
+    """
+    entry = _gen_registry.get(project_id)
+    if entry and entry["status"] == "generating":
+        entry["cancelled"] = True
+        entry["status"] = "cancelled"
+        return {"message": "Generation cancelled", "status": "cancelled"}
+    return {"message": "No active generation to cancel", "status": entry["status"] if entry else "idle"}
+
+
 @router.post("/projects/{project_id}/script/generate-stream")
 async def generate_script_stream(
     project_id: int,
@@ -376,11 +390,12 @@ async def generate_script_stream(
         "content_preview": "",
         "task": None,
         "result": None,
+        "cancelled": False,
     }
     _gen_registry[project_id] = entry
 
     async def background_generator():
-        """Runs in background — survives SSE disconnect."""
+        """Runs in background — survives SSE disconnect, but checks for cancellation."""
         content_buf = ""
         try:
             async for event in script_engine.create_from_text_stream(
@@ -394,6 +409,10 @@ async def generate_script_stream(
                 chat_base_url=resolved.base_url,
                 chat_options=resolved.raw_params or {},
             ):
+                # Check cancellation before processing each event
+                if entry.get("cancelled"):
+                    entry["status"] = "cancelled"
+                    return
                 if event["type"] == "content":
                     content_buf += event["data"]
                     entry["content_preview"] = content_buf
@@ -403,6 +422,10 @@ async def generate_script_stream(
                     entry["status"] = "error"
                     return
                 elif event["type"] == "done":
+                    # Do NOT save if generation was cancelled
+                    if entry.get("cancelled"):
+                        entry["status"] = "cancelled"
+                        return
                     # Save to DB with fresh session
                     try:
                         script_id = await _save_script_result(project_id, event["data"], preserve)

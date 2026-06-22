@@ -334,13 +334,14 @@ class ScriptEngine:
         """
         Parse LLM JSON output into structured data suitable for DB insertion.
         """
+        script_summary = raw_json.get("script_summary") or {}
         script_data = {
             "protagonist": raw_json.get("protagonist", ""),
             "genre": raw_json.get("genre", ""),
-            "synopsis": raw_json.get("synopsis", ""),
+            "synopsis": raw_json.get("synopsis") or script_summary.get("story_overview", ""),
             "background": raw_json.get("background", ""),
-            "setting": raw_json.get("setting", ""),
-            "one_liner": raw_json.get("one_liner", ""),
+            "setting": raw_json.get("setting") or script_summary.get("core_hook", ""),
+            "one_liner": raw_json.get("one_liner") or script_summary.get("one_sentence_story", ""),
             "raw_content": json.dumps(raw_json, ensure_ascii=False),
         }
 

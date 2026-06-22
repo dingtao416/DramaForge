@@ -76,10 +76,18 @@ export const useGenerationStore = defineStore('generation', () => {
   }
 
   /** Stop the current generation */
-  function stopGeneration() {
+  async function stopGeneration() {
     if (abortController) {
       abortController.abort()
       abortController = null
+    }
+    // Tell the backend to cancel the background task
+    if (projectId.value) {
+      try {
+        await scriptsApi.cancelGeneration(projectId.value)
+      } catch {
+        // Fire-and-forget — the abort above already stops the SSE stream
+      }
     }
     status.value = 'idle'
   }

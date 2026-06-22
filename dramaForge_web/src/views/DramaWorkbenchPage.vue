@@ -88,18 +88,19 @@ const genPreview = computed<GenPreview>(() => {
     sceneCount: countArray('scenes'),
   }
 })
-const genreOptions = ['都市', '古装', '仙侠', '悬疑', '甜宠', '末世', '穿越', '逆袭', '复仇', '豪门']
+const genreOptions = ['都市', '古装', '仙侠', '悬疑', '甜宠', '末世', '穿越', '逆袭', '复仇', '豪门', '其他']
 const genreMap: Record<string, DramaGenre> = {
   都市: DramaGenre.URBAN,
   古装: DramaGenre.HISTORICAL,
   仙侠: DramaGenre.FANTASY,
   悬疑: DramaGenre.SUSPENSE,
   甜宠: DramaGenre.ROMANCE,
-  末世: DramaGenre.OTHER,
+  末世: DramaGenre.THRILLER,
   穿越: DramaGenre.OTHER,
   逆袭: DramaGenre.REVENGE,
   复仇: DramaGenre.REVENGE,
   豪门: DramaGenre.OTHER,
+  其他: DramaGenre.OTHER,
 }
 
 // ── Projects ──
@@ -214,12 +215,13 @@ async function handleCreateProject() {
   creating.value = true
   uploadError.value = ''
   try {
-    // Step 1: Create a new project
+    // Step 1: Create a new project (store the original text as description)
     const title = uploadFile.value.name.replace(/\.(docx|doc|txt)$/i, '').slice(0, 50)
     const { data: project } = await projectsApi.create({
       title,
       genre: 'other',
       style: 'realistic',
+      description: parsedResult.value?.full_text?.slice(0, 500) || '',
     })
     // Step 2: Upload script to the project
     await scriptsApi.upload(project.id, uploadFile.value, 1)
@@ -290,6 +292,7 @@ async function handleGenerate() {
       title,
       genre: genreMap[aiGenre.value] || DramaGenre.OTHER,
       style: VideoStyle.REALISTIC,
+      description: aiPrompt.value,
     })
 
     // Start generation in global store (survives navigation)
