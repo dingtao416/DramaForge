@@ -57,6 +57,35 @@ SCENE_DESC_PROMPT = """根据以下场景信息和故事背景，生成该场景
 3. 每个 image_prompt 至少 50 个英文单词"""
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# Image Prompt Optimization (for regenerate flow)
+# ═══════════════════════════════════════════════════════════════════════
+
+IMAGE_PROMPT_OPTIMIZE_SYSTEM = """你是 DramaForge 的图像提示词优化师。你的任务是根据角色背景和形象描述，生成高质量、细节丰富的英文图像生成提示词。
+
+输出要求：
+- 必须是英文
+- 包含：角色外貌特征、服装、表情、姿态、光线、构图风格、画质关键词
+- 长度：80-150 个英文单词
+- 风格：根据指定的剧集风格调整（写实/动漫/电影感等）
+
+只输出优化后的英文提示词文本，不要加任何前缀、注释或 JSON 包装。"""
+
+IMAGE_PROMPT_OPTIMIZE_USER = """请为以下角色形象优化图像生成提示词。
+
+【角色名】{character_name}
+【角色类型】{character_role}
+【角色描述】{character_description}
+【形象名称】{visual_name}
+【形象描述】{visual_description}
+【剧集风格】{drama_style}
+【图像比例】{aspect_ratio}
+
+{extra_guidance}
+
+请输出优化后的英文图像生成提示词："""
+
+
 def build_character_desc_prompt(
     character_name: str,
     character_role: str,
@@ -93,5 +122,32 @@ def build_scene_desc_prompt(
     )
     return [
         {"role": "system", "content": SCENE_DESC_SYSTEM},
+        {"role": "user", "content": user_content},
+    ]
+
+
+def build_image_prompt_optimize(
+    character_name: str,
+    character_role: str,
+    character_description: str,
+    visual_name: str,
+    visual_description: str,
+    drama_style: str = "realistic",
+    aspect_ratio: str = "9:16",
+    extra_guidance: str = "",
+) -> list[dict[str, str]]:
+    """Build messages for optimizing an image generation prompt."""
+    user_content = IMAGE_PROMPT_OPTIMIZE_USER.format(
+        character_name=character_name,
+        character_role=character_role,
+        character_description=character_description or "（无）",
+        visual_name=visual_name,
+        visual_description=visual_description or "（标准形象）",
+        drama_style=drama_style,
+        aspect_ratio=aspect_ratio,
+        extra_guidance=f"【用户额外指引】\n{extra_guidance}" if extra_guidance else "",
+    )
+    return [
+        {"role": "system", "content": IMAGE_PROMPT_OPTIMIZE_SYSTEM},
         {"role": "user", "content": user_content},
     ]

@@ -19,6 +19,7 @@ from app.models.script import Script
 from app.prompts.character_prompts import (
     build_character_desc_prompt,
     build_scene_desc_prompt,
+    build_image_prompt_optimize,
 )
 from app.services.storage import storage
 
@@ -228,8 +229,21 @@ class AssetsEngine:
         image_api_key: str = None,
         image_base_url: str = None,
         image_options: dict | None = None,
+        # ── Enhanced context for prompt optimization ──
+        visual_description: str = "",
+        drama_style: str = "realistic",
+        aspect_ratio: str = "9:16",
+        optimize_prompt: bool = False,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+        chat_options: dict | None = None,
     ) -> list[str]:
-        """Regenerate a character's image with optional variants.
+        """Regenerate a character's image with optional AI prompt optimization.
+
+        When optimize_prompt=True, uses a chat LLM to refine the image prompt
+        by combining character description + visual description + drama style
+        into a high-quality English image prompt.
 
         Returns:
             List of generated image URLs.
@@ -237,11 +251,46 @@ class AssetsEngine:
         Raises:
             ImageGenerationError: if ALL variants fail.
         """
-        if not prompt:
-            prompt = (
-                f"Portrait of {character.name}: {character.description or 'a character'}. "
-                f"High quality, detailed, digital art."
+        # ── Step 0: Optimize prompt via chat LLM if requested ──
+        if optimize_prompt and chat_model:
+            logger.info(
+                f"AssetsEngine: optimizing prompt for character '{character.name}' "
+                f"visual='{visual_description[:50] if visual_description else 'default'}'"
             )
+            optimize_messages = build_image_prompt_optimize(
+                character_name=character.name,
+                character_role=character.role.value if character.role else "supporting",
+                character_description=character.description or "",
+                visual_name=visual_description[:30] if visual_description else "标准形象",
+                visual_description=visual_description or prompt or "",
+                drama_style=drama_style,
+                aspect_ratio=aspect_ratio,
+                extra_guidance=prompt or "",
+            )
+            try:
+                optimized = await ai_hub.chat.complete(
+                    messages=optimize_messages,
+                    temperature=0.6,
+                    max_tokens=400,
+                    model=chat_model,
+                    api_key=chat_api_key,
+                    base_url=chat_base_url,
+                    **_extra_chat_kwargs(chat_options),
+                )
+                prompt = optimized.strip()
+                logger.info(f"AssetsEngine: optimized prompt ({len(prompt)} chars)")
+            except Exception as e:
+                logger.warning(f"AssetsEngine: prompt optimization failed, using raw prompt: {e}")
+
+        # ── Build default prompt if still empty ──
+        if not prompt:
+            parts = [f"Portrait of {character.name}"]
+            if character.description:
+                parts.append(character.description)
+            if visual_description:
+                parts.append(f"Visual style: {visual_description}")
+            parts.append("High quality, detailed, digital art.")
+            prompt = ". ".join(parts)
 
         urls = []
         errors: list[str] = []

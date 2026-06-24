@@ -208,8 +208,14 @@ async def regenerate_character(
     if not character or character.project_id != project_id:
         raise HTTPException(status_code=404, detail="Character not found")
 
-    # Resolve user's image model & credentials
-    resolved = await user_model_resolver.resolve(db, user.id, "image")
+    # Resolve user's image model & chat model (for prompt optimization)
+    image_resolved = await user_model_resolver.resolve(db, user.id, "image")
+    chat_resolved = None
+    if body.optimize_prompt:
+        chat_resolved = await user_model_resolver.resolve(db, user.id, "chat")
+
+    # Get project for drama style context
+    project = await db.get(Project, project_id)
 
     try:
         urls = await assets_engine.regenerate_character_image(
@@ -217,10 +223,19 @@ async def regenerate_character(
             project_id=project_id,
             prompt=body.prompt,
             variant_count=body.variant_count,
-            image_model=resolved.model_id,
-            image_api_key=resolved.api_key,
-            image_base_url=resolved.base_url,
-            image_options=_media_options(resolved),
+            image_model=image_resolved.model_id,
+            image_api_key=image_resolved.api_key,
+            image_base_url=image_resolved.base_url,
+            image_options=_media_options(image_resolved),
+            # Enhanced context
+            visual_description=body.visual_description or "",
+            drama_style=project.style.value if project and project.style else "realistic",
+            aspect_ratio=project.aspect_ratio if project else "9:16",
+            optimize_prompt=body.optimize_prompt,
+            chat_model=chat_resolved.model_id if chat_resolved else None,
+            chat_api_key=chat_resolved.api_key if chat_resolved else None,
+            chat_base_url=chat_resolved.base_url if chat_resolved else None,
+            chat_options=chat_resolved.raw_params if chat_resolved else None,
         )
     except ImageGenerationError as e:
         raise HTTPException(status_code=502, detail={

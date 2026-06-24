@@ -5,6 +5,8 @@ export interface RefImage {
   url: string
   name: string
   is_primary?: boolean
+  /** 形象描述 — 作为AI生成的prompt */
+  description?: string
 }
 
 export interface CharacterDetail {

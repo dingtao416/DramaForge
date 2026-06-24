@@ -90,113 +90,244 @@ async function handleGenerate(options: { style: string; target: string }) {
 }
 
 // ── Canvas workspace state ──
+interface VisualGroup {
+  id: string
+  name: string        // 形象名称
+  description: string // 形象描述（AI生成prompt）
+  images: RefImage[]
+}
+
 const canvasChar = ref<CharacterDetail | null>(null)
-const canvasImages = ref<RefImage[]>([])
+const visualGroups = ref<VisualGroup[]>([])
 const canvasSaving = ref(false)
+const charDescDraft = ref('')  // character-level description
+
+function newGroupId(): string {
+  return 'vg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
+}
 
 function openImageCanvas(char: CharacterDetail) {
   canvasChar.value = char
-  canvasImages.value = (char.reference_images || []).map(img =>
-    typeof img === 'string' ? { url: img, name: '' } : { ...img }
+  charDescDraft.value = char.description || ''
+
+  // Group images by name into 形象 groups
+  const rawImages: RefImage[] = (char.reference_images || []).map(img =>
+    typeof img === 'string' ? { url: img, name: '', description: '' } : { ...img }
   )
-  // Reset upload state when opening canvas
+
+  const groupMap = new Map<string, RefImage[]>()
+  for (const img of rawImages) {
+    const key = img.name || '默认形象'
+    if (!groupMap.has(key)) groupMap.set(key, [])
+    groupMap.get(key)!.push(img)
+  }
+
+  const groups: VisualGroup[] = []
+  for (const [name, images] of groupMap) {
+    // Use first image's description as group description
+    const desc = images[0]?.description || ''
+    groups.push({ id: newGroupId(), name, description: desc, images })
+  }
+
+  // If no images at all, start with one empty default group
+  if (!groups.length) {
+    groups.push({ id: newGroupId(), name: '默认形象', description: '', images: [] })
+  }
+
+  visualGroups.value = groups
   uploadingCharId.value = null
 }
 
 function closeImageCanvas() {
   canvasChar.value = null
-  canvasImages.value = []
+  visualGroups.value = []
+  charDescDraft.value = ''
 }
 
-function canvasImageName(img: RefImage, idx: number) {
-  return img.name || `形象图 ${idx + 1}`
-}
-
+// ── Flatten groups to reference_images and save ──
 async function canvasSave() {
   if (!canvasChar.value) return
   canvasSaving.value = true
   try {
-    await assetsApi.updateCharacter(
-      projectId, canvasChar.value.id,
-      { reference_images: canvasImages.value } as CharacterUpdate,
-    )
-    await assetsStore.fetchAssets(projectId)
+    // Save character-level description
+    const updateData: CharacterUpdate = {}
+    if (charDescDraft.value !== (canvasChar.value.description || '')) {
+      updateData.description = charDescDraft.value
+    }
+
+    // Flatten all group images into reference_images
+    const allImages: RefImage[] = []
+    for (const g of visualGroups.value) {
+      for (const img of g.images) {
+        allImages.push({
+          ...img,
+          name: g.name,
+          description: g.description,
+        })
+      }
+    }
+
+    if (allImages.length > 0 || Object.keys(updateData).length > 0) {
+      updateData.reference_images = allImages
+      await assetsApi.updateCharacter(projectId, canvasChar.value.id, updateData)
+      // Refresh local char reference
+      canvasChar.value = { ...canvasChar.value, ...updateData, reference_images: allImages }
+      await assetsStore.fetchAssets(projectId)
+    }
   } finally { canvasSaving.value = false }
 }
 
-function canvasUpdateName(idx: number, name: string) {
-  canvasImages.value[idx] = { ...canvasImages.value[idx], name }
-}
-
-function canvasSetPrimary(idx: number) {
-  canvasImages.value = canvasImages.value.map((img, i) => ({
-    ...img,
-    is_primary: i === idx,
-  }))
+// ── Character description ──
+function saveCharDesc() {
   canvasSave()
 }
 
-async function canvasDeleteImage(idx: number) {
-  canvasImages.value = canvasImages.value.filter((_, i) => i !== idx)
+// ── Visual group operations ──
+function addVisualGroup() {
+  visualGroups.value.push({
+    id: newGroupId(),
+    name: `形象${visualGroups.value.length + 1}`,
+    description: '',
+    images: [],
+  })
+}
+
+function removeVisualGroup(groupId: string) {
+  visualGroups.value = visualGroups.value.filter(g => g.id !== groupId)
+  canvasSave()
+}
+
+function updateGroupName(groupId: string, name: string) {
+  const g = visualGroups.value.find(v => v.id === groupId)
+  if (g) g.name = name
+}
+
+function updateGroupDesc(groupId: string, desc: string) {
+  const g = visualGroups.value.find(v => v.id === groupId)
+  if (g) g.description = desc
+}
+
+// ── Image operations within a group ──
+function setPrimaryImage(groupId: string, imgIdx: number) {
+  // Unset primary on all images across all groups
+  for (const g of visualGroups.value) {
+    for (const img of g.images) {
+      img.is_primary = false
+    }
+  }
+  const g = visualGroups.value.find(v => v.id === groupId)
+  if (g && g.images[imgIdx]) {
+    g.images[imgIdx].is_primary = true
+  }
+  canvasSave()
+}
+
+async function deleteImageFromGroup(groupId: string, imgIdx: number) {
+  const g = visualGroups.value.find(v => v.id === groupId)
+  if (!g) return
+  g.images = g.images.filter((_, i) => i !== imgIdx)
   await canvasSave()
 }
 
-// Trigger upload from canvas
-async function canvasHandleFile(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
+function updateImageNameInGroup(groupId: string, imgIdx: number, name: string) {
+  const g = visualGroups.value.find(v => v.id === groupId)
+  if (g && g.images[imgIdx]) {
+    g.images[imgIdx] = { ...g.images[imgIdx], name }
+  }
+}
+
+// ── Upload & AI Generate scoped to a visual group ──
+const activeGroupId = ref<string | null>(null)
+
+async function uploadToGroup(groupId: string, file: File) {
   uploadingCharId.value = canvasChar.value?.id || null
+  activeGroupId.value = groupId
   try {
     const fd = new FormData(); fd.append('file', file)
     const { data } = await assetsApi.uploadAsset(projectId, fd, false)
     if (data?.url) {
-      canvasImages.value = [...canvasImages.value, { url: data.url, name: file.name.replace(/\.[^.]+$/, '') }]
+      const g = visualGroups.value.find(v => v.id === groupId)
+      if (g) {
+        g.images.push({ url: data.url, name: file.name.replace(/\.[^.]+$/, ''), description: g.description })
+      }
       await canvasSave()
     }
   } catch (err) { console.error('Upload failed', err) }
   finally {
     uploadingCharId.value = null
+    activeGroupId.value = null
     if (charFileInput.value) charFileInput.value.value = ''
   }
 }
 
-// ── Character actions ──
+function triggerGroupUpload(groupId: string) {
+  activeGroupId.value = groupId
+  charFileInput.value?.click()
+}
+
+async function handleGroupFile(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file || !activeGroupId.value) {
+    if (charFileInput.value) charFileInput.value.value = ''
+    return
+  }
+  await uploadToGroup(activeGroupId.value, file)
+}
+
+// Trigger AI generate for a specific 形象 group's description
+function openRegenForGroup(groupId: string) {
+  if (!canvasChar.value) return
+  const g = visualGroups.value.find(v => v.id === groupId)
+  regenType.value = 'character'
+  regenTarget.value = canvasChar.value
+  // Pre-fill regenerate prompt with group description
+  regenPresetPrompt.value = g?.description || ''
+  regenTargetGroupId.value = groupId
+  showRegenModal.value = true
+}
+
+const regenPresetPrompt = ref('')
+const regenTargetGroupId = ref<string | null>(null)
+
+async function confirmRegenerate(data: { prompt: string; visualDescription: string; optimizePrompt: boolean }) {
+  if (!regenTarget.value) return
+  regenLoading.value = true
+  try {
+    if (regenType.value === 'character') {
+      const char = regenTarget.value as CharacterDetail
+      await assetsApi.regenerateCharacter(
+        projectId, char.id,
+        data.prompt || undefined,
+        data.visualDescription || undefined,
+        data.optimizePrompt,
+      )
+    } else {
+      const scene = regenTarget.value as SceneDetail
+      await assetsApi.regenerateScene(projectId, scene.id, data.prompt || undefined)
+    }
+    showRegenModal.value = false
+    await assetsStore.fetchAssets(projectId)
+    // Refresh canvas if open
+    if (canvasChar.value) {
+      const updated = assetsStore.characters.find(c => c.id === canvasChar.value!.id)
+      if (updated) openImageCanvas(updated)
+    }
+  } catch (e: any) {
+    console.error('Regenerate failed:', e)
+  } finally {
+    regenLoading.value = false
+    regenTargetGroupId.value = null
+    regenPresetPrompt.value = ''
+  }
+}
+
+// ── Character edit / regenerate (for canvas header buttons) ──
 const uploadingCharId = ref<number | null>(null)
 const charFileInput = ref<HTMLInputElement | null>(null)
 
 function openCharEdit(char: CharacterDetail) {
   editingCharacter.value = char
   showCharEdit.value = true
-}
-
-function triggerCharImageUpload(char: CharacterDetail) {
-  uploadingCharId.value = char.id
-  charFileInput.value?.click()
-}
-
-async function handleCharImageFile(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  const charId = uploadingCharId.value
-  if (!file || !charId) { uploadingCharId.value = null; return }
-
-  try {
-    const formData = new FormData()
-    formData.append('file', file)
-    const { data: uploaded } = await assetsApi.uploadAsset(projectId, formData, false)
-    if (uploaded?.url) {
-      const char = assetsStore.characters.find(c => c.id === charId)
-      const existing = char?.reference_images || []
-      await assetsApi.updateCharacter(projectId, charId, {
-        reference_images: [...existing, { url: uploaded.url, name: uploaded.name || '形象图' }],
-      } as CharacterUpdate)
-      await assetsStore.fetchAssets(projectId)
-    }
-  } catch (err) {
-    console.error('上传形象图失败', err)
-  } finally {
-    uploadingCharId.value = null
-    if (charFileInput.value) charFileInput.value.value = ''
-  }
 }
 
 async function saveCharEdit(data: Partial<CharacterDetail>) {
@@ -210,37 +341,17 @@ async function saveCharEdit(data: Partial<CharacterDetail>) {
   }
 }
 
-// ── Regenerate (opens modal) ──
 function openRegenCharacter(char: CharacterDetail) {
   regenType.value = 'character'
   regenTarget.value = char
+  regenPresetPrompt.value = char.description || ''
   showRegenModal.value = true
 }
+
 function openRegenScene(scene: SceneDetail) {
   regenType.value = 'scene'
   regenTarget.value = scene
   showRegenModal.value = true
-}
-
-async function confirmRegenerate(prompt: string) {
-  if (!regenTarget.value) return
-  regenLoading.value = true
-  try {
-    if (regenType.value === 'character') {
-      const char = regenTarget.value as CharacterDetail
-      await assetsApi.regenerateCharacter(projectId, char.id, prompt || undefined)
-    } else {
-      const scene = regenTarget.value as SceneDetail
-      await assetsApi.regenerateScene(projectId, scene.id, prompt || undefined)
-    }
-    showRegenModal.value = false
-    await assetsStore.fetchAssets(projectId)
-  } catch (e: any) {
-    console.error('Regenerate failed:', e)
-    // Keep modal open on error so user can retry
-  } finally {
-    regenLoading.value = false
-  }
 }
 
 // ── Scene actions ──
@@ -346,71 +457,133 @@ async function handleApprove() {
             <span class="canvas-char-role">· {{ canvasChar.role }} · {{ canvasImages.length }} 张形象图</span>
           </div>
           <div class="canvas-header-actions">
+            <button class="btn btn-outline btn-sm" @click="openRegenCharacter(canvasChar!)">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 7A5.5 5.5 0 0112.17 5.5M12.5 7A5.5 5.5 0 011.83 8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12.17 5.5H9.5M1.83 8.5H4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              AI生成形象
+            </button>
+            <button class="btn btn-outline btn-sm" @click="openCharEdit(canvasChar!)">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M10 2.5l1.5 1.5L4.5 11H3V9.5L10 2.5z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              编辑形象描述
+            </button>
             <button class="btn btn-primary btn-sm" @click="charFileInput?.click()" :disabled="!!uploadingCharId">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="7" y1="2" x2="7" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="2" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-              上传形象图
+              上传
             </button>
           </div>
         </div>
 
         <!-- Canvas area -->
         <div class="canvas-area">
-          <div v-if="!canvasImages.length" class="canvas-empty">
-            <span class="text-6xl mb-4">🖼️</span>
-            <p class="text-gray-600 text-lg mb-2">暂无形象图</p>
-            <p class="text-gray-500">点击上方「上传形象图」或使用 AI 生成角色形象</p>
+          <!-- ═══ Character description ═══ -->
+          <div class="char-desc-section">
+            <label class="canvas-label">角色描述</label>
+            <textarea
+              v-model="charDescDraft"
+              class="char-desc-textarea"
+              rows="2"
+              placeholder="描述角色的外貌、性格、气质等，作为AI生成形象的背景参考..."
+              @blur="saveCharDesc"
+            ></textarea>
           </div>
 
-          <div v-else class="canvas-grid">
+          <!-- ═══ Visual groups ═══ -->
+          <div class="visual-groups">
+            <!-- Header -->
+            <div class="vg-header">
+              <label class="canvas-label">形象管理</label>
+              <span class="text-xs text-gray-500">每个形象代表角色的不同状态/角度</span>
+            </div>
+
+            <!-- Empty state -->
+            <div v-if="!visualGroups.length" class="canvas-empty">
+              <span class="text-5xl mb-3">🎭</span>
+              <p class="text-gray-600 mb-1">暂无形象</p>
+              <p class="text-gray-500 text-sm">点击下方按钮创建第一个形象</p>
+            </div>
+
+            <!-- Each visual group -->
             <div
-              v-for="(img, idx) in canvasImages"
-              :key="idx"
-              class="canvas-card group"
+              v-for="group in visualGroups"
+              :key="group.id"
+              class="vg-card"
             >
-              <!-- Image -->
-              <div class="canvas-card-pic">
-                <img :src="img.url" :alt="canvasImageName(img, idx)" class="w-full h-full object-cover" />
-                <!-- Primary badge -->
-                <span v-if="img.is_primary" class="canvas-primary-badge" title="当前展示图">⭐</span>
-                <!-- Set as primary button -->
-                <button
-                  v-if="!img.is_primary"
-                  class="canvas-set-primary-btn"
-                  title="设为展示图"
-                  @click="canvasSetPrimary(idx)"
-                >设为展示</button>
-                <!-- Delete overlay -->
-                <button class="canvas-delete-btn" title="删除" @click="canvasDeleteImage(idx)">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 4h9M5 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M10.5 4v6a2 2 0 01-2 2h-3a2 2 0 01-2-2V4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+              <!-- Group header -->
+              <div class="vg-card-header">
+                <div class="vg-card-header-left">
+                  <input
+                    :value="group.name"
+                    class="vg-name-input"
+                    placeholder="形象名称"
+                    @input="updateGroupName(group.id, ($event.target as HTMLInputElement).value)"
+                    @blur="canvasSave()"
+                  />
+                  <span class="vg-img-count">{{ group.images.length }} 张图</span>
+                </div>
+                <div class="vg-card-header-right">
+                  <button class="vg-action-btn vg-gen-btn" title="AI生成此形象图" @click="openRegenForGroup(group.id)">
+                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M1.5 7A5.5 5.5 0 0112.17 5.5M12.5 7A5.5 5.5 0 011.83 8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12.17 5.5H9.5M1.83 8.5H4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                    <span class="hidden sm:inline">AI生成</span>
+                  </button>
+                  <button class="vg-action-btn vg-upload-btn" title="上传形象图" @click="triggerGroupUpload(group.id)">
+                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M7 2v10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                    <span class="hidden sm:inline">上传</span>
+                  </button>
+                  <button class="vg-action-btn vg-delete-btn" title="删除此形象" @click="removeVisualGroup(group.id)">
+                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2.5 4h9M5 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M10.5 4v6a2 2 0 01-2 2h-3a2 2 0 01-2-2V4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                </div>
               </div>
-              <!-- Name -->
-              <div class="canvas-card-name">
+
+              <!-- Group description (AI prompt) -->
+              <div class="vg-desc-row">
                 <input
-                  :value="canvasImageName(img, idx)"
-                  class="canvas-name-input"
-                  placeholder="形象图名称"
-                  @input="canvasUpdateName(idx, ($event.target as HTMLInputElement).value)"
+                  :value="group.description"
+                  class="vg-desc-input"
+                  placeholder="形象描述（作为AI生成prompt）"
+                  @input="updateGroupDesc(group.id, ($event.target as HTMLInputElement).value)"
                   @blur="canvasSave()"
                 />
               </div>
+
+              <!-- Group images -->
+              <div v-if="group.images.length" class="vg-images">
+                <div
+                  v-for="(img, idx) in group.images"
+                  :key="idx"
+                  class="vg-img-card group"
+                >
+                  <div class="vg-img-pic">
+                    <img :src="img.url" :alt="img.name || group.name" class="w-full h-full object-cover" />
+                    <span v-if="img.is_primary" class="vg-primary-badge" title="主图">⭐</span>
+                    <button
+                      v-if="!img.is_primary"
+                      class="vg-set-primary-btn"
+                      @click="setPrimaryImage(group.id, idx)"
+                    >设为主图</button>
+                    <button class="vg-img-delete-btn" @click="deleteImageFromGroup(group.id, idx)">
+                      <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2.5 4h9M5 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M10.5 4v6a2 2 0 01-2 2h-3a2 2 0 01-2-2V4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                  </div>
+                  <input
+                    :value="img.name || ''"
+                    class="vg-img-name-input"
+                    placeholder="图片名"
+                    @input="updateImageNameInGroup(group.id, idx, ($event.target as HTMLInputElement).value)"
+                    @blur="canvasSave()"
+                  />
+                </div>
+              </div>
+
+              <!-- Group empty hint -->
+              <div v-else class="vg-empty-hint">
+                点击「AI生成」或「上传」为此形象添加图片
+              </div>
             </div>
 
-            <!-- Add card -->
-            <button
-              class="canvas-card canvas-card-add"
-              :disabled="!!uploadingCharId"
-              @click="charFileInput?.click()"
-            >
-              <div class="canvas-card-pic canvas-add-pic">
-                <svg v-if="uploadingCharId" class="animate-spin" width="36" height="36" viewBox="0 0 36 36" fill="none">
-                  <circle cx="18" cy="18" r="14" stroke="currentColor" stroke-width="2.5" stroke-dasharray="56 18" stroke-linecap="round"/>
-                </svg>
-                <template v-else>
-                  <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><line x1="18" y1="8" x2="18" y2="28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="8" y1="18" x2="28" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
-                  <span class="text-sm mt-2 font-semibold">添加形象图</span>
-                </template>
-              </div>
+            <!-- Add new visual group -->
+            <button class="vg-add-btn" @click="addVisualGroup">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="8" y1="2" x2="8" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              新建形象
             </button>
           </div>
         </div>
@@ -429,23 +602,18 @@ async function handleApprove() {
             v-for="char in assetsStore.characters"
             :key="char.id"
             :character="char"
-            :regenerating="false"
-            :uploading-image="uploadingCharId === char.id"
-            @edit="openCharEdit"
-            @regenerate="openRegenCharacter"
-            @add-image="triggerCharImageUpload"
             @open-gallery="openImageCanvas"
           />
         </div>
       </template>
 
-      <!-- Hidden file input (shared between grid upload and canvas upload) -->
+      <!-- Hidden file input (for canvas upload) -->
       <input
         ref="charFileInput"
         type="file"
         accept="image/*"
         class="hidden"
-        @change="canvasChar ? canvasHandleFile($event) : handleCharImageFile($event)"
+        @change="handleGroupFile"
       />
     </div>
 
@@ -488,8 +656,10 @@ async function handleApprove() {
     :name="(regenTarget as any)?.name || ''"
     :description="(regenTarget as any)?.description || ''"
     :loading="regenLoading"
-    :current-prompt="(regenTarget as any)?.description || ''"
-    @close="showRegenModal = false"
+    :current-prompt="regenPresetPrompt || (regenTarget as any)?.description || ''"
+    :visual-description="regenPresetPrompt"
+    :character-description="(regenTarget as any)?.description || ''"
+    @close="showRegenModal = false; regenPresetPrompt = ''; regenTargetGroupId = null"
     @confirm="confirmRegenerate"
   />
 
@@ -651,6 +821,8 @@ async function handleApprove() {
 }
 .canvas-header-actions {
   flex-shrink: 0;
+  display: flex;
+  gap: 6px;
 }
 
 /* Canvas area */
@@ -665,56 +837,206 @@ async function handleApprove() {
   background-size: 20px 20px;
   background-position: 0 0, 0 10px, 10px -10px, -10px 0;
 }
-.canvas-empty {
+
+/* ── Character description ── */
+.char-desc-section {
+  margin-bottom: 24px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 2px solid #D4C898;
+  border-radius: 2px;
+}
+.canvas-label {
+  display: block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  color: #6B5D40;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+.char-desc-textarea {
+  width: 100%;
+  border: 2px solid #E5D9A8;
+  border-radius: 2px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #4A3F28;
+  background: #FEF9E7;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+.char-desc-textarea:focus {
+  border-color: #E8A317;
+}
+.char-desc-textarea::placeholder {
+  color: #A89870;
+}
+
+/* ── Visual groups ── */
+.visual-groups {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+}
+.vg-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+/* Visual group card */
+.vg-card {
+  background: #fff;
+  border: 2px solid #D4C898;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.vg-card-header {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 80px 0;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #EDE3C8;
+  background: #FDF5D6;
+  gap: 8px;
+}
+.vg-card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.vg-name-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  color: #2D2515;
+  letter-spacing: 1px;
+  min-width: 0;
+  flex: 1;
+  padding: 2px 0;
+  border-bottom: 2px solid transparent;
+  transition: border-color 0.15s;
+}
+.vg-name-input:focus {
+  border-bottom-color: #E8A317;
+}
+.vg-img-count {
+  font-size: 11px;
+  color: #8B7A5A;
+  white-space: nowrap;
+}
+.vg-card-header-right {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
-/* Canvas image grid */
-.canvas-grid {
+/* Action buttons in group header */
+.vg-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 2px;
+  border: 2px solid #D4C898;
+  background: #FEF9E7;
+  color: #6B5D40;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.vg-action-btn:hover {
+  transform: translate(1px, 1px);
+}
+.vg-gen-btn:hover {
+  background: #E8A317;
+  border-color: #C88A0C;
+  color: #fff;
+}
+.vg-upload-btn:hover {
+  background: #4A90D9;
+  border-color: #3570B0;
+  color: #fff;
+}
+.vg-delete-btn:hover {
+  background: #E74C3C;
+  border-color: #C0392B;
+  color: #fff;
+}
+
+/* Group description */
+.vg-desc-row {
+  padding: 8px 14px;
+  border-bottom: 1px solid #EDE3C8;
+}
+.vg-desc-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+  color: #6B5D40;
+  padding: 4px 0;
+  font-family: inherit;
+}
+.vg-desc-input::placeholder {
+  color: #A89870;
+  font-style: italic;
+}
+
+/* Images within group */
+.vg-images {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  padding: 14px;
 }
 
-/* Canvas image card */
-.canvas-card {
+.vg-img-card {
   display: flex;
   flex-direction: column;
   border-radius: 2px;
   overflow: hidden;
   border: 2px solid #D4C898;
   background: #FDF5D6;
-  box-shadow: 4px 4px 0 0 rgba(0,0,0,0.1);
+  box-shadow: 3px 3px 0 0 rgba(0,0,0,0.08);
   transition: box-shadow 0.15s, transform 0.15s;
 }
-.canvas-card:hover {
-  box-shadow: 2px 2px 0 0 rgba(0,0,0,0.1);
-  transform: translate(2px, 2px);
+.vg-img-card:hover {
+  box-shadow: 2px 2px 0 0 rgba(0,0,0,0.08);
+  transform: translate(1px, 1px);
 }
-.canvas-card-pic {
+
+.vg-img-pic {
   aspect-ratio: 1;
   position: relative;
   overflow: hidden;
   background: #FDF4D8;
 }
-.canvas-primary-badge {
+
+.vg-primary-badge {
   position: absolute;
-  top: 8px;
-  left: 8px;
-  font-size: 18px;
+  top: 6px;
+  left: 6px;
+  font-size: 16px;
   filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
   z-index: 2;
 }
-.canvas-set-primary-btn {
+
+.vg-set-primary-btn {
   position: absolute;
-  bottom: 8px;
+  bottom: 6px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: 2px;
   border: 2px solid #F5C34B;
   background: rgba(0,0,0,0.6);
@@ -728,17 +1050,17 @@ async function handleApprove() {
   white-space: nowrap;
   z-index: 2;
 }
-.group:hover .canvas-set-primary-btn { opacity: 1; }
-.canvas-set-primary-btn:hover {
+.group:hover .vg-set-primary-btn { opacity: 1; }
+.vg-set-primary-btn:hover {
   background: #F5C34B;
   color: #2D2515;
 }
 
-.canvas-delete-btn {
+.vg-img-delete-btn {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 30px; height: 30px;
+  top: 6px;
+  right: 6px;
+  width: 26px; height: 26px;
   border-radius: 2px;
   background: rgba(231,76,60,0.85);
   color: #fff;
@@ -748,52 +1070,60 @@ async function handleApprove() {
   opacity: 0;
   transition: opacity 0.15s;
 }
-.group:hover .canvas-delete-btn { opacity: 1; }
-.canvas-delete-btn:hover { background: #E74C3C; }
+.group:hover .vg-img-delete-btn { opacity: 1; }
+.vg-img-delete-btn:hover { background: #E74C3C; }
 
-.canvas-card-name {
-  padding: 10px 12px;
-}
-.canvas-name-input {
-  width: 100%;
+.vg-img-name-input {
   border: none;
-  border-bottom: 2px solid transparent;
   outline: none;
   background: transparent;
   font-family: 'Press Start 2P', monospace;
-  font-size: 9px;
+  font-size: 8px;
   color: #4A3F28;
   letter-spacing: 1px;
   text-align: center;
-  padding: 4px 0;
-  transition: border-color 0.15s;
+  padding: 6px 8px;
+  width: 100%;
 }
-.canvas-name-input:focus {
-  border-bottom-color: #E8A317;
-}
-.canvas-name-input::placeholder {
+.vg-img-name-input::placeholder {
   color: #A89870;
 }
 
-/* Add card */
-.canvas-card-add {
-  cursor: pointer;
-  border-style: dashed;
-  background: transparent;
+/* Group empty hint */
+.vg-empty-hint {
+  padding: 24px 14px;
+  text-align: center;
+  font-size: 12px;
+  color: #A89870;
 }
-.canvas-card-add:hover {
+
+/* Add new visual group button */
+.vg-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  border: 2px dashed #D4C898;
+  border-radius: 2px;
+  background: transparent;
+  color: #8B7A5A;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.vg-add-btn:hover {
   border-color: #E8A317;
   background: rgba(232,163,23,0.05);
+  color: #E8A317;
 }
-.canvas-card-add:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.canvas-add-pic {
+
+.canvas-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #A89870;
+  padding: 60px 0;
 }
 </style>

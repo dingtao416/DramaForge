@@ -19,8 +19,12 @@ export const assetsApi = {
   },
 
   /** 重新生成角色形象 */
-  regenerateCharacter(projectId: number, charId: number, prompt?: string) {
-    return api.post<CharacterDetail>(`/projects/${projectId}/characters/${charId}/regenerate`, { prompt })
+  regenerateCharacter(projectId: number, charId: number, prompt?: string, visualDescription?: string, optimizePrompt?: boolean) {
+    return api.post<CharacterDetail>(`/projects/${projectId}/characters/${charId}/regenerate`, {
+      prompt,
+      visual_description: visualDescription || '',
+      optimize_prompt: optimizePrompt || false,
+    })
   },
 
   /** 获取场景列表 */

@@ -8,23 +8,35 @@ const props = defineProps<{
   description: string
   loading: boolean
   currentPrompt: string
+  /** Visual group description (形象描述) */
+  visualDescription?: string
+  /** Character-level description for context */
+  characterDescription?: string
 }>()
 
 const emit = defineEmits<{
   close: []
-  confirm: [prompt: string]
+  confirm: [data: { prompt: string; visualDescription: string; optimizePrompt: boolean }]
 }>()
 
 const customPrompt = ref('')
+const visualDesc = ref('')
+const useOptimize = ref(true)
 
 watch(() => props.visible, (v) => {
   if (v) {
     customPrompt.value = props.currentPrompt || ''
+    visualDesc.value = props.visualDescription || ''
+    useOptimize.value = true
   }
 })
 
 function handleConfirm() {
-  emit('confirm', customPrompt.value.trim() || '')
+  emit('confirm', {
+    prompt: customPrompt.value.trim(),
+    visualDescription: visualDesc.value.trim(),
+    optimizePrompt: useOptimize.value,
+  })
 }
 </script>
 
@@ -40,7 +52,7 @@ function handleConfirm() {
             </div>
             <div>
               <h3 class="reg-title">
-                {{ type === 'character' ? '重新生成角色形象' : '重新生成场景图' }}
+                {{ type === 'character' ? 'AI 生成角色形象' : '重新生成场景图' }}
               </h3>
               <p class="reg-subtitle">{{ name }}</p>
             </div>
@@ -51,27 +63,59 @@ function handleConfirm() {
 
           <!-- Body -->
           <div class="reg-body">
+            <!-- Visual description -->
             <div class="reg-field">
-              <label class="reg-label">
-                {{ type === 'character' ? '形象描述（可选）' : '场景描述（可选）' }}
-              </label>
-              <p class="reg-hint">留空则使用原始描述自动生成。修改描述可调整生成效果。</p>
+              <label class="reg-label">形象描述</label>
+              <p class="reg-hint">描述当前形象的外观特征，AI 会结合角色背景生成合适的图片</p>
+              <textarea
+                v-model="visualDesc"
+                class="reg-textarea"
+                placeholder="例如：正面视角，微笑表情，白色长裙，柔和自然光..."
+                rows="2"
+                :disabled="loading"
+              />
+            </div>
+
+            <!-- User extra guidance -->
+            <div class="reg-field">
+              <label class="reg-label">额外指引（可选）</label>
+              <p class="reg-hint">补充其他对生成图片的要求</p>
               <textarea
                 v-model="customPrompt"
                 class="reg-textarea"
-                :placeholder="type === 'character'
-                  ? '例如：25岁女性，长发及腰，气质优雅，穿着白色连衣裙，站在樱花树下...'
-                  : '例如：现代都市写字楼大厅，玻璃幕墙，极简风格，阳光透过落地窗洒入...'"
-                rows="4"
+                placeholder="例如：背景是在花园里，画面偏暖色调..."
+                rows="2"
                 :disabled="loading"
               />
+            </div>
+
+            <!-- AI Optimization toggle -->
+            <div v-if="type === 'character'" class="reg-optimize">
+              <label class="reg-optimize-label" :class="{ disabled: loading }">
+                <input
+                  v-model="useOptimize"
+                  type="checkbox"
+                  class="reg-optimize-check"
+                  :disabled="loading"
+                />
+                <span class="reg-optimize-text">
+                  <span class="reg-optimize-title">AI 提示词优化</span>
+                  <span class="reg-optimize-hint">使用文本 LLM 将角色描述 + 形象描述融合优化为高质量英文图像提示词</span>
+                </span>
+              </label>
+            </div>
+
+            <!-- Character context preview -->
+            <div v-if="characterDescription && type === 'character'" class="reg-context">
+              <div class="reg-context-label">角色背景参考</div>
+              <div class="reg-context-text">{{ characterDescription }}</div>
             </div>
           </div>
 
           <!-- Progress -->
           <div v-if="loading" class="reg-progress">
             <div class="reg-spinner" />
-            <span>正在生成中，请稍候...</span>
+            <span>{{ useOptimize ? 'AI 正在优化提示词并生成图片...' : '正在生成中，请稍候...' }}</span>
           </div>
 
           <!-- Footer -->
@@ -87,7 +131,7 @@ function handleConfirm() {
               @click="handleConfirm"
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 7A5.5 5.5 0 0112.17 5.5M12.5 7A5.5 5.5 0 011.83 8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12.17 5.5H9.5M1.83 8.5H4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-              {{ loading ? '生成中...' : '重新生成' }}
+              {{ loading ? '生成中...' : '开始生成' }}
             </button>
           </div>
         </div>
@@ -111,7 +155,7 @@ function handleConfirm() {
 .reg-panel {
   background: #FDF5D6;
   border-radius: 18px;
-  width: 460px;
+  width: 500px;
   max-width: 92vw;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.18);
   overflow: hidden;
@@ -166,6 +210,9 @@ function handleConfirm() {
 
 .reg-body {
   padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 .reg-field {
   display: flex;
@@ -184,23 +231,83 @@ function handleConfirm() {
 }
 .reg-textarea {
   width: 100%;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border: 1.5px solid #E5E7EB;
   border-radius: 10px;
-  font-size: 14px;
+  font-size: 13px;
   color: #374151;
   resize: vertical;
   outline: none;
   transition: border-color 0.15s;
   font-family: var(--font-sans);
-  line-height: 1.7;
+  line-height: 1.6;
   box-sizing: border-box;
+  background: #fff;
 }
 .reg-textarea:focus {
   border-color: #F5C34B;
 }
 .reg-textarea::placeholder {
   color: #A89870;
+}
+
+/* ── AI Optimization toggle ── */
+.reg-optimize {
+  padding: 12px 14px;
+  background: rgba(232, 163, 23, 0.06);
+  border: 1.5px solid rgba(232, 163, 23, 0.2);
+  border-radius: 10px;
+}
+.reg-optimize-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.reg-optimize-label.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.reg-optimize-check {
+  margin-top: 2px;
+  width: 16px; height: 16px;
+  accent-color: #E8A317;
+  flex-shrink: 0;
+}
+.reg-optimize-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.reg-optimize-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2D2515;
+}
+.reg-optimize-hint {
+  font-size: 11px;
+  color: #8B7A5A;
+  line-height: 1.4;
+}
+
+/* ── Character context ── */
+.reg-context {
+  padding: 10px 12px;
+  background: #F3F4F6;
+  border-radius: 8px;
+}
+.reg-context-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9CA3AF;
+  margin-bottom: 4px;
+}
+.reg-context-text {
+  font-size: 12px;
+  color: #6B7280;
+  line-height: 1.5;
+  max-height: 80px;
+  overflow-y: auto;
 }
 
 .reg-progress {

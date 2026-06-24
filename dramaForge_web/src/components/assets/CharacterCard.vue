@@ -5,14 +5,9 @@ import type { CharacterDetail } from '@/types/character'
 
 const props = defineProps<{
   character: CharacterDetail
-  regenerating?: boolean
-  uploadingImage?: boolean
 }>()
 
 const emit = defineEmits<{
-  edit: [CharacterDetail]
-  regenerate: [CharacterDetail]
-  addImage: [CharacterDetail]
   openGallery: [CharacterDetail]
 }>()
 
@@ -50,36 +45,6 @@ const imageCount = computed(() => props.character.reference_images?.length || 0)
 
       <!-- Image count badge -->
       <span v-if="imageCount > 0" class="char-img-count">{{ imageCount }}图</span>
-
-      <!-- Action buttons — visible on hover -->
-      <div class="char-card-actions">
-        <button
-          class="char-action-btn"
-          title="上传形象图"
-          :disabled="uploadingImage"
-          @click.stop="emit('addImage', character)"
-        >
-          <svg v-if="uploadingImage" class="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.4" stroke-dasharray="24 8" stroke-linecap="round"/></svg>
-          <svg v-else width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-        </button>
-        <button
-          class="char-action-btn"
-          title="编辑角色"
-          @click.stop="emit('edit', character)"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M10 2.5l1.5 1.5L4.5 11H3V9.5L10 2.5z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <button
-          class="char-action-btn"
-          :class="{ 'char-action-spin': regenerating }"
-          title="重新生成形象"
-          :disabled="regenerating"
-          @click.stop="emit('regenerate', character)"
-        >
-          <svg v-if="!regenerating" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 7A5.5 5.5 0 0112.17 5.5M12.5 7A5.5 5.5 0 011.83 8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12.17 5.5H9.5M1.83 8.5H4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-          <svg v-else class="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.4" stroke-dasharray="24 8" stroke-linecap="round"/></svg>
-        </button>
-      </div>
     </div>
 
     <!-- Info -->
@@ -160,55 +125,6 @@ const imageCount = computed(() => props.character.reference_images?.length || 0)
   color: #fff;
   font-size: 11px;
   font-weight: 600;
-}
-
-/* Action buttons — appear on hover */
-.char-card-actions {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%) translateY(6px);
-  display: flex;
-  gap: 6px;
-  opacity: 0;
-  transition: opacity 0.2s, transform 0.2s;
-}
-.char-card:hover .char-card-actions {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-.char-card-actions:focus-within {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
-.char-action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 2px;
-  border: 2px solid #D4C898;
-  background: #FEF9E7;
-  color: #6B5D40;
-  cursor: pointer;
-  transition: all 0.15s;
-  box-shadow: 2px 2px 0 0 rgba(0,0,0,0.1);
-}
-.char-action-btn:hover {
-  background: #E8A317;
-  border-color: #C88A0C;
-  color: #fff;
-  box-shadow: 2px 2px 0 0 #C88A0C;
-  transform: translate(1px, 1px);
-}
-.char-action-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-.char-action-spin {
-  color: #E8A317 !important;
 }
 
 /* Info */
