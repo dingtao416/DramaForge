@@ -277,7 +277,7 @@ class AssetsEngine:
                     base_url=chat_base_url,
                     **_extra_chat_kwargs(chat_options),
                 )
-                prompt = optimized.strip()
+                prompt = optimized.content.strip()
                 logger.info(f"AssetsEngine: optimized prompt ({len(prompt)} chars)")
             except Exception as e:
                 logger.warning(f"AssetsEngine: prompt optimization failed, using raw prompt: {e}")
@@ -447,7 +447,7 @@ class AssetsEngine:
             base_url=chat_base_url,
             **_extra_chat_kwargs(chat_options),
         )
-        return optimized.strip()
+        return optimized.content.strip()
 
 
 # Module-level singleton
