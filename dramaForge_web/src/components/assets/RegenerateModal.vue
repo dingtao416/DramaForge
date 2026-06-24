@@ -17,7 +17,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  confirm: [data: { prompt: string }]
+  confirm: [data: { prompt: string; visualDescription: string }]
 }>()
 
 // ── Step 1: Input ──
@@ -68,13 +68,16 @@ async function handleOptimize() {
 
 // ── Generate with the (possibly edited) prompt ──
 function handleGenerate() {
-  emit('confirm', { prompt: editedPrompt.value.trim() || optimizedPrompt.value.trim() })
+  emit('confirm', {
+    prompt: editedPrompt.value.trim() || optimizedPrompt.value.trim(),
+    visualDescription: visualDesc.value.trim(),
+  })
 }
 
 // ── Generate directly without optimization ──
 function handleDirectGenerate() {
   const prompt = [visualDesc.value, extraGuidance.value].filter(Boolean).join('. ')
-  emit('confirm', { prompt })
+  emit('confirm', { prompt, visualDescription: visualDesc.value.trim() })
 }
 </script>
 
@@ -211,7 +214,7 @@ function handleDirectGenerate() {
             <button
               v-if="type === 'scene'"
               class="btn btn-primary btn-sm"
-              @click="emit('confirm', { prompt: extraGuidance.trim() })"
+              @click="emit('confirm', { prompt: extraGuidance.trim(), visualDescription: '' })"
             >
               开始生成
             </button>

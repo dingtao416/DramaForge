@@ -295,13 +295,19 @@ const regenPresetPrompt = ref('')
 const regenTargetGroupId = ref<string | null>(null)
 const regenVisualName = ref('')
 
-async function confirmRegenerate(data: { prompt: string }) {
+async function confirmRegenerate(data: { prompt: string; visualDescription: string }) {
   if (!regenTarget.value) return
   regenLoading.value = true
   try {
     if (regenType.value === 'character') {
       const char = regenTarget.value as CharacterDetail
-      await assetsApi.regenerateCharacter(projectId, char.id, data.prompt || undefined, undefined, false)
+      // Pass visual name + description so backend can tag new images
+      await assetsApi.regenerateCharacter(
+        projectId, char.id,
+        data.prompt || undefined,
+        regenVisualName.value || data.visualDescription || undefined,
+        false,
+      )
     } else {
       const scene = regenTarget.value as SceneDetail
       await assetsApi.regenerateScene(projectId, scene.id, data.prompt || undefined)

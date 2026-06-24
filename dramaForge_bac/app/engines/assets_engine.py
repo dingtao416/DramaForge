@@ -294,6 +294,11 @@ class AssetsEngine:
 
         urls = []
         errors: list[str] = []
+
+        # Build structured image entries preserving existing images
+        existing_images: list = list(character.reference_images or [])
+        new_urls = []
+
         for i in range(variant_count):
             # Slightly vary each prompt
             varied_prompt = prompt
@@ -313,14 +318,24 @@ class AssetsEngine:
                     model=image_model, api_key=image_api_key, base_url=image_base_url,
                     **(image_options or {}),
                 )
-                urls.append(storage.get_url(image_path))
+                url = storage.get_url(image_path)
+                urls.append(url)
+                new_urls.append(url)
             except Exception as e:
                 err_msg = f"Variant {i}: {e}"
                 logger.warning(f"Character image {err_msg}")
                 errors.append(err_msg)
 
         if urls:
-            character.reference_images = urls
+            # Append new images to existing ones, preserving structure
+            img_name = visual_description[:30] if visual_description else ""
+            for url in new_urls:
+                existing_images.append({
+                    "url": url,
+                    "name": img_name,
+                    "description": visual_description or "",
+                })
+            character.reference_images = existing_images
             if errors:
                 logger.warning(
                     f"Character '{character.name}' (id={character.id}): "
