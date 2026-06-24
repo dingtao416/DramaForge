@@ -5,54 +5,43 @@ import type { SceneDetail } from '@/types/scene'
 
 const props = defineProps<{
   scene: SceneDetail
-  regenerating?: boolean
 }>()
 
 const emit = defineEmits<{
-  edit: [SceneDetail]
-  regenerate: [SceneDetail]
+  openGallery: [SceneDetail]
 }>()
 
-const mainImage = computed(() => props.scene.reference_images?.[0])
+const mainImage = computed(() => {
+  const imgs = props.scene.reference_images || []
+  if (!imgs.length) return null
+  return typeof imgs[0] === 'string' ? imgs[0] : (imgs[0] as any).url || imgs[0]
+})
+const imageCount = computed(() => props.scene.reference_images?.length || 0)
 </script>
 
 <template>
-  <div class="scene-card group">
+  <div class="scene-card group" @click="emit('openGallery', scene)">
     <!-- Image -->
     <div class="scene-card-img">
+      <div class="scene-img-hover-hint">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="3" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="11" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="11" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/></svg>
+        <span class="text-[11px] mt-1">查看全部</span>
+      </div>
       <img
         v-if="mainImage"
         :src="mainImage"
         :alt="scene.name"
-        class="w-full h-full object-cover transition-transform duration-400 group-hover:scale-105"
+        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-400"
       />
       <img
         v-else
         :src="DEFAULT_SCENE_IMAGE"
         :alt="`${scene.name} 默认场景图`"
-        class="w-full h-full object-cover transition-transform duration-400 group-hover:scale-105"
+        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-400"
       />
 
-      <!-- Action buttons -->
-      <div class="scene-card-actions">
-        <button
-          class="scene-action-btn"
-          title="编辑场景"
-          @click.stop="emit('edit', scene)"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M10 2.5l1.5 1.5L4.5 11H3V9.5L10 2.5z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <button
-          class="scene-action-btn"
-          :class="{ 'scene-action-spin': regenerating }"
-          title="重新生成场景"
-          :disabled="regenerating"
-          @click.stop="emit('regenerate', scene)"
-        >
-          <svg v-if="!regenerating" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 7A5.5 5.5 0 0112.17 5.5M12.5 7A5.5 5.5 0 011.83 8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12.17 5.5H9.5M1.83 8.5H4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-          <svg v-else class="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.4" stroke-dasharray="24 8" stroke-linecap="round"/></svg>
-        </button>
-      </div>
+      <!-- Image count badge -->
+      <span v-if="imageCount > 0" class="scene-img-count">{{ imageCount }}图</span>
     </div>
 
     <!-- Info -->
@@ -61,7 +50,7 @@ const mainImage = computed(() => props.scene.reference_images?.[0])
       <div class="scene-card-meta">
         {{ scene.time_of_day === 'night' ? '🌙 夜景' : scene.time_of_day === 'dawn' ? '🌅 黎明' : scene.time_of_day === 'dusk' ? '🌆 黄昏' : '☀️ 日景' }}
         · {{ scene.interior ? '室内' : '室外' }}
-        · {{ scene.reference_images?.length || 0 }} 图
+        · {{ imageCount }} 图
       </div>
     </div>
   </div>
@@ -80,62 +69,34 @@ const mainImage = computed(() => props.scene.reference_images?.[0])
   overflow: hidden;
 }
 
-.scene-card-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 40px;
-  color: #A89870;
-}
-
-/* Action buttons */
-.scene-card-actions {
+/* Hover hint */
+.scene-img-hover-hint {
   position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%) translateY(6px);
+  inset: 0;
+  background: rgba(0,0,0,0.45);
   display: flex;
-  gap: 6px;
-  opacity: 0;
-  transition: opacity 0.2s, transform 0.2s;
-}
-.scene-card:hover .scene-card-actions {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-.scene-card-actions:focus-within {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
-.scene-action-btn {
-  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  border: none;
-  background: rgba(255, 255, 255, 0.95);
-  color: #4B5563;
-  cursor: pointer;
-  transition: all 0.15s;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 3;
 }
-.scene-action-btn:hover {
-  background: #FDF5D6;
-  color: #E8A317;
-  box-shadow: 0 4px 12px rgba(232, 163, 23, 0.2);
+.scene-card-img:hover .scene-img-hover-hint {
+  opacity: 1;
 }
-.scene-action-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-.scene-action-spin {
-  color: #E8A317 !important;
+
+.scene-img-count {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: 100px;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 /* Info */

@@ -379,6 +379,12 @@ class AssetsEngine:
 
         urls = []
         errors: list[str] = []
+
+        # Append new images to preserve existing ones
+        existing_images: list = list(scene.reference_images or [])
+        base_idx = len(existing_images)
+        new_urls = []
+
         for i in range(variant_count):
             varied_prompt = prompt
             if variant_count > 1:
@@ -390,21 +396,27 @@ class AssetsEngine:
                 ]
                 varied_prompt = variants[i % len(variants)]
 
-            image_path = storage.scene_image_path(project_id, scene.id, i)
+            image_path = storage.scene_image_path(project_id, scene.id, base_idx + i)
             try:
                 await ai_hub.image.generate(
                     prompt=varied_prompt, output_path=str(image_path),
                     model=image_model, api_key=image_api_key, base_url=image_base_url,
                     **(image_options or {}),
                 )
-                urls.append(storage.get_url(image_path))
+                url = storage.get_url(image_path)
+                urls.append(url)
+                new_urls.append(url)
             except Exception as e:
                 err_msg = f"Variant {i}: {e}"
                 logger.warning(f"Scene image {err_msg}")
                 errors.append(err_msg)
 
         if urls:
-            scene.reference_images = urls
+            # Append structured entries to existing images
+            img_name = scene.name or ""
+            for url in new_urls:
+                existing_images.append({"url": url, "name": img_name, "description": ""})
+            scene.reference_images = existing_images
             if errors:
                 logger.warning(
                     f"Scene '{scene.name}' (id={scene.id}): "

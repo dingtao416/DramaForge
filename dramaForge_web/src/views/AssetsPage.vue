@@ -300,9 +300,105 @@ async function onRegenComplete() {
     const updated = assetsStore.characters.find(c => c.id === canvasChar.value!.id)
     if (updated) openImageCanvas(updated)
   }
+  if (canvasScene.value) {
+    const updated = assetsStore.scenes.find(s => s.id === canvasScene.value!.id)
+    if (updated) openSceneCanvas(updated)
+  }
 }
 
-// ── Character edit / regenerate (for canvas header buttons) ──
+// ── Scene canvas workspace state ──
+const canvasScene = ref<SceneDetail | null>(null)
+const sceneImages = ref<any[]>([])
+const sceneDescDraft = ref('')
+const sceneTimeOfDay = ref('day')
+const sceneInterior = ref(true)
+const sceneSaving = ref(false)
+
+function openSceneCanvas(scene: SceneDetail) {
+  canvasScene.value = scene
+  sceneDescDraft.value = scene.description || ''
+  sceneTimeOfDay.value = scene.time_of_day || 'day'
+  sceneInterior.value = scene.interior !== undefined ? scene.interior : true
+  sceneImages.value = (scene.reference_images || []).map((img: any) =>
+    typeof img === 'string' ? { url: img, name: scene.name, description: '' } : { ...img }
+  )
+}
+
+function closeSceneCanvas() {
+  canvasScene.value = null
+  sceneImages.value = []
+}
+
+async function sceneCanvasSave() {
+  if (!canvasScene.value) return
+  sceneSaving.value = true
+  try {
+    await assetsApi.updateScene(projectId, canvasScene.value.id, {
+      description: sceneDescDraft.value,
+      time_of_day: sceneTimeOfDay.value,
+      interior: sceneInterior.value,
+      reference_images: sceneImages.value,
+    } as SceneUpdate)
+    await assetsStore.fetchAssets(projectId)
+    const updated = assetsStore.scenes.find(s => s.id === canvasScene.value!.id)
+    if (updated) canvasScene.value = updated
+  } catch (e: any) { console.error('Save scene failed', e) }
+  finally { sceneSaving.value = false }
+}
+
+function sceneSetPrimary(idx: number) {
+  sceneImages.value = sceneImages.value.map((img: any, i: number) => ({ ...img, is_primary: i === idx }))
+  sceneCanvasSave()
+}
+
+async function sceneDeleteImage(idx: number) {
+  sceneImages.value = sceneImages.value.filter((_: any, i: number) => i !== idx)
+  await sceneCanvasSave()
+}
+
+function sceneUpdateImageName(idx: number, name: string) {
+  sceneImages.value[idx] = { ...sceneImages.value[idx], name }
+}
+
+const uploadingSceneId = ref<number | null>(null)
+const sceneFileInput = ref<HTMLInputElement | null>(null)
+
+function triggerSceneUpload() {
+  sceneFileInput.value?.click()
+}
+
+async function handleSceneFile(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  uploadingSceneId.value = canvasScene.value?.id || null
+  try {
+    const fd = new FormData(); fd.append('file', file)
+    const { data } = await assetsApi.uploadAsset(projectId, fd, false)
+    if (data?.url) {
+      sceneImages.value = [...sceneImages.value, {
+        url: data.url,
+        name: canvasScene.value?.name || '场景图',
+        description: '',
+      }]
+      await sceneCanvasSave()
+    }
+  } catch (err) { console.error('Scene upload failed', err) }
+  finally {
+    uploadingSceneId.value = null
+    if (sceneFileInput.value) sceneFileInput.value.value = ''
+  }
+}
+
+// Trigger AI generate for a scene
+function openRegenScene(scene: SceneDetail) {
+  regenType.value = 'scene'
+  regenTarget.value = scene
+  regenPresetPrompt.value = scene.description || ''
+  regenVisualName.value = scene.name || ''
+  showRegenModal.value = true
+}
+
+// ── Character edit (for canvas) ──
 const uploadingCharId = ref<number | null>(null)
 const charFileInput = ref<HTMLInputElement | null>(null)
 
@@ -320,12 +416,6 @@ async function saveCharEdit(data: Partial<CharacterDetail>) {
   } catch (e: any) {
     console.error('Failed to update character:', e)
   }
-}
-
-function openRegenScene(scene: SceneDetail) {
-  regenType.value = 'scene'
-  regenTarget.value = scene
-  showRegenModal.value = true
 }
 
 // ── Scene actions ──
@@ -577,24 +667,112 @@ async function handleApprove() {
       />
     </div>
 
-    <!-- Scenes grid -->
+    <!-- ═══ Scenes: canvas workspace or grid ═══ -->
     <div v-if="activeTab === 'scenes'">
-      <EmptyState
-        v-if="!assetsStore.loading && !sceneCount"
-        title="暂无场景"
-        description="生成资产后将在这里显示"
-        icon="🏠"
-      />
-      <div v-else class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-        <SceneCard
-          v-for="scene in assetsStore.scenes"
-          :key="scene.id"
-          :scene="scene"
-          :regenerating="false"
-          @edit="openSceneEdit"
-          @regenerate="openRegenScene"
-        />
+      <!-- Scene Canvas -->
+      <div v-if="canvasScene" class="canvas-workspace">
+        <div class="canvas-header">
+          <button class="canvas-back-btn" @click="closeSceneCanvas">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>返回场景列表</span>
+          </button>
+          <div class="canvas-header-info">
+            <span class="canvas-char-name">{{ canvasScene.name }}</span>
+            <span class="canvas-char-role">· {{ sceneImages.length }} 张图</span>
+          </div>
+          <div class="canvas-header-actions">
+            <button class="btn btn-outline btn-sm" @click="openRegenScene(canvasScene!)">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 7A5.5 5.5 0 0112.17 5.5M12.5 7A5.5 5.5 0 011.83 8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12.17 5.5H9.5M1.83 8.5H4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              AI生成场景
+            </button>
+            <button class="btn btn-primary btn-sm" @click="triggerSceneUpload" :disabled="!!uploadingSceneId">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="7" y1="2" x2="7" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="2" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              上传
+            </button>
+          </div>
+        </div>
+
+        <div class="canvas-area">
+          <!-- Scene description -->
+          <div class="char-desc-section">
+            <label class="canvas-label">场景描述</label>
+            <textarea v-model="sceneDescDraft" class="char-desc-textarea" rows="2"
+              placeholder="描述场景的环境、氛围、光线等，作为AI生成的参考..."
+              @blur="sceneCanvasSave" />
+          </div>
+
+          <!-- Scene metadata row -->
+          <div class="scene-meta-row">
+            <div class="scene-meta-field">
+              <label class="canvas-label">时段</label>
+              <select v-model="sceneTimeOfDay" class="scene-meta-select" @change="sceneCanvasSave">
+                <option value="day">☀️ 日景</option>
+                <option value="night">🌙 夜景</option>
+                <option value="dawn">🌅 黎明</option>
+                <option value="dusk">🌆 黄昏</option>
+              </select>
+            </div>
+            <div class="scene-meta-field">
+              <label class="canvas-label">类型</label>
+              <label class="scene-interior-toggle">
+                <input type="checkbox" v-model="sceneInterior" @change="sceneCanvasSave" />
+                <span>{{ sceneInterior ? '室内' : '室外' }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Images -->
+          <div class="visual-groups">
+            <div class="vg-header">
+              <label class="canvas-label">场景图</label>
+              <span class="text-xs text-gray-500">{{ sceneImages.length }} 张</span>
+            </div>
+
+            <div v-if="!sceneImages.length" class="canvas-empty">
+              <span class="text-5xl mb-3">🏠</span>
+              <p class="text-gray-600 mb-1">暂无场景图</p>
+              <p class="text-gray-500 text-sm">使用 AI 生成或上传场景图</p>
+            </div>
+
+            <div v-else class="scene-img-grid">
+              <div v-for="(img, idx) in sceneImages" :key="idx" class="vg-img-card group">
+                <div class="vg-img-pic">
+                  <img :src="typeof img === 'string' ? img : img.url" :alt="img.name || '场景图'" class="w-full h-full object-cover" />
+                  <span v-if="img.is_primary" class="vg-primary-badge" title="主图">⭐</span>
+                  <button v-if="!img.is_primary" class="vg-set-primary-btn" @click="sceneSetPrimary(idx)">设为主图</button>
+                  <button class="vg-img-delete-btn" @click="sceneDeleteImage(idx)">
+                    <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2.5 4h9M5 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M10.5 4v6a2 2 0 01-2 2h-3a2 2 0 01-2-2V4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                </div>
+                <input :value="img.name || ''" class="vg-img-name-input" placeholder="图片名"
+                  @input="sceneUpdateImageName(idx, ($event.target as HTMLInputElement).value)"
+                  @blur="sceneCanvasSave()" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hidden file input for scene -->
+        <input ref="sceneFileInput" type="file" accept="image/*" class="hidden" @change="handleSceneFile" />
       </div>
+
+      <!-- Scene Grid (default view) -->
+      <template v-else>
+        <EmptyState
+          v-if="!assetsStore.loading && !sceneCount"
+          title="暂无场景"
+          description="生成资产后将在这里显示"
+          icon="🏠"
+        />
+        <div v-else class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+          <SceneCard
+            v-for="scene in assetsStore.scenes"
+            :key="scene.id"
+            :scene="scene"
+            @open-gallery="openSceneCanvas"
+          />
+        </div>
+      </template>
     </div>
   </div>
 
@@ -1085,5 +1263,52 @@ async function handleApprove() {
   align-items: center;
   justify-content: center;
   padding: 60px 0;
+}
+
+/* ── Scene canvas extras ── */
+.scene-meta-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.scene-meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+.scene-meta-select {
+  padding: 8px 12px;
+  border: 2px solid #D4C898;
+  border-radius: 2px;
+  background: #fff;
+  font-size: 13px;
+  color: #4A3F28;
+  outline: none;
+  cursor: pointer;
+}
+.scene-interior-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #4A3F28;
+}
+.scene-interior-toggle input {
+  width: 16px; height: 16px;
+  accent-color: #E8A317;
+}
+
+.scene-img-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.canvas-header-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
 }
 </style>
