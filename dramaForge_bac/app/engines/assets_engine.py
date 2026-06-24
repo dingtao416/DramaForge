@@ -403,6 +403,52 @@ class AssetsEngine:
 
         return urls
 
+    async def optimize_character_image_prompt(
+        self,
+        *,
+        character_name: str,
+        character_role: str,
+        character_description: str,
+        visual_name: str,
+        visual_description: str,
+        drama_style: str = "realistic",
+        aspect_ratio: str = "9:16",
+        extra_guidance: str = "",
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+        chat_options: dict | None = None,
+    ) -> str:
+        """Use chat LLM to optimize an image generation prompt.
+
+        Combines character context + visual description + drama style
+        into a high-quality English image prompt. Does NOT generate images.
+        """
+        logger.info(
+            f"AssetsEngine: optimizing prompt for '{character_name}' "
+            f"visual='{visual_name}'"
+        )
+        messages = build_image_prompt_optimize(
+            character_name=character_name,
+            character_role=character_role,
+            character_description=character_description or "",
+            visual_name=visual_name,
+            visual_description=visual_description or "",
+            drama_style=drama_style,
+            aspect_ratio=aspect_ratio,
+            extra_guidance=extra_guidance,
+        )
+        optimized = await ai_hub.chat.complete(
+            messages=messages,
+            temperature=0.6,
+            max_tokens=400,
+            model=chat_model,
+            api_key=chat_api_key,
+            base_url=chat_base_url,
+            **_extra_chat_kwargs(chat_options),
+        )
+        return optimized.strip()
+
 
 # Module-level singleton
 assets_engine = AssetsEngine()

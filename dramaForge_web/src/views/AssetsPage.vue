@@ -285,27 +285,23 @@ function openRegenForGroup(groupId: string) {
   const g = visualGroups.value.find(v => v.id === groupId)
   regenType.value = 'character'
   regenTarget.value = canvasChar.value
-  // Pre-fill regenerate prompt with group description
   regenPresetPrompt.value = g?.description || ''
+  regenVisualName.value = g?.name || ''
   regenTargetGroupId.value = groupId
   showRegenModal.value = true
 }
 
 const regenPresetPrompt = ref('')
 const regenTargetGroupId = ref<string | null>(null)
+const regenVisualName = ref('')
 
-async function confirmRegenerate(data: { prompt: string; visualDescription: string; optimizePrompt: boolean }) {
+async function confirmRegenerate(data: { prompt: string }) {
   if (!regenTarget.value) return
   regenLoading.value = true
   try {
     if (regenType.value === 'character') {
       const char = regenTarget.value as CharacterDetail
-      await assetsApi.regenerateCharacter(
-        projectId, char.id,
-        data.prompt || undefined,
-        data.visualDescription || undefined,
-        data.optimizePrompt,
-      )
+      await assetsApi.regenerateCharacter(projectId, char.id, data.prompt || undefined, undefined, false)
     } else {
       const scene = regenTarget.value as SceneDetail
       await assetsApi.regenerateScene(projectId, scene.id, data.prompt || undefined)
@@ -344,13 +340,6 @@ async function saveCharEdit(data: Partial<CharacterDetail>) {
   } catch (e: any) {
     console.error('Failed to update character:', e)
   }
-}
-
-function openRegenCharacter(char: CharacterDetail) {
-  regenType.value = 'character'
-  regenTarget.value = char
-  regenPresetPrompt.value = char.description || ''
-  showRegenModal.value = true
 }
 
 function openRegenScene(scene: SceneDetail) {
@@ -645,12 +634,12 @@ async function handleApprove() {
     :visible="showRegenModal"
     :type="regenType"
     :name="(regenTarget as any)?.name || ''"
-    :description="(regenTarget as any)?.description || ''"
-    :loading="regenLoading"
-    :current-prompt="regenPresetPrompt || (regenTarget as any)?.description || ''"
+    :project-id="projectId"
+    :char-id="regenType === 'character' ? (regenTarget as any)?.id : undefined"
+    :scene-id="regenType === 'scene' ? (regenTarget as any)?.id : undefined"
     :visual-description="regenPresetPrompt"
-    :character-description="(regenTarget as any)?.description || ''"
-    @close="showRegenModal = false; regenPresetPrompt = ''; regenTargetGroupId = null"
+    :visual-name="regenVisualName"
+    @close="showRegenModal = false; regenPresetPrompt = ''; regenTargetGroupId = null; regenVisualName = ''"
     @confirm="confirmRegenerate"
   />
 

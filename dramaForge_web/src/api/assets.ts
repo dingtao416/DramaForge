@@ -27,6 +27,18 @@ export const assetsApi = {
     })
   },
 
+  /** 优化角色形象生成提示词（不生成图片） */
+  optimizeCharacterPrompt(projectId: number, charId: number, data: {
+    visual_name: string
+    visual_description: string
+    extra_guidance: string
+  }) {
+    return api.post<{ optimized_prompt: string }>(
+      `/projects/${projectId}/characters/${charId}/optimize-prompt`,
+      data,
+    )
+  },
+
   /** 获取场景列表 */
   getScenes(projectId: number) {
     return api.get<SceneDetail[]>(`/projects/${projectId}/scenes`)

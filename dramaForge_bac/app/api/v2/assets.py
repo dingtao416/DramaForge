@@ -8,6 +8,7 @@ Also includes global asset library endpoints (Spec 18).
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Form
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -249,6 +250,51 @@ async def regenerate_character(
     await db.flush()
     await db.refresh(character)
     return character
+
+
+class OptimizePromptRequest(BaseModel):
+    visual_name: str = Field(default="", description="形象名称")
+    visual_description: str = Field(default="", description="形象描述")
+    extra_guidance: str = Field(default="", description="额外指引")
+
+
+class OptimizePromptResponse(BaseModel):
+    optimized_prompt: str
+
+
+@router.post("/projects/{project_id}/characters/{char_id}/optimize-prompt", response_model=OptimizePromptResponse)
+async def optimize_character_prompt(
+    project_id: int,
+    char_id: int,
+    user: CurrentUser,
+    db: DbSession,
+    body: OptimizePromptRequest = OptimizePromptRequest(),
+):
+    """Use LLM to optimize an image generation prompt. Does NOT generate images."""
+    await get_user_project(project_id, user, db)
+    character = await db.get(Character, char_id)
+    if not character or character.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    project = await db.get(Project, project_id)
+    chat_resolved = await user_model_resolver.resolve(db, user.id, "chat")
+
+    optimized = await assets_engine.optimize_character_image_prompt(
+        character_name=character.name,
+        character_role=character.role.value if character.role else "supporting",
+        character_description=character.description or "",
+        visual_name=body.visual_name or "默认形象",
+        visual_description=body.visual_description or "",
+        drama_style=project.style.value if project and project.style else "realistic",
+        aspect_ratio=project.aspect_ratio if project else "9:16",
+        extra_guidance=body.extra_guidance or "",
+        chat_model=chat_resolved.model_id,
+        chat_api_key=chat_resolved.api_key,
+        chat_base_url=chat_resolved.base_url,
+        chat_options=chat_resolved.raw_params or {},
+    )
+
+    return OptimizePromptResponse(optimized_prompt=optimized)
 
 
 @router.get("/projects/{project_id}/scenes", response_model=list[SceneDetail])
