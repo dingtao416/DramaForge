@@ -53,6 +53,11 @@ onMounted(async () => {
 const charCount = computed(() => assetsStore.characters.length)
 const sceneCount = computed(() => assetsStore.scenes.length)
 
+// Total images across all visual groups in the open canvas
+const totalCanvasImages = computed(() =>
+  visualGroups.value.reduce((sum, g) => sum + g.images.length, 0)
+)
+
 // ── Generate all assets ──
 
 const genProgressMessages = [
@@ -454,7 +459,7 @@ async function handleApprove() {
           </button>
           <div class="canvas-header-info">
             <span class="canvas-char-name">{{ canvasChar.name }}</span>
-            <span class="canvas-char-role">· {{ canvasChar.role }} · {{ canvasImages.length }} 张形象图</span>
+            <span class="canvas-char-role">· {{ canvasChar.role }} · {{ totalCanvasImages }} 张形象图</span>
           </div>
           <div class="canvas-header-actions">
             <button class="btn btn-outline btn-sm" @click="openRegenCharacter(canvasChar!)">
