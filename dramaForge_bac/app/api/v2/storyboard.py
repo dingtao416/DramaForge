@@ -36,7 +36,7 @@ from app.schemas.storyboard import (
 from app.engines.video_engine import video_engine
 from app.services.user_model_resolver import user_model_resolver
 from app.services.storage import storage
-from app.core.security import CurrentUser, DbSession
+from app.core.security import CurrentUser, DbSession, get_user_project
 from app.core.billing_deps import require_credits
 
 MAX_BGM_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -293,6 +293,9 @@ async def generate_storyboard(
     body: StoryboardGenerateRequest = StoryboardGenerateRequest(),
 ):
     """Generate storyboard (segments + shots) for an episode via AI (async)."""
+    # Verify project ownership
+    await get_user_project(project_id, user, db)
+
     # Consume credits for storyboard generation
     await require_credits(db, user.id, "storyboard_gen", description="分镜自动生成")
     await db.commit()  # release write lock before background task
@@ -333,9 +336,11 @@ async def generate_storyboard(
 async def get_storyboard_generation_status(
     project_id: int,
     episode_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Get storyboard generation progress for an episode."""
+    await get_user_project(project_id, user, db)
     await _get_episode(project_id, episode_id, db)
     progress = STORYBOARD_PROGRESS.get(episode_id)
     if progress:
@@ -361,9 +366,11 @@ async def get_storyboard_generation_status(
 async def get_storyboard(
     project_id: int,
     episode_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Get the full storyboard for an episode."""
+    await get_user_project(project_id, user, db)
     episode = await _get_episode(project_id, episode_id, db)
 
     # Load segments with shots
@@ -399,9 +406,11 @@ async def update_shot(
     episode_id: int,
     shot_id: int,
     body: ShotUpdate,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Edit a shot's details."""
+    await get_user_project(project_id, user, db)
     shot = await db.get(Shot, shot_id)
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
@@ -596,6 +605,9 @@ async def generate_segment(
     body: SegmentGenerateRequest | None = None,
 ):
     """Generate assets and video for a single segment (async)."""
+    # Verify project ownership
+    await get_user_project(project_id, user, db)
+
     # Video generation: charge for 5s default video per segment
     await require_credits(db, user.id, "video_default_5s", description="分镜视频生成")
     await db.commit()  # release write lock before background task
@@ -636,6 +648,7 @@ async def generate_shot(
     body: SegmentGenerateRequest | None = None,
 ):
     """Generate assets and video for a single shot (async)."""
+    await get_user_project(project_id, user, db)
     await require_credits(db, user.id, "video_default_5s", description="分镜视频生成")
     await db.commit()
 
@@ -747,6 +760,7 @@ async def regenerate_segment(
     body: SegmentGenerateRequest | None = None,
 ):
     """Regenerate a segment (assets + video) — async."""
+    await get_user_project(project_id, user, db)
     await require_credits(db, user.id, "video_default_5s", description="分镜视频重新生成")
     await db.commit()  # release write lock before background task
 
@@ -782,6 +796,9 @@ async def compose_episode(
     body: ComposeRequest = ComposeRequest(),
 ):
     """Compose all segments into a full episode video with optional quality/BGM/subtitle options."""
+    # Verify project ownership
+    await get_user_project(project_id, user, db)
+
     # Compositing costs credits
     await require_credits(db, user.id, "video_default_5s", description="剧集合成")
     await db.commit()  # release write lock before the compose operation
@@ -835,9 +852,7 @@ async def export_project(
     db: AsyncSession = Depends(get_db),
 ):
     """Export project — mark as completed."""
-    project = await db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await get_user_project(project_id, user, db)
 
     project.status = ProjectStep.COMPLETED
     await db.flush()
@@ -852,14 +867,12 @@ async def export_project(
 @router.post("/projects/{project_id}/bgm/upload")
 async def upload_bgm(
     project_id: int,
+    user: CurrentUser,
     file: UploadFile = File(...),
-    user: CurrentUser = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a background music file for the project."""
-    project = await db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await get_user_project(project_id, user, db)
 
     # Validate file type
     ext = (file.filename or "").rsplit(".", 1)[-1].lower() if file.filename else ""
@@ -897,6 +910,7 @@ async def download_episode_video(
     db: AsyncSession = Depends(get_db),
 ):
     """Download the composed episode video file."""
+    await get_user_project(project_id, user, db)
     episode = await _get_episode(project_id, episode_id, db)
 
     video_path = storage.episode_video_path(project_id, episode.number)
@@ -941,6 +955,7 @@ async def batch_update_shots(
     db: AsyncSession = Depends(get_db),
 ):
     """Apply the same settings to multiple shots at once."""
+    await get_user_project(project_id, user, db)
     episode = await _get_episode(project_id, episode_id, db)
 
     update_data = body.model_dump(exclude_unset=True, exclude={"shot_ids"})
@@ -976,6 +991,7 @@ async def create_shot(
     db: AsyncSession = Depends(get_db),
 ):
     """Add a new shot to a segment manually."""
+    await get_user_project(project_id, user, db)
     episode = await _get_episode(project_id, episode_id, db)
 
     segment = await db.get(Segment, segment_id)
@@ -1018,6 +1034,7 @@ async def delete_shot(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a shot from the storyboard."""
+    await get_user_project(project_id, user, db)
     episode = await _get_episode(project_id, episode_id, db)
 
     shot = await db.get(Shot, shot_id)

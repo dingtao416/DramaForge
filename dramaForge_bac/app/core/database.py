@@ -113,6 +113,12 @@ async def init_db() -> None:
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         if "sqlite" in settings.database_url:
+            result = await conn.execute(text("PRAGMA table_info(projects)"))
+            columns = {row[1] for row in result.fetchall()}
+            if "user_id" not in columns:
+                await conn.execute(
+                    text("ALTER TABLE projects ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE")
+                )
             result = await conn.execute(text("PRAGMA table_info(shots)"))
             columns = {row[1] for row in result.fetchall()}
             if "visual_references" not in columns:

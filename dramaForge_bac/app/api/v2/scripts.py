@@ -30,7 +30,7 @@ from app.schemas.script import (
 from app.engines.script_engine import script_engine
 from app.services.storage import storage
 from app.services.user_model_resolver import user_model_resolver
-from app.core.security import CurrentUser, DbSession
+from app.core.security import CurrentUser, DbSession, get_user_project
 from app.core.billing_deps import require_credits
 
 router = APIRouter()
@@ -42,11 +42,8 @@ def _sse_event(event: str, data: dict | str | None) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
-async def _get_project(project_id: int, db: AsyncSession) -> Project:
-    project = await db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
+async def _get_project(project_id: int, user, db: AsyncSession) -> Project:
+    return await get_user_project(project_id, user, db)
 
 
 async def _get_script(project_id: int, db: AsyncSession) -> Script:
@@ -74,7 +71,7 @@ async def generate_script(
     await require_credits(db, user.id, "script_gen", description="剧本 AI 生成")
     await db.commit()  # release write lock before the AI call
 
-    project = await _get_project(project_id, db)
+    project = await _get_project(project_id, user, db)
 
     # Collect existing character & scene names (for dedup when preserving)
     existing_chars = await db.execute(
@@ -320,7 +317,7 @@ async def generate_script_stream(
     """
     await require_credits(db, user.id, "script_gen", description="剧本 AI 生成(流式)")
 
-    project = await _get_project(project_id, db)
+    project = await _get_project(project_id, user, db)
 
     # Resolve user's configured chat model
     resolved = await user_model_resolver.resolve(db, user.id, "chat")
@@ -534,12 +531,13 @@ async def parse_script_file(
 @router.post("/projects/{project_id}/script/upload", response_model=ScriptDetail)
 async def upload_script(
     project_id: int,
+    user: CurrentUser,
     file: UploadFile = File(...),
     total_episodes: int = 1,
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a .docx/.doc/.txt script file."""
-    project = await _get_project(project_id, db)
+    project = await _get_project(project_id, user, db)
 
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
     if ext not in ("docx", "doc", "txt"):
@@ -593,9 +591,11 @@ async def upload_script(
 @router.get("/projects/{project_id}/script", response_model=ScriptDetail)
 async def get_script(
     project_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Get the script for a project."""
+    await get_user_project(project_id, user, db)
     return await _get_script(project_id, db)
 
 
@@ -603,9 +603,11 @@ async def get_script(
 async def update_script(
     project_id: int,
     body: ScriptUpdate,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Edit script metadata."""
+    await get_user_project(project_id, user, db)
     script = await _get_script(project_id, db)
 
     update_data = body.model_dump(exclude_unset=True)
@@ -622,9 +624,11 @@ async def update_episode(
     project_id: int,
     episode_id: int,
     body: EpisodeUpdate,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Edit an episode's content."""
+    await get_user_project(project_id, user, db)
     episode = await db.get(Episode, episode_id)
     if not episode:
         raise HTTPException(status_code=404, detail="Episode not found")
@@ -640,9 +644,11 @@ async def update_episode(
 @router.post("/projects/{project_id}/script/rewrite-narration", response_model=ScriptDetail)
 async def rewrite_narration(
     project_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Rewrite script from dialogue to narration style."""
+    await get_user_project(project_id, user, db)
     script = await _get_script(project_id, db)
 
     # Collect all episode content
@@ -680,6 +686,7 @@ async def rewrite_narration_stream(
         - done    → {content: "full narration text"}
         - error   → {message: "..."}
     """
+    await get_user_project(project_id, user, db)
     script = await _get_script(project_id, db)
 
     # Collect all episode content
@@ -730,9 +737,11 @@ async def rewrite_narration_stream(
 @router.post("/projects/{project_id}/script/approve", response_model=ScriptDetail)
 async def approve_script(
     project_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Approve the script and advance project to Step 2 (Assets)."""
+    await get_user_project(project_id, user, db)
     script = await _get_script(project_id, db)
 
     script.is_approved = True
@@ -740,7 +749,7 @@ async def approve_script(
         ep.is_approved = True
 
     # Advance project status
-    project = await _get_project(project_id, db)
+    project = await get_user_project(project_id, user, db)
     project.status = ProjectStep.ASSETS
 
     await db.flush()
@@ -755,8 +764,8 @@ async def approve_script(
 @router.get("/projects/{project_id}/script/export")
 async def export_script(
     project_id: int,
+    user: CurrentUser,
     format: str = Query("docx", description="Export format: docx or txt"),
-    user: CurrentUser = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Export the script as a downloadable file (DOCX or TXT)."""
@@ -764,7 +773,7 @@ async def export_script(
     from io import BytesIO
 
     script = await _get_script(project_id, db)
-    project = await _get_project(project_id, db)
+    project = await _get_project(project_id, user, db)
 
     if format == "txt":
         lines = [f"《{project.title}》剧本", "=" * 40, ""]

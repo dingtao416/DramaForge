@@ -4,6 +4,8 @@
  * 支持自动重连 + 事件分发
  */
 
+import { getToken } from './client'
+
 export type WSMessageType = 'progress' | 'completed' | 'error' | 'heartbeat'
 
 export interface WSMessage {
@@ -33,7 +35,11 @@ class WebSocketManager {
     const pathname = base.pathname.replace(/\/$/, '')
     const url = `${base.origin}${pathname}/ws/tasks/${taskId}`
 
-    const ws = new WebSocket(url)
+    // Attach JWT token for authentication (backend verifies task ownership)
+    const token = getToken()
+    const wsUrl = token ? `${url}?token=${encodeURIComponent(token)}` : url
+
+    const ws = new WebSocket(wsUrl)
     this.connections.set(taskId, ws)
 
     if (onMessage) {

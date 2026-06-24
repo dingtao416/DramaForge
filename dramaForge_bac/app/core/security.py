@@ -159,6 +159,34 @@ async def get_optional_user(
         return None
 
 
+# ──────────── Project Ownership Helper ─────────────────────────────
+
+async def get_user_project(
+    project_id: int,
+    user,
+    db: AsyncSession,
+):
+    """Verify that the current user owns the project.
+
+    Returns the Project if found and owned by the user,
+    raises 404 otherwise. Call this at the top of project-scoped endpoints.
+
+    Usage::
+
+        project = await get_user_project(project_id, user, db)
+    """
+    # Lazy import to avoid circular dependency
+    from app.models.project import Project
+
+    project = await db.get(Project, project_id)
+    if not project or project.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+    return project
+
+
 # ──────────── Type aliases ─────────────────────────────────────────
 # Import these in route modules for clean signatures:
 #   from app.core.security import CurrentUser, OptionalUser, DbSession

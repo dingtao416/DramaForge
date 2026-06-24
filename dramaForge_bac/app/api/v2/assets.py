@@ -28,7 +28,7 @@ from app.schemas.assets import (
 )
 from app.engines.assets_engine import assets_engine, ImageGenerationError
 from app.services.user_model_resolver import user_model_resolver
-from app.core.security import CurrentUser, DbSession
+from app.core.security import CurrentUser, DbSession, get_user_project
 from app.core.billing_deps import require_credits
 from app.models.character import CharacterRole
 from app.services.storage import storage as storage_service
@@ -96,9 +96,7 @@ async def generate_assets(
     body: AssetsGenerateRequest = AssetsGenerateRequest(),
 ):
     """Generate all character + scene assets from the approved script."""
-    project = await db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await get_user_project(project_id, user, db)
 
     # Get script
     stmt = select(Script).where(Script.project_id == project_id)
@@ -162,9 +160,11 @@ async def generate_assets(
 @router.get("/projects/{project_id}/characters", response_model=list[CharacterDetail])
 async def list_characters(
     project_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """List all characters for a project."""
+    await get_user_project(project_id, user, db)
     result = await db.execute(
         select(Character).where(Character.project_id == project_id)
     )
@@ -176,9 +176,11 @@ async def update_character(
     project_id: int,
     char_id: int,
     body: CharacterUpdate,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Edit a character's details."""
+    await get_user_project(project_id, user, db)
     character = await db.get(Character, char_id)
     if not character or character.project_id != project_id:
         raise HTTPException(status_code=404, detail="Character not found")
@@ -201,6 +203,7 @@ async def regenerate_character(
     body: CharacterRegenerateRequest = CharacterRegenerateRequest(),
 ):
     """Regenerate a character's image."""
+    await get_user_project(project_id, user, db)
     character = await db.get(Character, char_id)
     if not character or character.project_id != project_id:
         raise HTTPException(status_code=404, detail="Character not found")
@@ -236,9 +239,11 @@ async def regenerate_character(
 @router.get("/projects/{project_id}/scenes", response_model=list[SceneDetail])
 async def list_scenes(
     project_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """List all scenes for a project."""
+    await get_user_project(project_id, user, db)
     result = await db.execute(
         select(SceneLocation).where(SceneLocation.project_id == project_id)
     )
@@ -250,9 +255,11 @@ async def update_scene(
     project_id: int,
     scene_id: int,
     body: SceneUpdate,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Edit a scene's details."""
+    await get_user_project(project_id, user, db)
     scene = await db.get(SceneLocation, scene_id)
     if not scene or scene.project_id != project_id:
         raise HTTPException(status_code=404, detail="Scene not found")
@@ -275,6 +282,7 @@ async def regenerate_scene(
     body: SceneRegenerateRequest = SceneRegenerateRequest(),
 ):
     """Regenerate a scene's image."""
+    await get_user_project(project_id, user, db)
     scene = await db.get(SceneLocation, scene_id)
     if not scene or scene.project_id != project_id:
         raise HTTPException(status_code=404, detail="Scene not found")
@@ -310,12 +318,11 @@ async def regenerate_scene(
 @router.post("/projects/{project_id}/assets/approve")
 async def approve_assets(
     project_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Approve all assets and advance project to Step 3 (Storyboard)."""
-    project = await db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await get_user_project(project_id, user, db)
 
     project.status = ProjectStep.STORYBOARD
     await db.flush()
@@ -329,13 +336,14 @@ async def approve_assets(
 
 @router.get("/assets", response_model=list[CharacterDetail])
 async def list_global_assets(
+    user: CurrentUser,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     role: str = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """List all character assets across projects (global library)."""
-    stmt = select(Character).offset(skip).limit(limit)
+    stmt = select(Character).join(Project).where(Project.user_id == user.id).offset(skip).limit(limit)
     if role:
         stmt = stmt.where(Character.role == role)
     result = await db.execute(stmt)
@@ -344,18 +352,21 @@ async def list_global_assets(
 
 @router.get("/assets/characters", response_model=list[CharacterDetail])
 async def list_global_characters(
+    user: CurrentUser,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all characters across all projects."""
-    stmt = select(Character).offset(skip).limit(limit)
+    """List all characters across all projects (scoped to user)."""
+    stmt = select(Character).join(Project).where(Project.user_id == user.id).offset(skip).limit(limit)
     result = await db.execute(stmt)
     return result.scalars().all()
 
 
 @router.post("/assets/characters", response_model=CharacterDetail, status_code=201)
 async def create_global_character(
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
     name: str = Form(...),
     project_id: int = Form(...),
     description: str = Form(""),
@@ -363,14 +374,10 @@ async def create_global_character(
     gender: str = Form(""),
     age: str = Form(""),
     image: UploadFile | None = File(None),
-    user: CurrentUser = None,
-    db: AsyncSession = Depends(get_db),
 ):
     """Create a new character in the global library (requires project context)."""
-    # Validate project exists
-    project = await db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    # Validate project exists and user owns it
+    project = await get_user_project(project_id, user, db)
 
     # Resolve role
     try:
@@ -417,21 +424,19 @@ async def create_global_character(
 
 @router.post("/assets/upload", status_code=201)
 async def upload_global_asset(
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
     project_id: int = Form(...),
     file: UploadFile = File(...),
     name: str = Form(""),
     asset_type: str = Form("character"),
     create_record: bool = Form(True),
-    user: CurrentUser = None,
-    db: AsyncSession = Depends(get_db),
 ):
     """Upload an image/video asset to the global library."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
 
-    project = await db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await get_user_project(project_id, user, db)
 
     if asset_type not in {"character", "scene"}:
         raise HTTPException(status_code=400, detail="asset_type must be character or scene")
@@ -477,18 +482,27 @@ async def upload_global_asset(
 @router.delete("/assets/{asset_id}", status_code=204)
 async def delete_asset(
     asset_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Delete an asset by ID."""
     # Try character first, then scene
     character = await db.get(Character, asset_id)
     if character:
+        # Verify user owns the project this character belongs to
+        project = await db.get(Project, character.project_id)
+        if not project or project.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Asset not found")
         await db.delete(character)
         await db.flush()
         return
 
     scene = await db.get(SceneLocation, asset_id)
     if scene:
+        # Verify user owns the project this scene belongs to
+        project = await db.get(Project, scene.project_id)
+        if not project or project.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Asset not found")
         await db.delete(scene)
         await db.flush()
         return

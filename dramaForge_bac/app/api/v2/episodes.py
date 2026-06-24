@@ -23,7 +23,7 @@ from app.schemas.episode import EpisodeOverview, EpisodeDetail
 from app.ai_hub import ai_hub
 from app.prompts.script_prompts import SCRIPT_STRUCTURED_SYSTEM
 from app.services.user_model_resolver import user_model_resolver
-from app.core.security import CurrentUser, DbSession
+from app.core.security import CurrentUser, DbSession, get_user_project
 from app.core.billing_deps import require_credits
 
 router = APIRouter()
@@ -44,9 +44,13 @@ class EpisodeRegenerateRequest(BaseModel):
 @router.get("/projects/{project_id}/episodes", response_model=list[EpisodeOverview])
 async def list_episodes(
     project_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """List all episodes with statistics (character count, scene count, etc.)."""
+    # Verify project ownership
+    await get_user_project(project_id, user, db)
+
     # Get script for the project
     stmt = (
         select(Script)
@@ -106,9 +110,13 @@ async def list_episodes(
 async def get_episode(
     project_id: int,
     episode_id: int,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
     """Get full episode details."""
+    # Verify project ownership
+    await get_user_project(project_id, user, db)
+
     episode = await db.get(Episode, episode_id)
     if not episode:
         raise HTTPException(status_code=404, detail="Episode not found")
@@ -132,6 +140,9 @@ async def regenerate_episode(
     db: AsyncSession = Depends(get_db),
 ):
     """Regenerate a single episode's content via AI, preserving downstream data."""
+    # Verify project ownership
+    project = await get_user_project(project_id, user, db)
+
     if user:
         await require_credits(db, user.id, "script_gen", description="剧集内容重新生成")
         # Commit credits immediately to release the SQLite write lock during the AI call below.
@@ -153,12 +164,7 @@ async def regenerate_episode(
     if not script or script.project_id != project_id:
         raise HTTPException(status_code=404, detail="Episode not found in this project")
 
-    # Get project for context
-    project = await db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    # Resolve user's chat model
+    # Build context from the script and sibling episodes
     if user:
         resolved = await user_model_resolver.resolve(db, user.id, "chat")
         chat_model = resolved.model_id

@@ -10,7 +10,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Enum, String, Text, DateTime, func
+from sqlalchemy import Enum, String, Text, DateTime, ForeignKey, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from app.models.script import Script
     from app.models.character import Character
     from app.models.scene import SceneLocation
+    from app.models.user import User
 
 
 # ──────────── Enums ────────────────────────────────────────────────
@@ -60,6 +61,9 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, default="")
     style: Mapped[VideoStyle] = mapped_column(
@@ -84,6 +88,7 @@ class Project(Base):
     )
 
     # ── Relationships ──
+    user: Mapped["User"] = relationship("User", back_populates="projects")
     script: Mapped[Optional["Script"]] = relationship(
         "Script", back_populates="project", uselist=False,
         cascade="all, delete-orphan",
