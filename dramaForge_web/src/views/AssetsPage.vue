@@ -34,7 +34,6 @@ const genProgress = ref('')
 const showRegenModal = ref(false)
 const regenType = ref<'character' | 'scene'>('character')
 const regenTarget = ref<CharacterDetail | SceneDetail | null>(null)
-const regenLoading = ref(false)
 
 // ── Edit modal state ──
 const editingCharacter = ref<CharacterDetail | null>(null)
@@ -295,36 +294,11 @@ const regenPresetPrompt = ref('')
 const regenTargetGroupId = ref<string | null>(null)
 const regenVisualName = ref('')
 
-async function confirmRegenerate(data: { prompt: string; visualDescription: string }) {
-  if (!regenTarget.value) return
-  regenLoading.value = true
-  try {
-    if (regenType.value === 'character') {
-      const char = regenTarget.value as CharacterDetail
-      // Pass visual name + description so backend can tag new images
-      await assetsApi.regenerateCharacter(
-        projectId, char.id,
-        data.prompt || undefined,
-        regenVisualName.value || data.visualDescription || undefined,
-        false,
-      )
-    } else {
-      const scene = regenTarget.value as SceneDetail
-      await assetsApi.regenerateScene(projectId, scene.id, data.prompt || undefined)
-    }
-    showRegenModal.value = false
-    await assetsStore.fetchAssets(projectId)
-    // Refresh canvas if open
-    if (canvasChar.value) {
-      const updated = assetsStore.characters.find(c => c.id === canvasChar.value!.id)
-      if (updated) openImageCanvas(updated)
-    }
-  } catch (e: any) {
-    console.error('Regenerate failed:', e)
-  } finally {
-    regenLoading.value = false
-    regenTargetGroupId.value = null
-    regenPresetPrompt.value = ''
+async function onRegenComplete() {
+  await assetsStore.fetchAssets(projectId)
+  if (canvasChar.value) {
+    const updated = assetsStore.characters.find(c => c.id === canvasChar.value!.id)
+    if (updated) openImageCanvas(updated)
   }
 }
 
@@ -646,7 +620,7 @@ async function handleApprove() {
     :visual-description="regenPresetPrompt"
     :visual-name="regenVisualName"
     @close="showRegenModal = false; regenPresetPrompt = ''; regenTargetGroupId = null; regenVisualName = ''"
-    @confirm="confirmRegenerate"
+    @generated="onRegenComplete"
   />
 
   <!-- ── Edit Modals ── -->

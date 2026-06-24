@@ -298,6 +298,7 @@ class AssetsEngine:
         # Build structured image entries preserving existing images
         existing_images: list = list(character.reference_images or [])
         new_urls = []
+        base_idx = len(existing_images)  # Start from next index to avoid overwriting
 
         for i in range(variant_count):
             # Slightly vary each prompt
@@ -311,7 +312,7 @@ class AssetsEngine:
                 ]
                 varied_prompt = variants[i % len(variants)]
 
-            image_path = storage.character_image_path(project_id, character.id, i)
+            image_path = storage.character_image_path(project_id, character.id, base_idx + i)
             try:
                 await ai_hub.image.generate(
                     prompt=varied_prompt, output_path=str(image_path),
