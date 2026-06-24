@@ -21,9 +21,11 @@ from app.models.scene import SceneLocation
 from app.schemas.assets import (
     CharacterDetail,
     CharacterUpdate,
+    CharacterCreate,
     CharacterRegenerateRequest,
     SceneDetail,
     SceneUpdate,
+    SceneCreate,
     SceneRegenerateRequest,
     AssetsGenerateRequest,
 )
@@ -172,6 +174,22 @@ async def list_characters(
     return result.scalars().all()
 
 
+@router.post("/projects/{project_id}/characters", response_model=CharacterDetail, status_code=201)
+async def create_character(
+    project_id: int,
+    body: CharacterCreate,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new character in the project."""
+    await get_user_project(project_id, user, db)
+    character = Character(project_id=project_id, **body.model_dump())
+    db.add(character)
+    await db.flush()
+    await db.refresh(character)
+    return character
+
+
 @router.put("/projects/{project_id}/characters/{char_id}", response_model=CharacterDetail)
 async def update_character(
     project_id: int,
@@ -309,6 +327,22 @@ async def list_scenes(
         select(SceneLocation).where(SceneLocation.project_id == project_id)
     )
     return result.scalars().all()
+
+
+@router.post("/projects/{project_id}/scenes", response_model=SceneDetail, status_code=201)
+async def create_scene(
+    project_id: int,
+    body: SceneCreate,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new scene in the project."""
+    await get_user_project(project_id, user, db)
+    scene = SceneLocation(project_id=project_id, **body.model_dump())
+    db.add(scene)
+    await db.flush()
+    await db.refresh(scene)
+    return scene
 
 
 @router.put("/projects/{project_id}/scenes/{scene_id}", response_model=SceneDetail)

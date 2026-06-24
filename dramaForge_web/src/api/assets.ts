@@ -2,6 +2,20 @@ import api from './client'
 import type { CharacterDetail, CharacterUpdate } from '@/types/character'
 import type { SceneDetail, SceneUpdate, AssetsGenerateRequest } from '@/types/scene'
 
+export interface CharacterCreate {
+  name: string
+  role?: string
+  description?: string
+  voice_desc?: string
+}
+
+export interface SceneCreate {
+  name: string
+  description?: string
+  time_of_day?: string
+  interior?: boolean
+}
+
 export const assetsApi = {
   /** 生成全部资产 */
   generateAll(projectId: number, data?: AssetsGenerateRequest) {
@@ -11,6 +25,11 @@ export const assetsApi = {
   /** 获取角色列表 */
   getCharacters(projectId: number) {
     return api.get<CharacterDetail[]>(`/projects/${projectId}/characters`)
+  },
+
+  /** 创建角色 */
+  createCharacter(projectId: number, data: CharacterCreate) {
+    return api.post<CharacterDetail>(`/projects/${projectId}/characters`, data)
   },
 
   /** 更新角色 */
@@ -42,6 +61,11 @@ export const assetsApi = {
   /** 获取场景列表 */
   getScenes(projectId: number) {
     return api.get<SceneDetail[]>(`/projects/${projectId}/scenes`)
+  },
+
+  /** 创建场景 */
+  createScene(projectId: number, data: SceneCreate) {
+    return api.post<SceneDetail>(`/projects/${projectId}/scenes`, data)
   },
 
   /** 更新场景 */

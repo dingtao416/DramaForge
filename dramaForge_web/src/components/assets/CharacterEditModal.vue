@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { CharacterRole, CharacterRoleLabel } from '@/types/enums'
 import type { CharacterDetail } from '@/types/character'
 
 const props = defineProps<{
   visible: boolean
   character: CharacterDetail | null
+  /** When true, operates in create mode */
+  createMode?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -20,20 +22,26 @@ const form = ref({
   voice_desc: '',
 })
 
-watch(() => props.character, (char) => {
-  if (char) {
-    form.value = {
-      name: char.name,
-      role: char.role,
-      description: char.description || '',
-      voice_desc: char.voice_desc || '',
+watch(() => props.visible, (v) => {
+  if (v) {
+    if (props.createMode || !props.character) {
+      form.value = { name: '', role: CharacterRole.SUPPORTING, description: '', voice_desc: '' }
+    } else {
+      form.value = {
+        name: props.character.name,
+        role: props.character.role,
+        description: props.character.description || '',
+        voice_desc: props.character.voice_desc || '',
+      }
     }
   }
-}, { immediate: true })
+})
 
 function handleSave() {
   emit('save', { ...form.value })
 }
+
+const isCreate = computed(() => props.createMode || !props.character)
 
 const roleOptions = Object.entries(CharacterRoleLabel) as [CharacterRole, string][]
 </script>
@@ -41,7 +49,7 @@ const roleOptions = Object.entries(CharacterRoleLabel) as [CharacterRole, string
 <template>
   <Transition name="fade">
     <div
-      v-if="visible && character"
+      v-if="visible"
       class="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 backdrop-blur-[2px]"
       @click.self="emit('close')"
     >
@@ -51,7 +59,7 @@ const roleOptions = Object.entries(CharacterRoleLabel) as [CharacterRole, string
           <div class="flex items-center gap-3">
             <span class="text-2xl">🎭</span>
             <h3 class="modal-title-text">
-              编辑角色
+              {{ isCreate ? '新建角色' : '编辑角色' }}
             </h3>
           </div>
           <button class="modal-close-btn" @click="emit('close')">
@@ -59,8 +67,8 @@ const roleOptions = Object.entries(CharacterRoleLabel) as [CharacterRole, string
           </button>
         </div>
 
-        <!-- Character name chip -->
-        <div class="px-6 pb-2">
+        <!-- Character name chip (edit mode only) -->
+        <div v-if="!isCreate && character" class="px-6 pb-2">
           <span class="character-chip">{{ character.name }}</span>
         </div>
 
@@ -113,7 +121,7 @@ const roleOptions = Object.entries(CharacterRoleLabel) as [CharacterRole, string
         <!-- Footer -->
         <div class="modal-footer-bar">
           <button class="btn btn-outline" @click="emit('close')">取消</button>
-          <button class="btn btn-primary" @click="handleSave">保存</button>
+          <button class="btn btn-primary" @click="handleSave">{{ isCreate ? '创建' : '保存' }}</button>
         </div>
       </div>
     </div>

@@ -40,6 +40,8 @@ const editingCharacter = ref<CharacterDetail | null>(null)
 const showCharEdit = ref(false)
 const editingScene = ref<SceneDetail | null>(null)
 const showSceneEdit = ref(false)
+const creatingCharacter = ref(false)
+const creatingScene = ref(false)
 
 onMounted(async () => {
   await assetsStore.fetchAssets(projectId)
@@ -408,13 +410,22 @@ function openCharEdit(char: CharacterDetail) {
 }
 
 async function saveCharEdit(data: Partial<CharacterDetail>) {
-  if (!editingCharacter.value) return
   try {
-    await assetsApi.updateCharacter(projectId, editingCharacter.value.id, data as CharacterUpdate)
+    if (creatingCharacter.value) {
+      await assetsApi.createCharacter(projectId, {
+        name: data.name || '',
+        role: data.role,
+        description: data.description,
+        voice_desc: data.voice_desc,
+      })
+      creatingCharacter.value = false
+    } else if (editingCharacter.value) {
+      await assetsApi.updateCharacter(projectId, editingCharacter.value.id, data as CharacterUpdate)
+    }
     showCharEdit.value = false
     await assetsStore.fetchAssets(projectId)
   } catch (e: any) {
-    console.error('Failed to update character:', e)
+    console.error('Failed to save character:', e)
   }
 }
 
@@ -426,13 +437,22 @@ function openSceneEdit(scene: SceneDetail) {
 }
 
 async function saveSceneEdit(data: Partial<SceneDetail>) {
-  if (!editingScene.value) return
   try {
-    await assetsApi.updateScene(projectId, editingScene.value.id, data as SceneUpdate)
+    if (creatingScene.value) {
+      await assetsApi.createScene(projectId, {
+        name: data.name || '',
+        description: data.description,
+        time_of_day: data.time_of_day,
+        interior: data.interior,
+      })
+      creatingScene.value = false
+    } else if (editingScene.value) {
+      await assetsApi.updateScene(projectId, editingScene.value.id, data as SceneUpdate)
+    }
     showSceneEdit.value = false
     await assetsStore.fetchAssets(projectId)
   } catch (e: any) {
-    console.error('Failed to update scene:', e)
+    console.error('Failed to save scene:', e)
   }
 }
 
@@ -654,6 +674,11 @@ async function handleApprove() {
             :character="char"
             @open-gallery="openImageCanvas"
           />
+          <!-- Add new character -->
+          <button class="add-new-card" @click="creatingCharacter = true; showCharEdit = true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+            <span class="text-sm font-semibold mt-3">新建角色</span>
+          </button>
         </div>
       </template>
 
@@ -771,6 +796,10 @@ async function handleApprove() {
             :scene="scene"
             @open-gallery="openSceneCanvas"
           />
+          <button class="add-new-card scene-add-card" @click="creatingScene = true; showSceneEdit = true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+            <span class="text-sm font-semibold mt-3">新建场景</span>
+          </button>
         </div>
       </template>
     </div>
@@ -805,13 +834,15 @@ async function handleApprove() {
   <CharacterEditModal
     :visible="showCharEdit"
     :character="editingCharacter"
-    @close="showCharEdit = false"
+    :create-mode="creatingCharacter"
+    @close="showCharEdit = false; editingCharacter = null; creatingCharacter = false"
     @save="saveCharEdit"
   />
   <SceneEditModal
     :visible="showSceneEdit"
     :scene="editingScene"
-    @close="showSceneEdit = false"
+    :create-mode="creatingScene"
+    @close="showSceneEdit = false; editingScene = null; creatingScene = false"
     @save="saveSceneEdit"
   />
 
@@ -1310,5 +1341,29 @@ async function handleApprove() {
   flex-shrink: 0;
   display: flex;
   gap: 6px;
+}
+
+/* Add new card buttons */
+.add-new-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 3 / 4;
+  border: 2px dashed #D4C898;
+  border-radius: 2px;
+  background: transparent;
+  color: #A89870;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.add-new-card:hover {
+  border-color: #E8A317;
+  background: rgba(232, 163, 23, 0.05);
+  color: #E8A317;
+}
+.scene-add-card {
+  aspect-ratio: 16 / 10;
+  border-radius: 12px;
 }
 </style>

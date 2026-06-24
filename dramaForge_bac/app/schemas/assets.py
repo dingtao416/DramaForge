@@ -35,6 +35,13 @@ class CharacterUpdate(BaseModel):
     reference_images: Optional[list[Any]] = None  # [{url, name, is_primary}]
 
 
+class CharacterCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    role: CharacterRole = CharacterRole.SUPPORTING
+    description: Optional[str] = ""
+    voice_desc: Optional[str] = ""
+
+
 class CharacterRegenerateRequest(BaseModel):
     prompt: Optional[str] = None
     variant_count: int = Field(default=1, ge=1, le=4, description="生成变体数量，>1 时生成多张图供选择")
@@ -64,6 +71,13 @@ class SceneUpdate(BaseModel):
     time_of_day: Optional[str] = None
     interior: Optional[bool] = None
     reference_images: Optional[list[Any]] = None  # [{url, name, is_primary}]
+
+
+class SceneCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = ""
+    time_of_day: str = "day"
+    interior: bool = True
 
 
 class SceneRegenerateRequest(BaseModel):
