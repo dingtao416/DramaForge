@@ -394,6 +394,9 @@ class OpenAICompatibleAdapter(BaseMediaAdapter):
             # Don't fallback to chat for auth errors — fail fast
             if "401" in str(image_error) or "403" in str(image_error):
                 raise
+            # Respect explicit opt-out of image chat fallback (same pattern as video)
+            if not self.settings.config.get("allow_image_chat_fallback", True):
+                raise
             logger.warning(
                 f"Image API failed ({image_error}), falling back to chat → "
                 f"POST {self._url('/chat/completions')}"

@@ -45,4 +45,5 @@ export interface ScriptDetail {
   is_approved: boolean
   created_at: string
   episodes: EpisodeBrief[]
+  warnings?: string[]
 }

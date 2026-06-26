@@ -131,7 +131,7 @@
 | **文件** | `dramaForge_bac/app/prompts/script_prompts.py` |
 | **依赖** | 无 (✅ 已有基础版本) |
 | **功能** | 升级提示词模板，输出 v2.0 结构化 JSON |
-| **要点** | <ul><li>新增 `SCRIPT_STRUCTURED_PROMPT` — 强制 JSON 输出</li><li>输出需包含 `protagonist, genre, synopsis, background, setting, one_liner, episodes[], characters[], scenes[]`</li><li>新增 `NARRATION_REWRITE_PROMPT` — 对话→旁白转换</li><li>保留旧的 `build_script_prompt` 向后兼容</li></ul> |
+| **要点** | <ul><li>`script_prompts.py` 是唯一运行时 Prompt 来源</li><li>输出需包含 `counts, protagonist, genre, synopsis, background, setting, one_liner, episode_outline[], episodes[], characters[], scenes[]`</li><li>每集包含 `character_refs` 与 `scene_refs`，后端校验引用和计数</li><li>新增一次自动修复 Prompt，移除旧兼容路径</li></ul> |
 | **验收** | 提示词可正确指导 LLM 输出预期 JSON 格式 |
 
 ---

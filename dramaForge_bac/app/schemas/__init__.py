@@ -22,6 +22,7 @@ from app.schemas.assets import (
     CharacterDetail,
     CharacterUpdate,
     CharacterRegenerateRequest,
+    AssetLibraryItem,
     SceneDetail,
     SceneUpdate,
     SceneRegenerateRequest,
@@ -48,6 +49,7 @@ __all__ = [
     "ScriptDetail", "EpisodeBrief", "EpisodeUpdate",
     # Assets
     "CharacterDetail", "CharacterUpdate", "CharacterRegenerateRequest",
+    "AssetLibraryItem",
     "SceneDetail", "SceneUpdate", "SceneRegenerateRequest",
     "AssetsGenerateRequest",
     # Episode

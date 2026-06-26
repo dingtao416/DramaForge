@@ -16,12 +16,17 @@ from typing import Optional
 from loguru import logger
 
 from app.ai_hub import ai_hub
+from app.ai_hub.chat import _parse_json as parse_json_from_llm
 from app.models.episode import Episode
 from app.models.segment import Segment, SegmentStatus
 from app.models.shot import Shot
 from app.models.character import Character
 from app.models.scene import SceneLocation
-from app.prompts.storyboard_prompts import build_storyboard_prompt, build_asset_context
+from app.prompts.storyboard_prompts import (
+    build_storyboard_prompt,
+    build_storyboard_repair_prompt,
+    build_asset_context,
+)
 from app.services.ref_resolver import RefResolver
 from app.services.storage import storage
 from app.services.video_reference_capabilities import (
@@ -89,20 +94,61 @@ class VideoEngine:
         )
 
         # Call LLM
-        raw = await ai_hub.chat.complete_json(
+        resp = await ai_hub.chat.complete(
             messages=messages,
             temperature=0.5,
             max_tokens=8192,
+            response_format={"type": "json_object"},
             model=chat_model,
             api_key=chat_api_key,
             base_url=chat_base_url,
             **_extra_chat_kwargs(chat_options),
+        )
+        raw = await self._parse_storyboard_json(
+            resp.content,
+            chat_model=chat_model,
+            chat_api_key=chat_api_key,
+            chat_base_url=chat_base_url,
+            chat_options=chat_options,
         )
 
         # Parse and resolve references
         resolver = RefResolver(characters, scenes)
         segments = raw.get("segments", [])
         return self._resolve_segments(segments, resolver, characters)
+
+    async def _parse_storyboard_json(
+        self,
+        raw_output: str,
+        *,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+        chat_options: dict | None = None,
+    ) -> dict:
+        try:
+            return parse_json_from_llm(raw_output)
+        except ValueError as exc:
+            logger.warning(
+                "VideoEngine: storyboard JSON parse failed; repairing once. error={} length={}",
+                exc,
+                len(raw_output),
+            )
+
+        repaired = await ai_hub.chat.complete(
+            messages=build_storyboard_repair_prompt(raw_output),
+            temperature=0.1,
+            max_tokens=10000,
+            response_format={"type": "json_object"},
+            model=chat_model,
+            api_key=chat_api_key,
+            base_url=chat_base_url,
+            **_extra_chat_kwargs(chat_options),
+        )
+        try:
+            return parse_json_from_llm(repaired.content)
+        except ValueError as exc:
+            raise ValueError("Storyboard JSON validation failed after repair") from exc
 
     def _resolve_segments(
         self,

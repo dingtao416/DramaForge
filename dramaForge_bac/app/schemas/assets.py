@@ -5,7 +5,7 @@ DramaForge v2.0 — Assets Schemas (Character + SceneLocation)
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -63,6 +63,21 @@ class SceneDetail(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AssetLibraryItem(BaseModel):
+    id: int
+    uid: str
+    type: Literal["character", "scene"]
+    project_id: int
+    name: str
+    role: Optional[CharacterRole] = None
+    description: Optional[str] = ""
+    voice_desc: Optional[str] = ""
+    time_of_day: Optional[str] = None
+    interior: Optional[bool] = None
+    reference_images: list[Any] = []
+    created_at: datetime
 
 
 class SceneUpdate(BaseModel):

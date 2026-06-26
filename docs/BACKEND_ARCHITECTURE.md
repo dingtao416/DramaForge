@@ -347,28 +347,29 @@ class ScriptEngine:
 
     async def create_from_text(self, user_input: str, project: Project) -> Script:
         """从用户故事构想生成完整剧本"""
-        # 1. LLM 生成完整剧本
-        raw_script = await ai_hub.chat.ask(
-            system_prompt=SCRIPT_GENERATION_PROMPT,
-            user_prompt=user_input,
-            response_format="json"  # 强制 JSON 输出
+        raw_json = await ai_hub.chat.complete(
+            messages=build_structured_prompt(user_input, project.genre),
         )
-        # 2. 解析为结构化数据
-        script = self._parse_script(raw_script)
-        # 3. 自动提取角色名和场景名列表
-        script.extracted_characters = self._extract_characters(raw_script)
-        script.extracted_scenes = self._extract_scenes(raw_script)
+        script = self._parse_script(raw_json, expected_episodes=project.total_episodes)
+        if script.validation_errors:
+            repaired = await ai_hub.chat.complete(
+                messages=build_repair_prompt(raw_json, script.validation_errors),
+            )
+            script = self._parse_script(repaired, expected_episodes=project.total_episodes)
         return script
 
     async def create_from_docx(self, file_path: str, project: Project) -> Script:
         """从上传的 .docx 文件解析剧本"""
         raw_text = self._read_docx(file_path)
-        # LLM 结构化解析
+        field_assets = self._extract_upload_assets_from_fields(raw_text)
+        # LLM 仅辅助结构化分集标题；角色/场景资产以显式字段解析结果为准
         structured = await ai_hub.chat.ask(
             system_prompt=SCRIPT_PARSE_PROMPT,
             user_prompt=raw_text,
             response_format="json"
         )
+        structured["characters"] = field_assets.characters
+        structured["scenes"] = field_assets.scenes
         return self._parse_script(structured)
 
     async def rewrite_to_narration(self, script: Script) -> Script:

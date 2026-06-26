@@ -69,5 +69,6 @@ class ScriptDetail(BaseModel):
     is_approved: bool = False
     created_at: datetime
     episodes: list[EpisodeBrief] = []
+    warnings: list[str] = []
 
     model_config = {"from_attributes": True}

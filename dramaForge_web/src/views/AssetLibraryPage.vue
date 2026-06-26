@@ -7,6 +7,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import TopbarActions from '@/components/common/TopbarActions.vue'
 import { useBillingStore } from '@/stores/billing'
 import { DEFAULT_SCENE_IMAGE } from '@/constants/defaultAssets'
+import type { AssetLibraryItem } from '@/types/asset'
 
 const router = useRouter()
 const billingStore = useBillingStore()
@@ -14,12 +15,13 @@ const billingStore = useBillingStore()
 // ── Projects list (for character creation context) ──
 const projects = ref<any[]>([])
 
-const assets = ref<any[]>([])
+const assets = ref<AssetLibraryItem[]>([])
 const loading = ref(false)
 const viewMode = ref<'grid' | 'list'>('grid')
 const activeTab = ref<'assets' | 'characters'>('assets')
 const filterOpen = ref(false)
 const filterType = ref<'all' | 'image' | 'video'>('all')
+const ASSET_PAGE_SIZE = 200
 
 const filteredAssets = computed(() => {
   if (filterType.value === 'all') return assets.value
@@ -33,11 +35,11 @@ const filteredAssets = computed(() => {
 onMounted(async () => {
   loading.value = true
   try {
-    const [assetsRes, projectsRes] = await Promise.all([
-      assetsApi.listGlobal(),
+    const [assetItems, projectsRes] = await Promise.all([
+      fetchAllAssets(),
       projectsApi.list({ limit: 100 }),
     ])
-    assets.value = assetsRes.data
+    assets.value = assetItems
     projects.value = projectsRes.data
   } finally {
     loading.value = false
@@ -48,11 +50,24 @@ onMounted(async () => {
 async function handleRefresh() {
   loading.value = true
   try {
-    const { data } = await assetsApi.listGlobal()
-    assets.value = data
+    assets.value = await fetchAllAssets()
   } finally {
     loading.value = false
   }
+}
+
+async function fetchAllAssets() {
+  const result: AssetLibraryItem[] = []
+  let skip = 0
+
+  while (true) {
+    const { data } = await assetsApi.listGlobal({ skip, limit: ASSET_PAGE_SIZE })
+    result.push(...data)
+    if (data.length < ASSET_PAGE_SIZE) break
+    skip += data.length
+  }
+
+  return result
 }
 
 function formatDate(dateStr: string) {
@@ -67,17 +82,17 @@ function formatDate(dateStr: string) {
   return `${y}/${m}/${day} ${h}:${min}:${sec}`
 }
 
-function isVideo(asset: any) {
+function isVideo(asset: AssetLibraryItem) {
   const url = getAssetImage(asset) || ''
   return url.endsWith('.mp4') || url.endsWith('.webm') || url.endsWith('.mov')
 }
 
-function getAssetSource(asset: any) {
+function getAssetSource(asset: AssetLibraryItem) {
   return asset.source || '创作生成'
 }
 
 /** 归一化 reference_images：后端可能返回字符串 URL 或 {url, name, ...} 对象 */
-function getAssetImage(asset: any): string | null {
+function getAssetImage(asset: AssetLibraryItem): string | null {
   const img = asset.reference_images?.[0]
   if (!img) return null
   if (typeof img === 'string') return img
@@ -190,10 +205,10 @@ async function handleCreateCharacter() {
   }
 }
 
-async function handleDeleteAsset(assetId: number) {
+async function handleDeleteAsset(asset: AssetLibraryItem) {
   if (!confirm('确定要删除此资产吗？')) return
   try {
-    await assetsApi.deleteAsset(assetId)
+    await assetsApi.deleteAsset(asset.id, asset.type)
     await handleRefresh()
   } catch (e: any) {
     alert('删除失败，请重试')
@@ -313,7 +328,7 @@ async function handleDeleteAsset(assetId: number) {
       <div v-else-if="viewMode === 'grid'" class="asset-grid">
         <div
           v-for="asset in filteredAssets"
-          :key="asset.id"
+          :key="asset.uid"
           class="asset-card"
         >
           <!-- Thumbnail area -->
@@ -346,7 +361,7 @@ async function handleDeleteAsset(assetId: number) {
               <button class="card-action-btn" title="标签">
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M1.5 7.2l4.3 4.3a1 1 0 001.4 0l4.3-4.3a1 1 0 000-1.4L7.2 1.5A1 1 0 006.5 1.2H2.5a1 1 0 00-1 1v4a1 1 0 00.3.7z" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><circle cx="4.2" cy="4.2" r="0.7" fill="currentColor"/></svg>
               </button>
-              <button class="card-action-btn danger" title="删除" @click="handleDeleteAsset(asset.id)">
+              <button class="card-action-btn danger" title="删除" @click="handleDeleteAsset(asset)">
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 3.5h9M4.5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v3.5M7.5 6v3.5M3.5 3.5l.5 7a1 1 0 001 1h3a1 1 0 001-1l.5-7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </div>
@@ -364,7 +379,7 @@ async function handleDeleteAsset(assetId: number) {
       <div v-else class="asset-list">
         <div
           v-for="asset in filteredAssets"
-          :key="asset.id"
+          :key="asset.uid"
           class="list-item"
         >
           <div class="list-thumb">
@@ -394,7 +409,7 @@ async function handleDeleteAsset(assetId: number) {
             <button class="card-action-btn" title="标签">
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M1.5 7.2l4.3 4.3a1 1 0 001.4 0l4.3-4.3a1 1 0 000-1.4L7.2 1.5A1 1 0 006.5 1.2H2.5a1 1 0 00-1 1v4a1 1 0 00.3.7z" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><circle cx="4.2" cy="4.2" r="0.7" fill="currentColor"/></svg>
             </button>
-            <button class="card-action-btn danger" title="删除" @click="handleDeleteAsset(asset.id)">
+            <button class="card-action-btn danger" title="删除" @click="handleDeleteAsset(asset)">
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 3.5h9M4.5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v3.5M7.5 6v3.5M3.5 3.5l.5 7a1 1 0 001 1h3a1 1 0 001-1l.5-7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </div>

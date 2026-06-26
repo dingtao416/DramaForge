@@ -647,10 +647,15 @@ async def upload_script(
     await storage.save_from_bytes(content, dest)
 
     # Parse via ScriptEngine
+    resolved = await user_model_resolver.resolve(db, user.id, "chat")
     result = await script_engine.create_from_docx(
         file_path=dest,
         project=project,
         total_episodes=total_episodes,
+        chat_model=resolved.model_id,
+        chat_api_key=resolved.api_key,
+        chat_base_url=resolved.base_url,
+        chat_options=resolved.raw_params or {},
     )
 
     # Remove existing script
@@ -661,6 +666,17 @@ async def upload_script(
     if old_script:
         await db.delete(old_script)
         await db.flush()
+    old_chars = await db.execute(
+        select(Character).where(Character.project_id == project_id)
+    )
+    for ch in old_chars.scalars().all():
+        await db.delete(ch)
+    old_scenes = await db.execute(
+        select(SceneLocation).where(SceneLocation.project_id == project_id)
+    )
+    for sc in old_scenes.scalars().all():
+        await db.delete(sc)
+    await db.flush()
 
     # Create Script + Episodes
     script = Script(project_id=project_id, **result["script"])
@@ -683,6 +699,7 @@ async def upload_script(
 
     await db.flush()
     await db.refresh(script, attribute_names=["episodes"])
+    script.warnings = result.get("warnings", [])
     return script
 
 

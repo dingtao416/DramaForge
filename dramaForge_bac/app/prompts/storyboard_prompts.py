@@ -9,6 +9,10 @@ STORYBOARD_SYSTEM = """你是 DramaForge 的分镜导演 AI。你的输出必须
 根据给定的剧本内容和可用角色/场景资产，将剧本拆解为一系列分镜（Shot）。
 不要输出 JSON 以外的任何文字。"""
 
+
+STORYBOARD_REPAIR_SYSTEM = """你是 DramaForge 分镜 JSON 修复器。只输出严格 JSON，不输出解释。
+你的任务是修复被截断或格式错误的分镜 JSON，保留已经生成的片段和镜头，必要时补齐缺失字段、括号和数组结束符。"""
+
 STORYBOARD_STRUCTURED_PROMPT = """将以下剧本内容拆解为分镜脚本。
 
 【本集标题】{episode_title}
@@ -76,13 +80,29 @@ background、dialogue、voice_style、camera_type、camera_angle、camera_moveme
 - transition: cut/fade/dissolve/wipe
 
 要求：
-1. 每个 segment 包含 1~{shots_per_segment} 个 shots
+1. 输出 3~6 个 segment，每个 segment 包含 1~{shots_per_segment} 个 shots
 2. 总时长合理，覆盖完整剧情；每个 shot 的 duration 必须严格从 4、8、12 中选择
 3. 镜头类型和角度要有变化，增加视觉丰富度
-4. 对白要贴合原始剧本内容
+4. dialogue 只保留该镜头需要的对白或旁白，最多 80 个中文字符，不要整段复制剧本
 5. 运动镜头（非 static）用于情绪高潮或动作场景
-6. 每个 shot 的 background 必须能单独支撑视频生成，包含风格、场景、角色状态、构图、光影、质感和隐含情绪
-7. 每个 shot 的 voice_style 只描述声音设计，不写配乐，优先写环境音、动作声、回声、对白语气"""
+6. background 最多 120 个中文字符，包含场景、构图、光影、角色状态和情绪，不要写成长段文学描写
+7. voice_style 最多 60 个中文字符，只描述环境音、动作声、回声、对白语气，不写配乐
+8. 输出必须完整闭合 JSON；如果内容太长，减少镜头数量，不要截断 JSON"""
+
+
+STORYBOARD_REPAIR_PROMPT = """下面的分镜 JSON 未通过解析，可能被截断或包含格式错误。请修复为完整合法 JSON。
+
+【必须遵守】
+- 只输出 JSON 对象，根节点必须是 {{"segments": [...]}}。
+- 保留已完整出现的 segment 和 shot。
+- 如果最后一个 shot 缺字段或缺括号，请补齐：duration、time_of_day、scene_ref、camera_type、camera_angle、camera_movement、characters、dialogue、voice_style、background、transition。
+- dialogue 最多 80 个中文字符，background 最多 120 个中文字符，voice_style 最多 60 个中文字符。
+- scene_ref 和 characters[].name 必须保留 @ 前缀。
+- 不要输出解释文字。
+
+【原始输出】
+{raw_output}
+"""
 
 
 def build_storyboard_prompt(
@@ -102,6 +122,17 @@ def build_storyboard_prompt(
     )
     return [
         {"role": "system", "content": STORYBOARD_SYSTEM},
+        {"role": "user", "content": user_content},
+    ]
+
+
+def build_storyboard_repair_prompt(raw_output: str) -> list[dict[str, str]]:
+    """Build messages for repairing malformed storyboard JSON."""
+    user_content = STORYBOARD_REPAIR_PROMPT.format(
+        raw_output=raw_output[:12000],
+    )
+    return [
+        {"role": "system", "content": STORYBOARD_REPAIR_SYSTEM},
         {"role": "user", "content": user_content},
     ]
 

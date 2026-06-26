@@ -1,6 +1,7 @@
 import api from './client'
 import type { CharacterDetail, CharacterUpdate } from '@/types/character'
 import type { SceneDetail, SceneUpdate, AssetsGenerateRequest } from '@/types/scene'
+import type { AssetLibraryItem, AssetLibraryType } from '@/types/asset'
 
 export interface CharacterCreate {
   name: string
@@ -87,7 +88,7 @@ export const assetsApi = {
 
   /** 全局资产列表 */
   listGlobal(params?: { skip?: number; limit?: number }) {
-    return api.get<CharacterDetail[]>('/assets', { params })
+    return api.get<AssetLibraryItem[]>('/assets', { params })
   },
 
   /** 全局角色资产 */
@@ -96,8 +97,10 @@ export const assetsApi = {
   },
 
   /** 删除资产 */
-  deleteAsset(assetId: number) {
-    return api.delete(`/assets/${assetId}`)
+  deleteAsset(assetId: number, assetType?: AssetLibraryType) {
+    return api.delete(`/assets/${assetId}`, {
+      params: assetType ? { asset_type: assetType } : undefined,
+    })
   },
 
   /** 新建全局角色 */

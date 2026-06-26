@@ -24,8 +24,19 @@ from app.models.scene import SceneLocation
 from app.prompts.script_prompts import (
     NARRATION_REWRITE_PROMPT,
     SCRIPT_STRUCTURED_SYSTEM,
+    build_repair_prompt,
     build_structured_prompt,
+    build_upload_analysis_prompt,
 )
+
+
+UPLOAD_EXTRACTION_WARNING = "角色/场景未能自动解析，可手动补充或重新解析"
+
+
+class ScriptValidationError(ValueError):
+    def __init__(self, issues: list[str]):
+        self.issues = issues
+        super().__init__("Script validation failed: " + "; ".join(issues))
 
 
 class ScriptEngine:
@@ -81,7 +92,15 @@ class ScriptEngine:
         )
 
         raw_json = self._parse_json_from_text(resp.content)
-        return self._parse_script(raw_json, project.id)
+        return await self._parse_generated_script(
+            raw_json=raw_json,
+            project_id=project.id,
+            expected_episodes=total_episodes,
+            chat_model=chat_model,
+            chat_api_key=chat_api_key,
+            chat_base_url=chat_base_url,
+            chat_options=chat_options,
+        )
 
     async def create_from_text_stream(
         self,
@@ -134,7 +153,15 @@ class ScriptEngine:
                 yield {"type": "content", "data": chunk}
 
             raw_json = self._parse_json_from_text(full_content)
-            result = self._parse_script(raw_json, project.id)
+            result = await self._parse_generated_script(
+                raw_json=raw_json,
+                project_id=project.id,
+                expected_episodes=total_episodes,
+                chat_model=chat_model,
+                chat_api_key=chat_api_key,
+                chat_base_url=chat_base_url,
+                chat_options=chat_options,
+            )
             yield {"type": "done", "data": result}
 
         except Exception as exc:
@@ -190,6 +217,11 @@ class ScriptEngine:
         file_path: str | Path,
         project: Project,
         total_episodes: int = 1,
+        *,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+        chat_options: dict[str, Any] | None = None,
     ) -> dict:
         """
         Parse an uploaded file (.docx/.doc/.txt) into structured script data.
@@ -201,45 +233,64 @@ class ScriptEngine:
 
         logger.info(f"ScriptEngine: parsing docx ({len(full_text)} chars)")
 
-        # Extract character names and scenes from the raw text
-        character_names = self._extract_characters(full_text)
-        scene_names = self._extract_scenes(full_text)
-
-        # Split into episodes (heuristic: by "第X集" or equal split)
         episode_contents = self._split_episodes(full_text, total_episodes)
+        warnings: list[str] = []
+        rule_analysis = self._build_rule_upload_analysis(
+            full_text=full_text,
+            episode_contents=episode_contents,
+        )
+        has_rule_assets = bool(rule_analysis.get("characters")) and bool(rule_analysis.get("scenes"))
+        if not has_rule_assets:
+            warnings.append(UPLOAD_EXTRACTION_WARNING)
 
-        # Build result
-        script_data = {
-            "protagonist": character_names[0] if character_names else "",
-            "genre": project.genre.value if project.genre else "",
-            "synopsis": full_text[:200] + "..." if len(full_text) > 200 else full_text,
-            "background": "",
-            "setting": "",
-            "one_liner": "",
-            "raw_content": full_text,
-        }
+        try:
+            analysis = await self._analyze_uploaded_script(
+                full_text=full_text,
+                total_episodes=total_episodes,
+                chat_model=chat_model,
+                chat_api_key=chat_api_key,
+                chat_base_url=chat_base_url,
+                chat_options=chat_options,
+            )
+            raw_json = self._build_uploaded_script_json(
+                analysis=analysis,
+                full_text=full_text,
+                episode_contents=episode_contents,
+                total_episodes=total_episodes,
+                project=project,
+                warnings=warnings,
+                rule_analysis=rule_analysis,
+            )
+            return self._parse_script(
+                raw_json,
+                project.id,
+                expected_episodes=total_episodes,
+                require_counts=False,
+                require_assets=False,
+                require_refs=False,
+                require_outline=False,
+            )
+        except Exception as exc:
+            logger.warning(f"ScriptEngine: uploaded script asset extraction failed: {exc}")
 
-        episodes_data = [
-            {"number": i + 1, "title": f"第{i + 1}集", "content": content}
-            for i, content in enumerate(episode_contents)
-        ]
-
-        characters_data = [
-            {"name": name, "role": "protagonist" if i == 0 else "supporting", "description": ""}
-            for i, name in enumerate(character_names)
-        ]
-
-        scenes_data = [
-            {"name": name, "description": "", "time_of_day": "day", "interior": True}
-            for name in scene_names
-        ]
-
-        return {
-            "script": script_data,
-            "episodes": episodes_data,
-            "characters": characters_data,
-            "scenes": scenes_data,
-        }
+        raw_json = self._build_uploaded_script_json(
+            analysis=rule_analysis,
+            full_text=full_text,
+            episode_contents=episode_contents,
+            total_episodes=total_episodes,
+            project=project,
+            warnings=warnings,
+            rule_analysis=rule_analysis,
+        )
+        return self._parse_script(
+            raw_json,
+            project.id,
+            expected_episodes=total_episodes,
+            require_counts=False,
+            require_assets=False,
+            require_refs=False,
+            require_outline=False,
+        )
 
     async def rewrite_to_narration(self, script_content: str) -> str:
         """
@@ -303,23 +354,219 @@ class ScriptEngine:
         """Extract and parse JSON from LLM output, using the robust shared parser."""
         return parse_json_from_llm(text)
 
-    def _parse_script(self, raw_json: dict, project_id: int) -> dict:
+    async def _parse_generated_script(
+        self,
+        *,
+        raw_json: dict,
+        project_id: int,
+        expected_episodes: int,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+        chat_options: dict[str, Any] | None = None,
+    ) -> dict:
+        try:
+            return self._parse_script(raw_json, project_id, expected_episodes=expected_episodes)
+        except ScriptValidationError as exc:
+            logger.warning(f"ScriptEngine: structured script validation failed: {exc.issues}")
+            repaired_json = await self._repair_script_json(
+                raw_json=raw_json,
+                issues=exc.issues,
+                expected_episodes=expected_episodes,
+                chat_model=chat_model,
+                chat_api_key=chat_api_key,
+                chat_base_url=chat_base_url,
+                chat_options=chat_options,
+            )
+
+        try:
+            return self._parse_script(repaired_json, project_id, expected_episodes=expected_episodes)
+        except ScriptValidationError as exc:
+            raise ValueError("Script validation failed: " + "; ".join(exc.issues)) from exc
+
+    async def _repair_script_json(
+        self,
+        *,
+        raw_json: dict,
+        issues: list[str],
+        expected_episodes: int,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+        chat_options: dict[str, Any] | None = None,
+    ) -> dict:
+        messages = build_repair_prompt(raw_json, issues, expected_episodes)
+        resp = await ai_hub.chat.complete(
+            messages=messages,
+            temperature=0.2,
+            max_tokens=6000 + expected_episodes * 2500,
+            model=chat_model,
+            api_key=chat_api_key,
+            base_url=chat_base_url,
+            **_extra_chat_kwargs(chat_options),
+        )
+        return self._parse_json_from_text(resp.content)
+
+    async def _analyze_uploaded_script(
+        self,
+        *,
+        full_text: str,
+        total_episodes: int,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+        chat_options: dict[str, Any] | None = None,
+    ) -> dict:
+        messages = build_upload_analysis_prompt(full_text, total_episodes)
+        resp = await ai_hub.chat.complete(
+            messages=messages,
+            temperature=0.2,
+            max_tokens=3000 + total_episodes * 500,
+            model=chat_model,
+            api_key=chat_api_key,
+            base_url=chat_base_url,
+            **_extra_chat_kwargs(chat_options),
+        )
+        return self._parse_json_from_text(resp.content)
+
+    def _build_uploaded_script_json(
+        self,
+        *,
+        analysis: dict,
+        full_text: str,
+        episode_contents: list[str],
+        total_episodes: int,
+        project: Project,
+        warnings: list[str],
+        rule_analysis: dict | None = None,
+    ) -> dict:
+        field_analysis = rule_analysis or self._build_rule_upload_analysis(
+            full_text=full_text,
+            episode_contents=episode_contents,
+        )
+        field_characters = field_analysis.get("characters", []) if isinstance(field_analysis.get("characters"), list) else []
+        field_scenes = field_analysis.get("scenes", []) if isinstance(field_analysis.get("scenes"), list) else []
+        field_episodes = field_analysis.get("episodes", []) if isinstance(field_analysis.get("episodes"), list) else []
+
+        analysis_episodes = {}
+        for ep in analysis.get("episodes", []) if isinstance(analysis.get("episodes"), list) else []:
+            if isinstance(ep, dict):
+                analysis_episodes[self._to_int(ep.get("number"), len(analysis_episodes) + 1)] = ep
+        field_episode_refs = {}
+        for ep in field_episodes:
+            if isinstance(ep, dict):
+                field_episode_refs[self._to_int(ep.get("number"), len(field_episode_refs) + 1)] = ep
+
+        episodes = []
+        for index, content in enumerate(episode_contents):
+            number = index + 1
+            ep_info = analysis_episodes.get(number, {})
+            field_ep_info = field_episode_refs.get(number, {})
+            episodes.append({
+                "number": number,
+                "title": ep_info.get("title") or f"第{number}集",
+                "content": content,
+                "character_refs": field_ep_info.get("character_refs", []),
+                "scene_refs": field_ep_info.get("scene_refs", []),
+            })
+
+        synopsis = full_text[:200] + "..." if len(full_text) > 200 else full_text
+        return {
+            "counts": analysis.get("counts") or {
+                "episode_count": total_episodes,
+                "character_count": len(field_characters),
+                "scene_count": len(field_scenes),
+            },
+            "script_summary": {
+                "custom_episode_count": total_episodes,
+                "story_type": project.genre.value if project.genre else "",
+                "story_overview": synopsis,
+                "core_hook": "",
+                "one_sentence_story": "",
+            },
+            "protagonist": field_characters[0].get("name", "") if field_characters else "",
+            "genre": project.genre.value if project.genre else "",
+            "synopsis": synopsis,
+            "background": "",
+            "setting": "",
+            "one_liner": "",
+            "characters": field_characters,
+            "scenes": field_scenes,
+            "episodes": episodes,
+            "warnings": warnings,
+        }
+
+    def _build_rule_upload_analysis(
+        self,
+        *,
+        full_text: str,
+        episode_contents: list[str],
+    ) -> dict:
+        character_names = self._extract_characters(full_text)
+        scene_names = self._extract_scenes(full_text)
+        characters = [
+            {"name": name, "role": "protagonist" if index == 0 else "supporting", "description": ""}
+            for index, name in enumerate(character_names)
+        ]
+        scenes = [
+            {"name": name, "description": "", "time_of_day": "day", "interior": True}
+            for name in scene_names
+        ]
+        episodes = []
+        for index, content in enumerate(episode_contents):
+            episodes.append({
+                "number": index + 1,
+                "title": f"第{index + 1}集",
+                "character_refs": [name for name in character_names if name in content],
+                "scene_refs": [name for name in scene_names if name in content],
+            })
+        return {
+            "counts": {
+                "episode_count": len(episode_contents),
+                "character_count": len(characters),
+                "scene_count": len(scenes),
+            },
+            "protagonist": character_names[0] if character_names else "",
+            "characters": characters,
+            "scenes": scenes,
+            "episodes": episodes,
+        }
+
+    def _parse_script(
+        self,
+        raw_json: dict,
+        project_id: int,
+        *,
+        expected_episodes: int | None = None,
+        require_counts: bool = True,
+        require_assets: bool = True,
+        require_refs: bool = True,
+        require_outline: bool = True,
+    ) -> dict:
         """
         Parse LLM JSON output into structured data suitable for DB insertion.
         """
+        normalized = self._normalize_script_json(
+            raw_json,
+            expected_episodes=expected_episodes,
+            require_counts=require_counts,
+            require_assets=require_assets,
+            require_refs=require_refs,
+            require_outline=require_outline,
+        )
         script_summary = raw_json.get("script_summary") or {}
         script_data = {
-            "protagonist": raw_json.get("protagonist", ""),
-            "genre": raw_json.get("genre", ""),
+            "protagonist": normalized.get("protagonist", ""),
+            "genre": normalized.get("genre", ""),
             "synopsis": raw_json.get("synopsis") or script_summary.get("story_overview", ""),
-            "background": raw_json.get("background", ""),
-            "setting": raw_json.get("setting") or script_summary.get("core_hook", ""),
-            "one_liner": raw_json.get("one_liner") or script_summary.get("one_sentence_story", ""),
-            "raw_content": json.dumps(raw_json, ensure_ascii=False),
+            "background": normalized.get("background", ""),
+            "setting": normalized.get("setting") or script_summary.get("core_hook", ""),
+            "one_liner": normalized.get("one_liner") or script_summary.get("one_sentence_story", ""),
+            "raw_content": json.dumps(normalized, ensure_ascii=False),
         }
 
         episodes_data = []
-        for ep in raw_json.get("episodes", []):
+        for ep in normalized.get("episodes", []):
             episodes_data.append({
                 "number": ep.get("number", len(episodes_data) + 1),
                 "title": ep.get("title", f"第{len(episodes_data) + 1}集"),
@@ -327,7 +574,7 @@ class ScriptEngine:
             })
 
         characters_data = []
-        for ch in raw_json.get("characters", []):
+        for ch in normalized.get("characters", []):
             characters_data.append({
                 "name": ch.get("name", ""),
                 "role": ch.get("role", "supporting"),
@@ -335,7 +582,7 @@ class ScriptEngine:
             })
 
         scenes_data = []
-        for sc in raw_json.get("scenes", []):
+        for sc in normalized.get("scenes", []):
             scenes_data.append({
                 "name": sc.get("name", ""),
                 "description": sc.get("description", ""),
@@ -348,40 +595,296 @@ class ScriptEngine:
             "episodes": episodes_data,
             "characters": characters_data,
             "scenes": scenes_data,
+            "warnings": normalized.get("warnings", []),
         }
 
+    def _normalize_script_json(
+        self,
+        raw_json: dict,
+        *,
+        expected_episodes: int | None,
+        require_counts: bool,
+        require_assets: bool,
+        require_refs: bool,
+        require_outline: bool,
+    ) -> dict:
+        issues: list[str] = []
+        if not isinstance(raw_json, dict):
+            raise ScriptValidationError(["root must be a JSON object"])
+
+        characters = self._normalize_characters(raw_json.get("characters"))
+        scenes = self._normalize_scenes(raw_json.get("scenes"))
+        episodes = self._normalize_episodes(raw_json.get("episodes"))
+        outline = raw_json.get("episode_outline") if isinstance(raw_json.get("episode_outline"), list) else []
+
+        if expected_episodes is not None and len(episodes) != expected_episodes:
+            issues.append(f"episodes length must be {expected_episodes}, got {len(episodes)}")
+        if require_outline and expected_episodes is not None and len(outline) != expected_episodes:
+            issues.append(f"episode_outline length must be {expected_episodes}, got {len(outline)}")
+        if require_assets and not characters:
+            issues.append("characters must include at least one item")
+        if require_assets and not scenes:
+            issues.append("scenes must include at least one item")
+
+        counts = raw_json.get("counts")
+        computed_counts = {
+            "episode_count": len(episodes),
+            "character_count": len(characters),
+            "scene_count": len(scenes),
+        }
+        if require_counts:
+            if not isinstance(counts, dict):
+                issues.append("counts must be present")
+            else:
+                for key, expected in computed_counts.items():
+                    actual = self._to_int(counts.get(key), -1)
+                    if actual != expected:
+                        issues.append(f"counts.{key} must be {expected}, got {counts.get(key)}")
+
+        character_names = {character["name"] for character in characters}
+        scene_names = {scene["name"] for scene in scenes}
+        for episode in episodes:
+            character_refs = episode.get("character_refs", [])
+            scene_refs = episode.get("scene_refs", [])
+            if require_refs and not character_refs:
+                issues.append(f"episode {episode.get('number')} must include character_refs")
+            if require_refs and not scene_refs:
+                issues.append(f"episode {episode.get('number')} must include scene_refs")
+            for ref in character_refs:
+                if ref not in character_names:
+                    issues.append(f"episode {episode.get('number')} references unknown character: {ref}")
+            for ref in scene_refs:
+                if ref not in scene_names:
+                    issues.append(f"episode {episode.get('number')} references unknown scene: {ref}")
+
+        if issues:
+            raise ScriptValidationError(issues)
+
+        normalized = dict(raw_json)
+        normalized["counts"] = computed_counts
+        normalized["characters"] = characters
+        normalized["scenes"] = scenes
+        normalized["episodes"] = episodes
+        normalized["episode_outline"] = outline
+        normalized["warnings"] = raw_json.get("warnings", []) if isinstance(raw_json.get("warnings"), list) else []
+        return normalized
+
+    def _normalize_characters(self, value: Any) -> list[dict]:
+        result: list[dict] = []
+        seen: set[str] = set()
+        for item in value if isinstance(value, list) else []:
+            if not isinstance(item, dict):
+                continue
+            name = self._clean_name(item.get("name"))
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            result.append({
+                "name": name,
+                "role": self._normalize_role(item.get("role")),
+                "description": str(item.get("description") or ""),
+            })
+        return result
+
+    def _normalize_scenes(self, value: Any) -> list[dict]:
+        result: list[dict] = []
+        seen: set[str] = set()
+        for item in value if isinstance(value, list) else []:
+            if not isinstance(item, dict):
+                continue
+            name = self._clean_scene_name(item.get("name"))
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            result.append({
+                "name": name,
+                "description": str(item.get("description") or ""),
+                "time_of_day": str(item.get("time_of_day") or "day"),
+                "interior": bool(item.get("interior", True)),
+            })
+        return result
+
+    def _normalize_episodes(self, value: Any) -> list[dict]:
+        result: list[dict] = []
+        for index, item in enumerate(value if isinstance(value, list) else []):
+            if not isinstance(item, dict):
+                continue
+            result.append({
+                "number": self._to_int(item.get("number"), index + 1),
+                "title": str(item.get("title") or f"第{index + 1}集"),
+                "content": str(item.get("content") or ""),
+                "character_refs": self._normalize_refs(item.get("character_refs"), self._clean_name),
+                "scene_refs": self._normalize_refs(item.get("scene_refs"), self._clean_scene_name),
+            })
+        return result
+
+    @staticmethod
+    def _normalize_refs(value: Any, cleaner) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for item in value if isinstance(value, list) else []:
+            name = cleaner(item)
+            if name and name not in seen:
+                seen.add(name)
+                result.append(name)
+        return result
+
+    @staticmethod
+    def _normalize_role(value: Any) -> str:
+        role = str(value or "supporting").strip()
+        valid = {item.value for item in CharacterRole}
+        return role if role in valid else CharacterRole.SUPPORTING.value
+
+    @staticmethod
+    def _clean_name(value: Any) -> str:
+        return re.sub(r"\s+", "", str(value or "").strip())[:100]
+
+    @staticmethod
+    def _clean_scene_name(value: Any) -> str:
+        return re.sub(r"\s+", " ", str(value or "").strip())[:100]
+
+    @staticmethod
+    def _to_int(value: Any, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
     def _extract_characters(self, text: str) -> list[str]:
-        """Extract character names from raw script text using heuristics."""
-        # Pattern: "角色名：" or "【角色名】"
-        patterns = [
-            r'^([^\s:：]{1,10})[：:](?!\s*$)',   # 角色名：对白
-            r'【([^】]{1,10})】',                   # 【角色名】
+        """Extract character names only from explicit upload fields."""
+        names: list[str] = []
+        seen: set[str] = set()
+
+        def add_name(value: str) -> None:
+            name = self._clean_character_candidate(value)
+            if name and name not in seen:
+                seen.add(name)
+                names.append(name)
+
+        list_patterns = [
+            r'^\s*(?:[-*]\s*)?(?:\*\*)?(?:出场人物|人物|角色表|角色清单|主要角色)(?:\*\*)?\s*[：:]\s*(.+?)\s*$',
+            r'^\s*(?:[-*]\s*)?(?:\*\*)?(?:出场人物|人物|角色表|角色清单|主要角色)\s*[：:]\s*\*\*\s*(.+?)\s*$',
         ]
-        names = set()
-        for pattern in patterns:
-            matches = re.findall(pattern, text, re.MULTILINE)
-            for m in matches:
-                name = m.strip()
-                # Filter out common non-character words
-                if name and name not in ("旁白", "场景", "标题", "提示", "备注", "注"):
-                    names.add(name)
-        return list(names)[:10]  # Cap at 10 characters
+        for pattern in list_patterns:
+            for match in re.findall(pattern, text, re.MULTILINE):
+                for part in re.split(r'[、,，/／|｜]+', match):
+                    add_name(part)
+
+        section_headers = re.compile(r'^\s*(?:#{1,6}\s*)?(?:\*\*)?(?:角色表|角色清单|主要角色)(?:\*\*)?\s*$')
+        stop_headers = re.compile(r'^\s*(?:#{1,6}\s*)?(?:第\s*\d+\s*集|场景|场景表|场景清单|拍摄场景|正文|剧本正文)\b')
+        in_section = False
+        for line in text.splitlines():
+            stripped = line.strip()
+            if section_headers.match(stripped):
+                in_section = True
+                continue
+            if not in_section:
+                continue
+            if not stripped:
+                in_section = False
+                continue
+            if stop_headers.match(stripped):
+                in_section = False
+                continue
+            match = re.match(r'^\s*(?:[-*•]\s*|\d+[.、]\s*)?(.+?)\s*(?:[：:\-—]|$)', stripped)
+            if match:
+                add_name(match.group(1))
+
+        return names[:20]
 
     def _extract_scenes(self, text: str) -> list[str]:
-        """Extract scene names from raw script text using heuristics."""
-        # Pattern: "场景1：XXX" or "**场景：XXX**"
+        """Extract scene names only from explicit upload fields."""
+        scenes: list[str] = []
+        seen: set[str] = set()
+
+        def add_scene(value: str) -> None:
+            name = self._clean_scene_candidate(value)
+            if name and name not in seen:
+                seen.add(name)
+                scenes.append(name)
+
         patterns = [
-            r'场景\d*[：:]\s*(.+?)(?:\n|$)',
-            r'\*\*场景\d*[：:]\s*(.+?)\*\*',
+            r'^\s*(?:[-*]\s*)?\*\*(?:场景|场景表|场景清单|拍摄场景)[一二三四五六七八九十\d]*[：:]\*\*\s*(.+?)\s*$',
+            r'^\s*(?:[-*]\s*)?\*\*(?:场景|场景表|场景清单|拍摄场景)[一二三四五六七八九十\d]*[：:]\s*(.+?)\*\*\s*$',
+            r'^\s*(?:[-*]\s*)?(?:场景|场景表|场景清单|拍摄场景)[一二三四五六七八九十\d]*[：:]\s*(.+?)\s*$',
         ]
-        scenes = set()
         for pattern in patterns:
-            matches = re.findall(pattern, text)
-            for m in matches:
-                name = m.strip().rstrip("*")
-                if name:
-                    scenes.add(name)
-        return list(scenes)[:10]
+            for match in re.findall(pattern, text, re.IGNORECASE | re.MULTILINE):
+                parts = re.split(r'[、,，/／|｜]+', match)
+                for part in parts:
+                    add_scene(part)
+
+        section_headers = re.compile(r'^\s*(?:#{1,6}\s*)?(?:\*\*)?(?:场景表|场景清单|拍摄场景)(?:\*\*)?\s*$', re.IGNORECASE)
+        stop_headers = re.compile(r'^\s*(?:#{1,6}\s*)?(?:第\s*\d+\s*集|角色表|角色清单|主要角色|出场人物|人物|正文|剧本正文)\b')
+        in_section = False
+        for line in text.splitlines():
+            stripped = line.strip()
+            if section_headers.match(stripped):
+                in_section = True
+                continue
+            if not in_section:
+                continue
+            if not stripped:
+                in_section = False
+                continue
+            if stop_headers.match(stripped):
+                in_section = False
+                continue
+            match = re.match(r'^\s*(?:[-*•]\s*|\d+[.、]\s*)?(.+?)\s*(?:[：:\-—]|$)', stripped)
+            if match:
+                add_scene(match.group(1))
+
+        return scenes[:20]
+
+    @staticmethod
+    def _clean_character_candidate(value: str) -> str:
+        text = re.sub(r'[（(].*?[）)]', '', str(value or "")).strip()
+        text = re.split(r'[：:\-—]', text, maxsplit=1)[0]
+        name = re.sub(r'[*_`"“”\'（）()【】\[\]]', '', text).strip()
+        name = re.sub(r'\s+', '', name)
+        blocked = {
+            "旁白", "场景", "标题", "提示", "备注", "注", "音乐", "本集关键词", "本集爽点",
+            "前情提要", "本集钩子", "下集预告", "出场人物", "人物", "角色表",
+            "角色清单", "主要角色", "剧本", "作者", "类型", "题材", "字数", "时间",
+            "地点", "年代", "风格", "集数", "场次", "场景表", "场景清单", "拍摄场景",
+            "内景", "外景", "闪入", "闪回", "切入", "切至", "淡入", "淡出",
+        }
+        if not name or name in blocked or len(name) > 12:
+            return ""
+        if re.match(r'^第\d+集$', name):
+            return ""
+        if any(token in name for token in ("场景", "内景", "外景", "音乐提示", "声音", "批注")):
+            return ""
+        return name
+
+    @staticmethod
+    def _clean_scene_candidate(value: str) -> str:
+        text = re.sub(r'[*_`"“”]', '', str(value or "")).strip()
+        text = re.sub(r'\s+', ' ', text)
+        text = text.strip(" ：:-—")
+        blocked = {
+            "（按时间顺序）", "(按时间顺序)", "按时间顺序",
+            "（按出场顺序）", "(按出场顺序)", "按出场顺序",
+        }
+        if text in blocked:
+            return ""
+        if "·" in text:
+            parts = [part.strip() for part in text.split("·") if part.strip()]
+            if len(parts) >= 2 and re.search(r'内景|外景|INT|EXT', parts[0], re.IGNORECASE):
+                text = parts[1]
+            elif parts:
+                text = parts[0]
+        text = re.sub(r'^(内景|外景|日|夜|晨|昏|INT\.|EXT\.|INT\./EXT\.)\s*', '', text, flags=re.IGNORECASE)
+        text = re.sub(
+            r'\s*(清晨|凌晨|早晨|上午|中午|午后|下午|傍晚|黄昏|深夜|夜晚|白天|日间|夜间|日|夜|晨|昏|DAY|NIGHT)$',
+            '',
+            text,
+            flags=re.IGNORECASE,
+        ).strip()
+        text = text.strip(" ：:-—")
+        if not text or len(text) > 30:
+            return ""
+        return text
 
     def _split_episodes(self, text: str, total_episodes: int) -> list[str]:
         """Split text into episodes by markers or equal length."""

@@ -454,6 +454,35 @@ watch(uploadFile, () => {
               </div>
             </template>
           </div>
+          <div class="wb-upload-format">
+            <div class="wb-format-header">角色/场景解析要求</div>
+            <div class="wb-format-grid">
+              <div class="wb-format-block">
+                <span class="wb-format-label">角色字段</span>
+                <span class="wb-format-value">角色表、角色清单、主要角色、人物、出场人物</span>
+              </div>
+              <div class="wb-format-block">
+                <span class="wb-format-label">场景字段</span>
+                <span class="wb-format-value">场景、场景表、场景清单、拍摄场景</span>
+              </div>
+            </div>
+            <pre class="wb-format-sample">剧本：《示例短剧》
+作者：DramaForge
+
+角色清单
+1. 林夏 - 女，主角，冷静坚韧。
+2. 周铭 - 男，反派，控制欲强。
+
+场景清单
+1. 内景  公司会议室  日
+2. 外景  城市天桥  夜
+
+第1集：会议反击
+**场景：** 内景 · 公司会议室 · 日
+**出场人物：** 林夏、周铭
+**林夏**（冷静）："证据在这里。"</pre>
+            <p class="wb-format-note">缺少上述字段时，系统仍会保存剧本，但不会自动生成角色/场景资产。</p>
+          </div>
           <p v-if="uploadError" class="wb-error">{{ uploadError }}</p>
 
           <!-- ═══ Parsed Preview ═══ -->
@@ -883,6 +912,59 @@ watch(uploadFile, () => {
   background: #2D2515;
   color: #FFFFFF;
 }
+.wb-upload-format {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px solid #ead9a7;
+  border-radius: 12px;
+  background: #fffaf0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wb-format-header {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2D2515;
+}
+.wb-format-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.wb-format-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.wb-format-label {
+  font-size: 12px;
+  color: #8a6d2f;
+}
+.wb-format-value {
+  font-size: 13px;
+  line-height: 1.55;
+  color: #2D2515;
+  overflow-wrap: anywhere;
+}
+.wb-format-sample {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #2D2515;
+  color: #fff6d8;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+.wb-format-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #9a5b00;
+}
 
 /* ── File Info ── */
 .wb-file-info {
@@ -1219,6 +1301,7 @@ watch(uploadFile, () => {
 }
 @media (max-width: 520px) {
   .wb-project-grid { grid-template-columns: 1fr; }
+  .wb-format-grid { grid-template-columns: 1fr; }
 }
 
 .wb-project-card {
