@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserAIConfigStore } from '@/stores/user-ai-config'
+import { discoverModelsFromUrl } from '@/api/user-ai-config'
 import type { MediaCapability, ModelConfig, ProviderConfig, VideoModelPreset } from '@/types/user-ai-config'
 
 const router = useRouter()
@@ -188,7 +189,7 @@ async function fetchModelsFromProvider() {
   selectedModels.value = new Set()
   providerForm.value.model_ids = ''
   try {
-    const result = await aiStore.discoverModelsFromUrl({
+    const result = await discoverModelsFromUrl({
       provider_type: providerForm.value.provider_type,
       auth_type: providerForm.value.auth_type,
       base_url: providerForm.value.base_url.trim(),
@@ -1445,6 +1446,16 @@ function decreasePriority() {
 .model-selector {
   display: grid;
   gap: 10px;
+  --model-surface: #FEF9E7;
+  --model-surface-strong: #FDF5D6;
+  --model-border: #D4C898;
+  --model-border-strong: #E8A317;
+  --model-text: #2D2515;
+  --model-muted: #6B5D40;
+  --model-soft: #A89870;
+  --model-accent: #E8A317;
+  --model-accent-hover: #F5C34B;
+  --model-accent-dark: #C88A0C;
 }
 
 .model-badge {
@@ -1456,8 +1467,8 @@ function decreasePriority() {
   padding: 0 5px;
   margin-left: 6px;
   border-radius: 9px;
-  background: #3b82f6;
-  color: #fff;
+  background: var(--model-accent);
+  color: #fffaf0;
   font-size: 11px;
   font-weight: 600;
   vertical-align: middle;
@@ -1477,22 +1488,23 @@ function decreasePriority() {
   gap: 6px;
   height: 36px;
   padding: 0 16px;
-  border: 1.5px solid #3b82f6;
-  border-radius: 8px;
-  background: transparent;
-  color: #3b82f6;
+  border: 1.5px solid var(--model-border-strong);
+  border-radius: 6px;
+  background: rgba(232, 163, 23, 0.08);
+  color: var(--model-accent-dark);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.25s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
   user-select: none;
 }
 
 .fetch-models-btn:hover:not(:disabled) {
-  background: #3b82f6;
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  background: var(--model-accent);
+  border-color: var(--model-accent);
+  color: #fffaf0;
+  box-shadow: 0 4px 12px rgba(200, 138, 12, 0.22);
 }
 
 .fetch-models-btn:active:not(:disabled) {
@@ -1530,11 +1542,11 @@ function decreasePriority() {
 }
 
 .fetch-status--ok {
-  color: #10b981;
+  color: #2f8f4e;
 }
 
 .fetch-status--err {
-  color: #ef4444;
+  color: #D94841;
 }
 
 .status-icon {
@@ -1559,23 +1571,25 @@ function decreasePriority() {
 .ms-trigger {
   display: flex;
   align-items: center;
-  height: 42px;
-  padding: 0 10px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px;
-  background: #fff;
+  min-height: 42px;
+  padding: 6px 10px;
+  border: 1.5px solid var(--model-border);
+  border-radius: 6px;
+  background: var(--model-surface-strong);
   cursor: pointer;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
   overflow: hidden;
 }
 
 .ms-trigger:hover {
-  border-color: #93c5fd;
+  border-color: var(--model-border-strong);
+  background: #fff8df;
+  box-shadow: 0 0 0 3px rgba(232, 163, 23, 0.1);
 }
 
 .ms-placeholder {
   flex: 1;
-  color: #94a3b8;
+  color: var(--model-soft);
   font-size: 13px;
   user-select: none;
 }
@@ -1583,7 +1597,7 @@ function decreasePriority() {
 .ms-chips {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex: 1;
   min-width: 0;
   overflow-x: auto;
@@ -1598,22 +1612,25 @@ function decreasePriority() {
 .ms-chip {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   height: 24px;
-  padding: 0 6px 0 8px;
+  padding: 0 7px 0 9px;
   border-radius: 6px;
-  background: #eff6ff;
-  color: #1e40af;
+  border: 1px solid rgba(232, 163, 23, 0.28);
+  background: rgba(232, 163, 23, 0.12);
+  color: var(--model-text);
   font-size: 11px;
+  font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .ms-chip:hover {
-  background: #fee2e2;
-  color: #dc2626;
+  border-color: rgba(217, 72, 65, 0.38);
+  background: rgba(217, 72, 65, 0.1);
+  color: #B7352F;
 }
 
 .ms-chip-x {
@@ -1628,7 +1645,7 @@ function decreasePriority() {
   height: 8px;
   flex-shrink: 0;
   margin-left: 8px;
-  color: #94a3b8;
+  color: var(--model-soft);
   transition: transform 0.25s ease;
 }
 
@@ -1639,14 +1656,14 @@ function decreasePriority() {
 /* === 下拉面板 === */
 .ms-panel {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 6px);
   left: 0;
   right: 0;
   z-index: 100;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  border: 1.5px solid var(--model-border);
+  border-radius: 8px;
+  background: var(--model-surface);
+  box-shadow: 0 14px 30px rgba(45, 37, 21, 0.16);
   overflow: hidden;
 }
 
@@ -1673,17 +1690,17 @@ function decreasePriority() {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 38px;
-  padding: 0 10px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  height: 40px;
+  padding: 0 12px;
+  background: var(--model-surface-strong);
+  border-bottom: 1px solid var(--model-border);
 }
 
 .ms-search-icon {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-  color: #94a3b8;
+  color: var(--model-soft);
 }
 
 .ms-search-input {
@@ -1692,12 +1709,12 @@ function decreasePriority() {
   border: none;
   background: transparent;
   font-size: 13px;
-  color: #334155;
+  color: var(--model-text);
   outline: none;
 }
 
 .ms-search-input::placeholder {
-  color: #94a3b8;
+  color: var(--model-soft);
 }
 
 .ms-panel-actions {
@@ -1713,15 +1730,16 @@ function decreasePriority() {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: #64748b;
+  color: var(--model-muted);
   font-size: 11px;
   cursor: pointer;
-  transition: color 0.15s;
+  transition: background 0.15s ease, color 0.15s ease;
   white-space: nowrap;
 }
 
 .ms-action-btn:hover {
-  color: #3b82f6;
+  background: rgba(232, 163, 23, 0.12);
+  color: var(--model-accent-dark);
 }
 
 /* 模型列表 */
@@ -1729,7 +1747,7 @@ function decreasePriority() {
   max-height: 240px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: var(--model-border) transparent;
 }
 
 .ms-list::-webkit-scrollbar {
@@ -1741,7 +1759,7 @@ function decreasePriority() {
 }
 
 .ms-list::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--model-border);
   border-radius: 10px;
 }
 
@@ -1749,24 +1767,24 @@ function decreasePriority() {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 38px;
+  min-height: 38px;
   padding: 0 12px;
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background 0.15s ease;
   user-select: none;
 }
 
 .ms-option:hover {
-  background: #f8fafc;
+  background: rgba(232, 163, 23, 0.08);
 }
 
 .ms-option--selected {
-  background: #eff6ff;
+  background: rgba(232, 163, 23, 0.14);
 }
 
 .ms-option--selected .ms-option-label {
   font-weight: 600;
-  color: #1e40af;
+  color: var(--model-accent-dark);
 }
 
 .ms-checkbox {
@@ -1776,16 +1794,16 @@ function decreasePriority() {
   width: 18px;
   height: 18px;
   border-radius: 5px;
-  border: 1.5px solid #d1d5db;
-  background: #fff;
+  border: 1.5px solid var(--model-border);
+  background: #fffaf0;
   flex-shrink: 0;
-  transition: all 0.15s;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .ms-checkbox--checked {
-  background: #3b82f6;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  background: var(--model-accent);
+  border-color: var(--model-accent);
+  box-shadow: 0 0 0 2px rgba(232, 163, 23, 0.18);
   animation: check-bounce 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -1803,7 +1821,7 @@ function decreasePriority() {
 
 .ms-option-label {
   font-size: 13px;
-  color: #334155;
+  color: var(--model-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1812,7 +1830,7 @@ function decreasePriority() {
 .ms-empty {
   padding: 20px;
   text-align: center;
-  color: #94a3b8;
+  color: var(--model-soft);
   font-size: 13px;
 }
 
@@ -1823,13 +1841,13 @@ function decreasePriority() {
   justify-content: space-between;
   height: 36px;
   padding: 0 12px;
-  background: #fafbfc;
-  border-top: 1px solid #e2e8f0;
+  background: var(--model-surface-strong);
+  border-top: 1px solid var(--model-border);
 }
 
 .ms-footer-info {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--model-soft);
 }
 
 .ms-footer-btn {
@@ -1838,14 +1856,15 @@ function decreasePriority() {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: #3b82f6;
+  color: var(--model-accent-dark);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .ms-footer-btn:hover {
-  background: #eff6ff;
+  background: rgba(232, 163, 23, 0.12);
+  color: var(--model-text);
 }
 
 /* 手动输入框 */

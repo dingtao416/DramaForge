@@ -15,6 +15,7 @@ from typing import Any, AsyncIterator, Optional
 from loguru import logger
 
 from app.ai_hub import ai_hub
+from app.ai_hub.chat import _parse_json as parse_json_from_llm  # robust LLM JSON parser
 from app.models.project import Project
 from app.models.script import Script
 from app.models.episode import Episode
@@ -299,47 +300,8 @@ class ScriptEngine:
 
     @staticmethod
     def _parse_json_from_text(text: str) -> dict:
-        """Extract and parse JSON from LLM output, with fallback strategies."""
-        import json as _json
-        import re
-
-        # Strategy 1: Direct parse
-        try:
-            return _json.loads(text)
-        except _json.JSONDecodeError:
-            pass
-
-        # Strategy 2: Extract from ```json ... ``` block
-        for fence in ("```json", "```"):
-            if fence in text:
-                inner = text.split(fence, 1)[1]
-                if "```" in inner:
-                    inner = inner.split("```", 1)[0]
-                try:
-                    return _json.loads(inner.strip())
-                except _json.JSONDecodeError:
-                    continue
-
-        # Strategy 3: Find first { to last }
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                return _json.loads(text[start:end + 1])
-            except _json.JSONDecodeError:
-                pass
-
-        # Strategy 4: Fix common LLM JSON issues
-        if start >= 0 and end > start:
-            try:
-                candidate = text[start:end + 1]
-                candidate = re.sub(r',\s*}', '}', candidate)
-                candidate = re.sub(r',\s*]', ']', candidate)
-                return _json.loads(candidate)
-            except _json.JSONDecodeError:
-                pass
-
-        raise ValueError(f"Cannot parse JSON from LLM output (length={len(text)})")
+        """Extract and parse JSON from LLM output, using the robust shared parser."""
+        return parse_json_from_llm(text)
 
     def _parse_script(self, raw_json: dict, project_id: int) -> dict:
         """

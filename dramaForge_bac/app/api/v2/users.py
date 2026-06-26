@@ -18,6 +18,8 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    hash_password,
+    verify_password,
 )
 from app.models.user import User, UserStatus
 from app.services.email_verification_service import (
@@ -30,6 +32,7 @@ from app.services.email_verification_service import (
 router = APIRouter(prefix="/user", tags=["User"])
 
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+USERNAME_PATTERN = r"^[A-Za-z0-9_.-]{3,64}$"
 CODE_PATTERN = r"^\d{4,10}$"
 
 
@@ -44,14 +47,15 @@ class SendEmailCodeResponse(BaseModel):
 
 
 class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64, pattern=USERNAME_PATTERN)
     email: str = Field(..., min_length=3, max_length=255, pattern=EMAIL_PATTERN)
+    password: str = Field(..., min_length=8, max_length=128)
     code: str = Field(..., pattern=CODE_PATTERN, description="Email verification code")
-    nickname: str | None = Field(default=None, max_length=128, description="Display name")
 
 
 class LoginRequest(BaseModel):
-    email: str = Field(..., min_length=3, max_length=255, pattern=EMAIL_PATTERN)
-    code: str = Field(..., pattern=CODE_PATTERN, description="Email verification code")
+    account: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=8, max_length=128)
 
 
 class RefreshTokenRequest(BaseModel):
@@ -67,6 +71,7 @@ class AuthTokens(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
+    username: str | None = None
     email: str | None = None
     phone: str | None = None
     nickname: str | None = None
@@ -87,12 +92,16 @@ def _tokens_for_user(user: User) -> AuthTokens:
     )
 
 
+def normalize_username(username: str) -> str:
+    return username.strip().lower()
+
+
 @router.post("/send-login-code", response_model=SendEmailCodeResponse)
 async def send_login_code(
     request: SendEmailCodeRequest,
     db: DbSession,
 ):
-    """Send a one-time email code for passwordless login or registration."""
+    """Send a one-time email code for first-time account registration."""
     from app.core.config import settings
 
     await issue_email_code(db, request.email, LOGIN_PURPOSE)
@@ -107,8 +116,17 @@ async def register(
     request: RegisterRequest,
     db: DbSession,
 ):
-    """Register a new email user after verifying the email code."""
+    """Register a new user after verifying the email code."""
+    username = normalize_username(request.username)
     email = normalize_email(request.email)
+
+    existing = await db.execute(select(User).where(User.username == username))
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already registered",
+        )
+
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none():
         raise HTTPException(
@@ -122,9 +140,10 @@ async def register(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     user = User(
+        username=username,
         email=email,
-        password_hash=None,
-        nickname=request.nickname or email,
+        password_hash=hash_password(request.password),
+        nickname=username,
     )
     db.add(user)
     await db.flush()
@@ -137,30 +156,30 @@ async def login(
     request: LoginRequest,
     db: DbSession,
 ):
-    """Login with an email verification code. Create the account if needed."""
-    email = normalize_email(request.email)
-
-    try:
-        await verify_email_code(db, email, request.code, LOGIN_PURPOSE)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-    result = await db.execute(select(User).where(User.email == email))
+    """Login with username or email plus password."""
+    account = request.account.strip()
+    if "@" in account:
+        result = await db.execute(select(User).where(User.email == normalize_email(account)))
+    else:
+        result = await db.execute(select(User).where(User.username == normalize_username(account)))
     user = result.scalar_one_or_none()
 
     if not user:
-        user = User(
-            email=email,
-            password_hash=None,
-            nickname=email,
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="账号不存在，请先注册",
         )
-        db.add(user)
-        await db.flush()
 
     if user.status != UserStatus.ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Account is disabled",
+        )
+
+    if not user.password_hash or not verify_password(request.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="账号或密码错误",
         )
 
     return _tokens_for_user(user)
@@ -218,6 +237,7 @@ async def get_me(user: CurrentUser, db: DbSession):
 
     return UserResponse(
         id=user.id,
+        username=user.username,
         email=user.email,
         phone=user.phone,
         nickname=user.nickname,

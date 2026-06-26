@@ -43,6 +43,9 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    username: Mapped[Optional[str]] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
     email: Mapped[Optional[str]] = mapped_column(
         String(255), unique=True, nullable=True, index=True
     )
@@ -75,7 +78,7 @@ class User(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<User id={self.id} email={self.email} status={self.status.value}>"
+        return f"<User id={self.id} username={self.username} email={self.email} status={self.status.value}>"
 
 
 class EmailVerificationCode(Base):

@@ -113,6 +113,15 @@ async def init_db() -> None:
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         if "sqlite" in settings.database_url:
+            result = await conn.execute(text("PRAGMA table_info(users)"))
+            columns = {row[1] for row in result.fetchall()}
+            if "username" not in columns:
+                await conn.execute(
+                    text("ALTER TABLE users ADD COLUMN username VARCHAR(64)")
+                )
+            await conn.execute(
+                text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)")
+            )
             result = await conn.execute(text("PRAGMA table_info(projects)"))
             columns = {row[1] for row in result.fetchall()}
             if "user_id" not in columns:

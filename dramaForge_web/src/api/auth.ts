@@ -14,14 +14,15 @@ export interface SendLoginCodeResponse {
 }
 
 export interface RegisterRequest {
+  username: string
   email: string
+  password: string
   code: string
-  nickname?: string
 }
 
 export interface LoginRequest {
-  email: string
-  code: string
+  account: string
+  password: string
 }
 
 export interface AuthTokens {
@@ -33,6 +34,7 @@ export interface AuthTokens {
 
 export interface UserInfo {
   id: number
+  username: string | null
   email: string | null
   phone: string | null
   nickname: string | null

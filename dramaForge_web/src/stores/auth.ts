@@ -16,6 +16,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!user.value)
   const displayName = computed(() => {
     if (!user.value) return ''
+    if (user.value.username) return user.value.username
     if (user.value.nickname) return user.value.nickname
     if (user.value.email) return user.value.email.split('@')[0]
     if (user.value.phone) return `用户${user.value.phone.slice(-4)}`

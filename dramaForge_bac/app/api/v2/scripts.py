@@ -92,8 +92,23 @@ async def generate_script(
     preserve = body.preserve_episodes
 
     if old_script and not preserve:
+        # ── Full replace: delete old script + characters + scenes ──
+        # Delete old characters and scenes first (they reference project_id, not script)
+        old_chars = await db.execute(
+            select(Character).where(Character.project_id == project_id)
+        )
+        for ch in old_chars.scalars().all():
+            await db.delete(ch)
+        old_scenes = await db.execute(
+            select(SceneLocation).where(SceneLocation.project_id == project_id)
+        )
+        for sc in old_scenes.scalars().all():
+            await db.delete(sc)
         await db.delete(old_script)
         await db.flush()
+        # Clear dedup sets since we just deleted everything
+        existing_char_names = set()
+        existing_scene_names = set()
     elif old_script and preserve:
         # Update existing script in place — keep the row (and its episodes) alive
         pass  # We'll update fields after generation
@@ -155,28 +170,63 @@ async def generate_script(
             episode = Episode(script_id=script.id, **ep_data)
             db.add(episode)
 
-    # Create Characters (skip if name already exists — preserve existing images)
-    for ch_data in result["characters"]:
-        if ch_data.get("name") in existing_char_names:
-            continue  # Keep existing character with its generated images
-        role_str = ch_data.pop("role", "supporting")
-        try:
-            role = CharacterRole(role_str)
-        except ValueError:
-            role = CharacterRole.SUPPORTING
-        character = Character(
-            project_id=project_id,
-            role=role,
-            **ch_data,
+    # ── Characters: update existing (preserve images), add new ──
+    existing_chars_by_name: dict[str, Character] = {}
+    if preserve:
+        all_chars = await db.execute(
+            select(Character).where(Character.project_id == project_id)
         )
-        db.add(character)
+        for ch in all_chars.scalars().all():
+            existing_chars_by_name[ch.name] = ch
 
-    # Create Scenes (skip if name already exists — preserve existing images)
+    for ch_data in result["characters"]:
+        name = ch_data.get("name", "")
+        if name in existing_chars_by_name:
+            # Update existing character's description (preserve images)
+            existing = existing_chars_by_name[name]
+            if ch_data.get("description"):
+                existing.description = ch_data["description"]
+            if ch_data.get("role"):
+                try:
+                    existing.role = CharacterRole(ch_data["role"])
+                except ValueError:
+                    pass
+        elif name not in existing_char_names:
+            role_str = ch_data.pop("role", "supporting")
+            try:
+                role = CharacterRole(role_str)
+            except ValueError:
+                role = CharacterRole.SUPPORTING
+            character = Character(
+                project_id=project_id,
+                role=role,
+                **ch_data,
+            )
+            db.add(character)
+
+    # ── Scenes: update existing (preserve images), add new ──
+    existing_scenes_by_name: dict[str, SceneLocation] = {}
+    if preserve:
+        all_scenes = await db.execute(
+            select(SceneLocation).where(SceneLocation.project_id == project_id)
+        )
+        for sc in all_scenes.scalars().all():
+            existing_scenes_by_name[sc.name] = sc
+
     for sc_data in result["scenes"]:
-        if sc_data.get("name") in existing_scene_names:
-            continue
-        scene = SceneLocation(project_id=project_id, **sc_data)
-        db.add(scene)
+        name = sc_data.get("name", "")
+        if name in existing_scenes_by_name:
+            # Update existing scene's description (preserve images)
+            existing = existing_scenes_by_name[name]
+            if sc_data.get("description"):
+                existing.description = sc_data["description"]
+            if sc_data.get("time_of_day"):
+                existing.time_of_day = sc_data["time_of_day"]
+            if "interior" in sc_data:
+                existing.interior = sc_data["interior"]
+        elif name not in existing_scene_names:
+            scene = SceneLocation(project_id=project_id, **sc_data)
+            db.add(scene)
 
     await db.flush()
     await db.refresh(script, attribute_names=["episodes"])
@@ -227,6 +277,22 @@ async def _save_script_result(project_id: int, result: dict, preserve: bool = Fa
                     episode = Episode(script_id=script.id, **ep_data)
                     sess.add(episode)
         else:
+            # ── Full replace: delete old script + characters + scenes ──
+            old_script_stmt = select(Script).where(Script.project_id == project_id)
+            old_script = (await sess.execute(old_script_stmt)).scalar_one_or_none()
+            if old_script:
+                await sess.delete(old_script)
+            old_chars = await sess.execute(
+                select(Character).where(Character.project_id == project_id)
+            )
+            for ch in old_chars.scalars().all():
+                await sess.delete(ch)
+            old_scenes = await sess.execute(
+                select(SceneLocation).where(SceneLocation.project_id == project_id)
+            )
+            for sc in old_scenes.scalars().all():
+                await sess.delete(sc)
+
             script = Script(project_id=project_id, **result["script"])
             sess.add(script)
             await sess.flush()
@@ -235,32 +301,57 @@ async def _save_script_result(project_id: int, result: dict, preserve: bool = Fa
                 episode = Episode(script_id=script.id, **ep_data)
                 sess.add(episode)
 
-        # Characters: skip if name already exists
-        existing_chars = await sess.execute(
-            select(Character.name).where(Character.project_id == project_id)
-        )
-        existing_char_names = set(existing_chars.scalars().all())
-        for ch_data in result["characters"]:
-            if ch_data.get("name") in existing_char_names:
-                continue
-            role_str = ch_data.pop("role", "supporting")
-            try:
-                role = CharacterRole(role_str)
-            except ValueError:
-                role = CharacterRole.SUPPORTING
-            character = Character(project_id=project_id, role=role, **ch_data)
-            sess.add(character)
+        # ── Characters: add all (if preserve=False, old ones were deleted above) ──
+        existing_chars_by_name: dict[str, Character] = {}
+        if preserve:
+            all_chars = await sess.execute(
+                select(Character).where(Character.project_id == project_id)
+            )
+            for ch in all_chars.scalars().all():
+                existing_chars_by_name[ch.name] = ch
 
-        # Scenes: skip if name already exists
-        existing_scenes = await sess.execute(
-            select(SceneLocation.name).where(SceneLocation.project_id == project_id)
-        )
-        existing_scene_names = set(existing_scenes.scalars().all())
+        for ch_data in result["characters"]:
+            name = ch_data.get("name", "")
+            if name in existing_chars_by_name:
+                existing = existing_chars_by_name[name]
+                if ch_data.get("description"):
+                    existing.description = ch_data["description"]
+                if ch_data.get("role"):
+                    try:
+                        existing.role = CharacterRole(ch_data["role"])
+                    except ValueError:
+                        pass
+            else:
+                role_str = ch_data.pop("role", "supporting")
+                try:
+                    role = CharacterRole(role_str)
+                except ValueError:
+                    role = CharacterRole.SUPPORTING
+                character = Character(project_id=project_id, role=role, **ch_data)
+                sess.add(character)
+
+        # ── Scenes: add all (if preserve=False, old ones were deleted above) ──
+        existing_scenes_by_name: dict[str, SceneLocation] = {}
+        if preserve:
+            all_scenes = await sess.execute(
+                select(SceneLocation).where(SceneLocation.project_id == project_id)
+            )
+            for sc in all_scenes.scalars().all():
+                existing_scenes_by_name[sc.name] = sc
+
         for sc_data in result["scenes"]:
-            if sc_data.get("name") in existing_scene_names:
-                continue
-            scene = SceneLocation(project_id=project_id, **sc_data)
-            sess.add(scene)
+            name = sc_data.get("name", "")
+            if name in existing_scenes_by_name:
+                existing = existing_scenes_by_name[name]
+                if sc_data.get("description"):
+                    existing.description = sc_data["description"]
+                if sc_data.get("time_of_day"):
+                    existing.time_of_day = sc_data["time_of_day"]
+                if "interior" in sc_data:
+                    existing.interior = sc_data["interior"]
+            else:
+                scene = SceneLocation(project_id=project_id, **sc_data)
+                sess.add(scene)
 
         await sess.commit()
         await sess.refresh(script, attribute_names=["episodes"])
@@ -381,15 +472,10 @@ async def generate_script_stream(
 
     # ── Start a new background generation ──
     preserve = body.preserve_episodes
-    if not preserve:
-        existing = await db.execute(
-            select(Script).where(Script.project_id == project_id)
-        )
-        old_script = existing.scalar_one_or_none()
-        if old_script:
-            await db.delete(old_script)
-            await db.flush()
-    # Commit now so background task's DB session won't be blocked by write lock
+    # NOTE: Do NOT delete old script/characters/scenes here.
+    # If the generation is cancelled, we must not have destroyed existing data.
+    # The deletion + replacement happens atomically inside _save_script_result.
+    # Only commit to release the credits write lock before the background task starts.
     await db.commit()
 
     queue: _asyncio.Queue = _asyncio.Queue()

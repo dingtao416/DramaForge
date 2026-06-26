@@ -7,15 +7,17 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const isRegister = ref(false)
+const account = ref('')
+const username = ref('')
 const email = ref('')
+const password = ref('')
 const code = ref('')
-const nickname = ref('')
 const agreeTerms = ref(false)
 const rememberMe = ref(true)
 const countdown = ref(0)
 const sendMessage = ref('')
 let countdownTimer: ReturnType<typeof setInterval> | null = null
-const REMEMBER_EMAIL_KEY = 'df_remember_email'
+const REMEMBER_ACCOUNT_KEY = 'df_remember_account'
 const REMEMBER_LOGIN_KEY = 'df_remember_login'
 
 const showcaseItems = [
@@ -44,11 +46,21 @@ const showcaseItems = [
 const currentShowcase = ref(0)
 let showcaseTimer: ReturnType<typeof setInterval> | null = null
 
+const normalizedAccount = computed(() => account.value.trim())
+const normalizedUsername = computed(() => username.value.trim())
 const normalizedEmail = computed(() => email.value.trim())
+const isAccountValid = computed(() => normalizedAccount.value.length >= 3)
+const isUsernameValid = computed(() => /^[A-Za-z0-9_.-]{3,64}$/.test(normalizedUsername.value))
 const isEmailValid = computed(() => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalizedEmail.value))
+const isPasswordValid = computed(() => password.value.length >= 8 && password.value.length <= 128)
 const isCodeValid = computed(() => /^\d{4,10}$/.test(code.value.trim()))
 const canSendCode = computed(() => isEmailValid.value && countdown.value === 0 && !authStore.isSendingCode)
-const isFormValid = computed(() => isEmailValid.value && isCodeValid.value)
+const isFormValid = computed(() => {
+  if (isRegister.value) {
+    return isUsernameValid.value && isEmailValid.value && isPasswordValid.value && isCodeValid.value
+  }
+  return isAccountValid.value && isPasswordValid.value
+})
 
 function startCountdown(seconds: number) {
   countdown.value = Math.max(1, seconds)
@@ -88,19 +100,24 @@ async function handleSubmit() {
 
   if (!isFormValid.value) return
 
-  const payload = {
-    email: normalizedEmail.value,
-    code: code.value.trim(),
-  }
   const ok = isRegister.value
-    ? await authStore.doRegister({ ...payload, nickname: nickname.value.trim() || undefined }, rememberMe.value)
-    : await authStore.doLogin(payload, rememberMe.value)
+    ? await authStore.doRegister({
+        username: normalizedUsername.value,
+        email: normalizedEmail.value,
+        password: password.value,
+        code: code.value.trim(),
+      }, rememberMe.value)
+    : await authStore.doLogin({
+        account: normalizedAccount.value,
+        password: password.value,
+      }, rememberMe.value)
 
   if (ok) {
     if (rememberMe.value) {
-      localStorage.setItem(REMEMBER_EMAIL_KEY, normalizedEmail.value)
+      const rememberedAccount = isRegister.value ? normalizedUsername.value : normalizedAccount.value
+      localStorage.setItem(REMEMBER_ACCOUNT_KEY, rememberedAccount)
     } else {
-      localStorage.removeItem(REMEMBER_EMAIL_KEY)
+      localStorage.removeItem(REMEMBER_ACCOUNT_KEY)
     }
     const redirect = typeof router.currentRoute.value.query.redirect === 'string'
       ? router.currentRoute.value.query.redirect
@@ -110,16 +127,24 @@ async function handleSubmit() {
 }
 
 function toggleMode() {
-  isRegister.value = !isRegister.value
+  const nextIsRegister = !isRegister.value
+  if (nextIsRegister && normalizedAccount.value.includes('@') && !email.value) {
+    email.value = normalizedAccount.value
+  }
+  if (!nextIsRegister && (normalizedUsername.value || normalizedEmail.value)) {
+    account.value = normalizedUsername.value || normalizedEmail.value
+  }
+  isRegister.value = nextIsRegister
   code.value = ''
+  password.value = ''
   sendMessage.value = ''
   authStore.clearError()
 }
 
 onMounted(() => {
   rememberMe.value = localStorage.getItem(REMEMBER_LOGIN_KEY) !== 'false'
-  const rememberedEmail = localStorage.getItem(REMEMBER_EMAIL_KEY)
-  if (rememberedEmail) email.value = rememberedEmail
+  const rememberedAccount = localStorage.getItem(REMEMBER_ACCOUNT_KEY)
+  if (rememberedAccount) account.value = rememberedAccount
 
   showcaseTimer = setInterval(() => {
     currentShowcase.value = (currentShowcase.value + 1) % showcaseItems.length
@@ -186,11 +211,33 @@ onUnmounted(() => {
 
         <h1 class="auth-title">{{ isRegister ? '创建 DramaForge 账号' : '登录 DramaForge' }}</h1>
         <p class="auth-subtitle">
-          {{ isRegister ? '使用邮箱验证码创建账号，无需设置密码。' : '输入邮箱验证码即可登录，未注册邮箱会自动创建账号。' }}
+          {{ isRegister ? '绑定用户名、邮箱和密码，首次创建账号需要邮箱验证码。' : '使用用户名或邮箱加密码登录。未注册账号请先注册。' }}
         </p>
 
         <form class="auth-form" @submit.prevent="handleSubmit">
-          <div class="form-group">
+          <div v-if="!isRegister" class="form-group">
+            <input
+              v-model="account"
+              type="text"
+              class="form-input"
+              placeholder="请输入用户名或邮箱"
+              autocomplete="username"
+              required
+            />
+          </div>
+
+          <div v-if="isRegister" class="form-group">
+            <input
+              v-model="username"
+              type="text"
+              class="form-input"
+              placeholder="请输入用户名（3-64 位字母、数字或符号）"
+              autocomplete="username"
+              required
+            />
+          </div>
+
+          <div v-if="isRegister" class="form-group">
             <input
               v-model="email"
               type="email"
@@ -201,17 +248,18 @@ onUnmounted(() => {
             />
           </div>
 
-          <div v-if="isRegister" class="form-group">
+          <div class="form-group">
             <input
-              v-model="nickname"
-              type="text"
+              v-model="password"
+              type="password"
               class="form-input"
-              placeholder="请输入昵称（可选）"
-              autocomplete="nickname"
+              placeholder="请输入密码（至少 8 位）"
+              :autocomplete="isRegister ? 'new-password' : 'current-password'"
+              required
             />
           </div>
 
-          <div class="code-row">
+          <div v-if="isRegister" class="code-row">
             <input
               v-model="code"
               type="text"
