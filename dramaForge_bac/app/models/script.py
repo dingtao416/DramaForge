@@ -35,6 +35,15 @@ class Script(Base):
     one_liner: Mapped[Optional[str]] = mapped_column(String(200), default="")
     raw_content: Mapped[Optional[str]] = mapped_column(Text, default="")
 
+    # ── Story Bible fields ──
+    premise: Mapped[Optional[str]] = mapped_column(Text, default="")
+    world_rules: Mapped[Optional[str]] = mapped_column(Text, default="")
+    character_relationships: Mapped[Optional[str]] = mapped_column(Text, default="")
+    timeline: Mapped[Optional[str]] = mapped_column(Text, default="")
+    episode_arc: Mapped[Optional[str]] = mapped_column(Text, default="")
+    visual_style_rules: Mapped[Optional[str]] = mapped_column(Text, default="")
+    continuity_notes: Mapped[Optional[str]] = mapped_column(Text, default="")
+
     is_approved: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_at: Mapped[datetime] = mapped_column(

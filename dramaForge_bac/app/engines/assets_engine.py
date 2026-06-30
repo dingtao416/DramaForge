@@ -31,6 +31,22 @@ class ImageGenerationError(Exception):
 class AssetsEngine:
     """Engine for generating character and scene visual assets."""
 
+    @staticmethod
+    def _build_story_bible_context(script: Script) -> str:
+        """Build a condensed Story Bible context string for prompt injection."""
+        parts = []
+        if script.premise:
+            parts.append(f"【核心命题】{script.premise}")
+        if script.world_rules:
+            parts.append(f"【世界观】{script.world_rules}")
+        if script.character_relationships:
+            parts.append(f"【人物关系】{script.character_relationships}")
+        if script.visual_style_rules:
+            parts.append(f"【视觉风格】{script.visual_style_rules}")
+        if script.continuity_notes:
+            parts.append(f"【连续性要求】{script.continuity_notes}")
+        return "\n".join(parts) if parts else ""
+
     async def generate_all_assets(
         self,
         script: Script,
@@ -58,11 +74,12 @@ class AssetsEngine:
         )
 
         synopsis = script.synopsis or ""
+        bible_context = self._build_story_bible_context(script)
 
         # Generate descriptions & images concurrently
         char_tasks = [
             self._generate_character(
-                ch, synopsis, project_id,
+                ch, synopsis, bible_context, project_id,
                 chat_model=chat_model, chat_api_key=chat_api_key, chat_base_url=chat_base_url,
                 chat_options=chat_options,
                 image_model=image_model, image_api_key=image_api_key, image_base_url=image_base_url,
@@ -72,7 +89,7 @@ class AssetsEngine:
         ]
         scene_tasks = [
             self._generate_scene(
-                sc, script, project_id,
+                sc, script, bible_context, project_id,
                 chat_model=chat_model, chat_api_key=chat_api_key, chat_base_url=chat_base_url,
                 chat_options=chat_options,
                 image_model=image_model, image_api_key=image_api_key, image_base_url=image_base_url,
@@ -108,6 +125,7 @@ class AssetsEngine:
         self,
         character: Character,
         synopsis: str,
+        bible_context: str,
         project_id: int,
         chat_model: str = None,
         chat_api_key: str = None,
@@ -126,6 +144,7 @@ class AssetsEngine:
             character_name=character.name,
             character_role=character.role.value if character.role else "supporting",
             script_synopsis=synopsis,
+            story_bible_context=bible_context,
         )
 
         desc_data = await ai_hub.chat.complete_json(
@@ -153,7 +172,12 @@ class AssetsEngine:
                 base_url=image_base_url,
                 **(image_options or {}),
             )
-            character.reference_images = [storage.get_url(image_path)]
+            character.reference_images = [{
+                "url": storage.get_url(image_path),
+                "name": "标准形象",
+                "description": image_prompt,
+                "appearance_type": "standard",
+            }]
 
         return character
 
@@ -161,6 +185,7 @@ class AssetsEngine:
         self,
         scene: SceneLocation,
         script: Script,
+        bible_context: str,
         project_id: int,
         chat_model: str = None,
         chat_api_key: str = None,
@@ -181,6 +206,7 @@ class AssetsEngine:
             story_setting=script.setting or "",
             time_of_day=scene.time_of_day or "day",
             interior=scene.interior,
+            story_bible_context=bible_context,
         )
 
         desc_data = await ai_hub.chat.complete_json(
@@ -209,7 +235,12 @@ class AssetsEngine:
                     base_url=image_base_url,
                     **(image_options or {}),
                 )
-                urls.append(storage.get_url(image_path))
+                url = storage.get_url(image_path)
+                urls.append({
+                    "url": url,
+                    "name": f"{scene.name} {idx + 1}",
+                    "description": prompt,
+                })
             except Exception as e:
                 logger.warning(f"Scene image {idx} failed: {e}")
 
@@ -231,6 +262,8 @@ class AssetsEngine:
         image_options: dict | None = None,
         # ── Enhanced context for prompt optimization ──
         visual_description: str = "",
+        appearance_type: str = "standard",
+        image_name: str | None = None,
         drama_style: str = "realistic",
         aspect_ratio: str = "9:16",
         optimize_prompt: bool = False,
@@ -329,12 +362,13 @@ class AssetsEngine:
 
         if urls:
             # Append new images to existing ones, preserving structure
-            img_name = visual_description[:30] if visual_description else ""
+            img_name = image_name or (visual_description[:30] if visual_description else "")
             for url in new_urls:
                 existing_images.append({
                     "url": url,
                     "name": img_name,
                     "description": visual_description or "",
+                    "appearance_type": appearance_type or "standard",
                 })
             character.reference_images = existing_images
             if errors:
@@ -358,6 +392,8 @@ class AssetsEngine:
         prompt: Optional[str] = None,
         variant_count: int = 1,
         *,
+        state_type: str = "default",
+        image_name: str | None = None,
         image_model: str = None,
         image_api_key: str = None,
         image_base_url: str = None,
@@ -413,9 +449,14 @@ class AssetsEngine:
 
         if urls:
             # Append structured entries to existing images
-            img_name = scene.name or ""
+            img_name = image_name or scene.name or ""
             for url in new_urls:
-                existing_images.append({"url": url, "name": img_name, "description": ""})
+                existing_images.append({
+                    "url": url,
+                    "name": img_name,
+                    "description": prompt,
+                    "state_type": state_type or "default",
+                })
             scene.reference_images = existing_images
             if errors:
                 logger.warning(

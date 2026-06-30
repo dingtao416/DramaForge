@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { scriptsApi } from '@/api/scripts'
-import type { ScriptDetail } from '@/types/script'
+import type { ScriptDetail, ScriptUpdate, StoryBible, StoryBibleDraftRequest, StoryBibleUpdate } from '@/types/script'
 
 export const useScriptStore = defineStore('script', () => {
   const script = ref<ScriptDetail | null>(null)
+  const storyBible = ref<StoryBible | null>(null)
   const loading = ref(false)
 
   async function fetchScript(projectId: number) {
@@ -12,11 +13,43 @@ export const useScriptStore = defineStore('script', () => {
     try {
       const { data } = await scriptsApi.get(projectId)
       script.value = data
+      storyBible.value = pickStoryBible(data)
     } catch {
       script.value = null
     } finally {
       loading.value = false
     }
+  }
+
+  async function updateScript(projectId: number, data: ScriptUpdate) {
+    const { data: updated } = await scriptsApi.update(projectId, data)
+    script.value = updated
+  }
+
+  async function updateStoryBible(projectId: number, data: StoryBibleUpdate) {
+    const { data: bible } = await scriptsApi.updateStoryBible(projectId, data)
+    storyBible.value = bible
+    if (script.value) {
+      script.value = { ...script.value, ...bible }
+    }
+  }
+
+  async function fetchStoryBible(projectId: number) {
+    const { data: bible } = await scriptsApi.getStoryBible(projectId)
+    storyBible.value = bible
+    if (script.value) {
+      script.value = { ...script.value, ...bible }
+    }
+    return bible
+  }
+
+  async function draftStoryBible(projectId: number, data: StoryBibleDraftRequest) {
+    const { data: bible } = await scriptsApi.draftStoryBible(projectId, data)
+    storyBible.value = bible
+    if (script.value) {
+      script.value = { ...script.value, ...bible }
+    }
+    return bible
   }
 
   async function approveScript(projectId: number) {
@@ -52,10 +85,27 @@ export const useScriptStore = defineStore('script', () => {
 
   return {
     script,
+    storyBible,
     loading,
     fetchScript,
+    fetchStoryBible,
+    updateScript,
+    updateStoryBible,
+    draftStoryBible,
     approveScript,
     rewriteNarration,
     rewriteNarrationStream,
   }
 })
+
+function pickStoryBible(script: ScriptDetail): StoryBible {
+  return {
+    premise: script.premise || '',
+    world_rules: script.world_rules || '',
+    character_relationships: script.character_relationships || '',
+    timeline: script.timeline || '',
+    episode_arc: script.episode_arc || '',
+    visual_style_rules: script.visual_style_rules || '',
+    continuity_notes: script.continuity_notes || '',
+  }
+}

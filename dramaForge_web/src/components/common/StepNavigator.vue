@@ -14,9 +14,9 @@ const projectStore = useProjectStore()
 const projectId = computed(() => route.params.id)
 
 const steps = [
-  { key: ProjectStep.SCRIPT, label: '剧本大纲', num: 1, path: 'script' },
-  { key: ProjectStep.ASSETS, label: '角色和场景', num: 2, path: 'assets' },
-  { key: ProjectStep.STORYBOARD, label: '分集视频', num: 3, path: 'episodes' },
+  { key: ProjectStep.SCRIPT, label: 'Story Bible & 剧本', num: 1, path: 'script' },
+  { key: ProjectStep.ASSETS, label: '角色与场景资产', num: 2, path: 'assets' },
+  { key: ProjectStep.STORYBOARD, label: '分镜与成片', num: 3, path: 'episodes' },
 ]
 
 const stepOrder = [ProjectStep.SCRIPT, ProjectStep.ASSETS, ProjectStep.STORYBOARD, ProjectStep.COMPLETED]

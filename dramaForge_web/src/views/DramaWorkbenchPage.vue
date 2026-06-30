@@ -15,8 +15,10 @@ import type { ProjectList } from '@/types/project'
 import { DramaGenre, VideoStyle } from '@/types/enums'
 import TopbarActions from '@/components/common/TopbarActions.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import StoryBibleEditor from '@/components/script/StoryBibleEditor.vue'
 import { useBillingStore } from '@/stores/billing'
 import { useGenerationStore } from '@/stores/generation'
+import type { StoryBible } from '@/types/script'
 
 const router = useRouter()
 const billingStore = useBillingStore()
@@ -40,6 +42,14 @@ const showFullPreview = ref(false)
 const aiPrompt = ref('')
 const aiGenre = ref('都市')
 const aiEpisodes = ref(5)
+const preparingBible = ref(false)
+const aiStoryBibleModalOpen = ref(false)
+const aiStoryBibleDraft = ref<StoryBible>(createEmptyStoryBible())
+const aiStoryBibleDrafting = ref(false)
+const aiStoryBibleSaving = ref(false)
+const aiStoryBibleError = ref('')
+const aiStoryBiblePersisted = ref(false)
+const aiPreparedProjectId = ref<number | null>(null)
 
 // ── Generation progress (global store — survives navigation) ──
 const generating = computed(() => genStore.isGenerating)
@@ -101,6 +111,133 @@ const genreMap: Record<string, DramaGenre> = {
   复仇: DramaGenre.REVENGE,
   豪门: DramaGenre.OTHER,
   其他: DramaGenre.OTHER,
+}
+
+const storyBibleFieldLabels: Record<keyof StoryBible, string> = {
+  premise: '核心故事命题',
+  world_rules: '世界观和规则',
+  character_relationships: '人物关系',
+  timeline: '关键时间线',
+  episode_arc: '分集节奏',
+  visual_style_rules: '视觉风格规则',
+  continuity_notes: '连续性注意事项',
+}
+
+const storyBibleKeys = Object.keys(storyBibleFieldLabels) as (keyof StoryBible)[]
+
+const filledAiStoryBibleCount = computed(() =>
+  storyBibleKeys.filter(key => aiStoryBibleDraft.value[key]?.trim()).length,
+)
+
+function createEmptyStoryBible(): StoryBible {
+  return {
+    premise: '',
+    world_rules: '',
+    character_relationships: '',
+    timeline: '',
+    episode_arc: '',
+    visual_style_rules: '',
+    continuity_notes: '',
+  }
+}
+
+function handleAiStoryBibleUpdate(field: string, value: string) {
+  aiStoryBibleDraft.value = {
+    ...aiStoryBibleDraft.value,
+    [field]: value,
+  }
+  aiStoryBibleError.value = ''
+  aiStoryBiblePersisted.value = false
+}
+
+function openAiStoryBibleModal() {
+  aiStoryBibleModalOpen.value = true
+}
+
+function closeAiStoryBibleModal() {
+  if (aiStoryBibleSaving.value || aiStoryBibleDrafting.value) return
+  aiStoryBibleModalOpen.value = false
+}
+
+function clearAiStoryBibleConfig() {
+  aiStoryBibleDraft.value = createEmptyStoryBible()
+  aiStoryBibleError.value = ''
+  aiStoryBiblePersisted.value = false
+}
+
+function buildAiProjectPayload() {
+  const title = (aiPrompt.value.trim() || 'Story Bible 草稿').slice(0, 30)
+  return {
+    title,
+    genre: genreMap[aiGenre.value] || DramaGenre.OTHER,
+    style: VideoStyle.REALISTIC,
+    description: aiPrompt.value.trim(),
+  }
+}
+
+async function ensureAiDraftProject() {
+  const payload = buildAiProjectPayload()
+  if (aiPreparedProjectId.value) {
+    await projectsApi.update(aiPreparedProjectId.value, payload)
+    return aiPreparedProjectId.value
+  }
+
+  const { data: project } = await projectsApi.create(payload)
+  aiPreparedProjectId.value = project.id
+  return project.id
+}
+
+async function saveAiStoryBibleConfig() {
+  if (aiStoryBibleSaving.value) return
+  if (!aiPrompt.value.trim() && filledAiStoryBibleCount.value === 0) {
+    aiStoryBibleModalOpen.value = false
+    return
+  }
+
+  aiStoryBibleSaving.value = true
+  aiStoryBibleError.value = ''
+  try {
+    const projectId = await ensureAiDraftProject()
+    await scriptsApi.updateStoryBible(projectId, aiStoryBibleDraft.value)
+    aiStoryBiblePersisted.value = true
+    aiStoryBibleModalOpen.value = false
+    await loadProjects()
+  } catch (e: any) {
+    aiStoryBibleError.value = e?.response?.data?.detail || e.message || '保存 Story Bible 失败'
+  } finally {
+    aiStoryBibleSaving.value = false
+  }
+}
+
+function mergeAiStoryBibleDraft(draft: StoryBible) {
+  const merged = { ...aiStoryBibleDraft.value }
+  for (const key of storyBibleKeys) {
+    if (!merged[key]?.trim()) {
+      merged[key] = draft[key] || ''
+    }
+  }
+  aiStoryBibleDraft.value = merged
+}
+
+async function handleAiDraftStoryBible() {
+  if (aiStoryBibleDrafting.value) return
+  aiStoryBibleDrafting.value = true
+  aiStoryBibleError.value = ''
+  try {
+    const seed = aiPrompt.value.trim() || `${aiGenre.value}短剧，${aiEpisodes.value}集`
+    const { data } = await scriptsApi.draftStoryBiblePreview({
+      user_input: seed,
+      genre: genreMap[aiGenre.value] || DramaGenre.OTHER,
+      total_episodes: aiEpisodes.value,
+      duration_per_episode: 60,
+      overwrite: false,
+    })
+    mergeAiStoryBibleDraft(data)
+  } catch (e: any) {
+    aiStoryBibleError.value = e?.response?.data?.detail || e.message || 'AI 起草 Story Bible 失败'
+  } finally {
+    aiStoryBibleDrafting.value = false
+  }
 }
 
 // ── Projects ──
@@ -283,41 +420,39 @@ const previewLines = computed(() => {
 
 // ── AI Generate ──
 async function handleGenerate() {
-  if (!aiPrompt.value.trim() || genStore.isGenerating) return
+  if (!aiPrompt.value.trim() || genStore.isGenerating || preparingBible.value) return
   uploadError.value = ''
+  preparingBible.value = true
 
   try {
-    const title = aiPrompt.value.slice(0, 30)
-    const { data: project } = await projectsApi.create({
-      title,
-      genre: genreMap[aiGenre.value] || DramaGenre.OTHER,
-      style: VideoStyle.REALISTIC,
-      description: aiPrompt.value,
-    })
+    const projectGenre = genreMap[aiGenre.value] || DramaGenre.OTHER
+    const projectId = await ensureAiDraftProject()
 
-    // Start generation in global store (survives navigation)
-    genStore.startGeneration(project.id, {
+    if (filledAiStoryBibleCount.value > 0 || aiStoryBiblePersisted.value || aiPreparedProjectId.value) {
+      await scriptsApi.updateStoryBible(projectId, aiStoryBibleDraft.value)
+      aiStoryBiblePersisted.value = true
+    }
+
+    preparingBible.value = false
+    void genStore.startGeneration(projectId, {
       user_input: aiPrompt.value,
-      genre: genreMap[aiGenre.value] || DramaGenre.OTHER,
+      genre: projectGenre,
       total_episodes: aiEpisodes.value,
       duration_per_episode: 60,
+    }).then(() => {
+      if (genStore.status === 'complete') {
+        router.push(`/projects/${projectId}/script`)
+      } else if (genStore.status === 'error') {
+        uploadError.value = genStore.error || '生成失败'
+      }
     })
-
-    // Wait for completion by watching the store
-    const unwatch = watch(
-      () => genStore.status,
-      (newStatus) => {
-        if (newStatus === 'complete' && genStore.result) {
-          unwatch()
-          router.push(`/projects/${project.id}/script`)
-        } else if (newStatus === 'error') {
-          unwatch()
-          uploadError.value = genStore.error || '生成失败'
-        }
-      },
-    )
   } catch (e: any) {
     uploadError.value = e?.response?.data?.detail || e.message || '生成失败'
+    preparingBible.value = false
+  } finally {
+    if (!genStore.isGenerating) {
+      preparingBible.value = false
+    }
   }
 }
 
@@ -334,8 +469,8 @@ function formatDate(dateStr: string) {
 
 function getStepLabel(status: string) {
   const map: Record<string, string> = {
-    script: '剧本',
-    assets: '角色',
+    script: 'Story Bible',
+    assets: '资产',
     storyboard: '分镜',
     completed: '完成',
   }
@@ -581,6 +716,16 @@ watch(uploadFile, () => {
             </div>
 
             <div class="wb-form-group">
+              <label class="wb-label">Story Bible</label>
+              <button class="wb-story-bible-entry" type="button" @click="openAiStoryBibleModal">
+                <span>
+                  {{ filledAiStoryBibleCount ? `${aiStoryBiblePersisted ? '已保存' : '已设置'} ${filledAiStoryBibleCount}/7 项` : '可选配置' }}
+                </span>
+                <small>{{ filledAiStoryBibleCount ? (aiStoryBiblePersisted ? '已保存到项目草稿，生成时会带入' : '保存后会写入项目草稿') : '添加故事规则、人物关系和连续性约束' }}</small>
+              </button>
+            </div>
+
+            <div class="wb-form-group">
               <label class="wb-label">故事描述 / 关键词</label>
               <textarea
                 v-model="aiPrompt"
@@ -593,11 +738,17 @@ watch(uploadFile, () => {
             <button
               v-if="!generating"
               class="wb-submit-btn full"
-              :disabled="!aiPrompt.trim()"
+              :disabled="!aiPrompt.trim() || preparingBible"
               @click="handleGenerate"
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 2.5l-5 5M8.5 2.5h5v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 3H3.5a1 1 0 00-1 1v8.5a1 1 0 001 1H12a1 1 0 001-1V10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-              AI 一键生成剧本
+              <template v-if="preparingBible">
+                <div class="wb-spinner" />
+                准备生成中...
+              </template>
+              <template v-else>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 3h8M4 6h8M4 9h5M4 12h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                生成剧本
+              </template>
             </button>
             <button
               v-else
@@ -726,6 +877,49 @@ watch(uploadFile, () => {
         </div>
       </div>
     </main>
+
+    <Teleport to="body">
+      <div v-if="aiStoryBibleModalOpen" class="wb-bible-modal-backdrop" @click.self="closeAiStoryBibleModal">
+        <section class="wb-bible-modal" role="dialog" aria-modal="true" aria-labelledby="wb-bible-modal-title">
+          <header class="wb-bible-modal-header">
+            <div>
+              <span class="wb-bible-kicker">可选配置</span>
+              <h2 id="wb-bible-modal-title">Story Bible</h2>
+              <p>这些设定会在生成剧本前保存，并作为生成约束传给模型。</p>
+            </div>
+            <button class="wb-bible-close" type="button" aria-label="关闭 Story Bible 设置" @click="closeAiStoryBibleModal">
+              ×
+            </button>
+          </header>
+
+          <div class="wb-bible-modal-body">
+            <StoryBibleEditor
+              :story-bible="aiStoryBibleDraft"
+              @update="handleAiStoryBibleUpdate"
+            />
+          </div>
+
+          <footer class="wb-bible-modal-footer">
+            <div class="wb-bible-summary">
+              <strong>{{ filledAiStoryBibleCount }}/{{ storyBibleKeys.length }} 项已填写</strong>
+              <span v-if="aiStoryBibleError" class="wb-bible-error">{{ aiStoryBibleError }}</span>
+              <span v-else>{{ aiStoryBiblePersisted ? '已保存到项目草稿' : filledAiStoryBibleCount ? '点击保存设定会立即写入项目草稿' : '不填写也可以直接生成剧本' }}</span>
+            </div>
+            <div class="wb-bible-actions">
+              <button class="wb-bible-secondary" type="button" :disabled="aiStoryBibleDrafting || aiStoryBibleSaving" @click="handleAiDraftStoryBible">
+                {{ aiStoryBibleDrafting ? '起草中' : 'AI 起草设定' }}
+              </button>
+              <button class="wb-bible-secondary" type="button" :disabled="aiStoryBibleSaving" @click="clearAiStoryBibleConfig">
+                清空
+              </button>
+              <button class="wb-bible-primary" type="button" :disabled="aiStoryBibleSaving || aiStoryBibleDrafting" @click="saveAiStoryBibleConfig">
+                {{ aiStoryBibleSaving ? '保存中' : '保存设定' }}
+              </button>
+            </div>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1088,6 +1282,38 @@ watch(uploadFile, () => {
   display: flex;
   gap: 8px;
 }
+.wb-story-bible-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-height: 54px;
+  padding: 12px 16px;
+  border: 1.5px solid #D4C898;
+  border-radius: 12px;
+  background: #FEF9E7;
+  color: #2D2515;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.wb-story-bible-entry:hover {
+  border-color: #E8A317;
+  background: #fff8df;
+  box-shadow: 0 8px 22px rgba(184, 125, 8, 0.1);
+}
+.wb-story-bible-entry span {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.wb-story-bible-entry small {
+  color: #9a8656;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 .wb-textarea {
   width: 100%;
   padding: 14px 16px;
@@ -1103,6 +1329,142 @@ watch(uploadFile, () => {
 }
 .wb-textarea::placeholder { color: #ccc; }
 .wb-textarea:focus { border-color: #E8A317; }
+
+.wb-bible-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(45, 37, 21, 0.48);
+  backdrop-filter: blur(8px);
+}
+.wb-bible-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, calc(100vw - 48px));
+  max-height: calc(100vh - 64px);
+  overflow: hidden;
+  border: 1px solid #D4C898;
+  border-radius: 16px;
+  background: #FDF5D6;
+  box-shadow: 0 28px 90px rgba(45, 37, 21, 0.34);
+}
+.wb-bible-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 26px 18px;
+  border-bottom: 1px solid #D4C898;
+  background: #FEF9E7;
+}
+.wb-bible-kicker {
+  color: #B87D08;
+  font-size: 12px;
+  font-weight: 800;
+}
+.wb-bible-modal-header h2 {
+  margin: 6px 0 4px;
+  color: #2D2515;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+.wb-bible-modal-header p {
+  margin: 0;
+  color: #8a7a55;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.wb-bible-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 1px solid #D4C898;
+  border-radius: 8px;
+  background: #FDF5D6;
+  color: #8a7a55;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.wb-bible-close:hover {
+  border-color: #E8A317;
+  color: #2D2515;
+}
+.wb-bible-modal-body {
+  min-height: 0;
+  padding: 24px 26px;
+  overflow: auto;
+}
+.wb-bible-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 26px;
+  border-top: 1px solid #D4C898;
+  background: rgba(254, 249, 231, 0.9);
+}
+.wb-bible-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.wb-bible-summary strong {
+  color: #2D2515;
+  font-size: 14px;
+}
+.wb-bible-summary span {
+  color: #8a7a55;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.wb-bible-summary .wb-bible-error {
+  color: #DC2626;
+  font-weight: 700;
+}
+.wb-bible-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.wb-bible-secondary,
+.wb-bible-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.wb-bible-secondary {
+  border: 1px solid #D4C898;
+  background: #FDF5D6;
+  color: #8a7a55;
+}
+.wb-bible-secondary:disabled,
+.wb-bible-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+.wb-bible-primary {
+  border: none;
+  background: #2D2515;
+  color: #fff;
+}
 
 /* ── Stream Preview ── */
 .wb-cancel-btn {
@@ -1298,10 +1660,44 @@ watch(uploadFile, () => {
 }
 @media (max-width: 768px) {
   .wb-project-grid { grid-template-columns: repeat(2, 1fr); }
+  .wb-bible-modal-backdrop {
+    align-items: stretch;
+    padding: 12px;
+  }
+  .wb-bible-modal {
+    width: 100%;
+    max-height: calc(100vh - 24px);
+  }
+  .wb-bible-modal-header,
+  .wb-bible-modal-body,
+  .wb-bible-modal-footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .wb-bible-modal-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .wb-bible-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
 }
 @media (max-width: 520px) {
   .wb-project-grid { grid-template-columns: 1fr; }
   .wb-format-grid { grid-template-columns: 1fr; }
+  .wb-panel {
+    padding: 24px 18px;
+  }
+  .wb-episode-row {
+    flex-wrap: wrap;
+  }
+  .wb-story-bible-entry {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
 }
 
 .wb-project-card {

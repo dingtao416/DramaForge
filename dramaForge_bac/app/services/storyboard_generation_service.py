@@ -169,6 +169,11 @@ async def run_storyboard_generation(
                 return {"episode_id": episode_id, "status": "cancelled"}
 
             await set_storyboard_progress(project_id, episode_id, "generating", 48, "生成分镜结构", user_id=user_id)
+            # Load script for Story Bible context
+            script_stmt = select(Script).where(Script.project_id == project_id)
+            script_result = await db.execute(script_stmt)
+            script = script_result.scalar_one_or_none()
+
             segments = await video_engine.generate_episode(
                 episode=episode,
                 characters=characters,
@@ -179,6 +184,7 @@ async def run_storyboard_generation(
                 chat_api_key=chat_resolved.api_key,
                 chat_base_url=chat_resolved.base_url,
                 chat_options=chat_resolved.raw_params or {},
+                script=script,
             )
 
             if await is_storyboard_cancelled(project_id, episode_id, user_id=user_id):

@@ -1,6 +1,6 @@
 import api from './client'
 import { getToken } from './client'
-import type { ScriptGenerateRequest, ScriptUpdate, ScriptDetail, EpisodeUpdate } from '@/types/script'
+import type { ScriptGenerateRequest, ScriptUpdate, ScriptDetail, EpisodeUpdate, StoryBible, StoryBibleDraftRequest, StoryBibleUpdate } from '@/types/script'
 
 export interface ScriptParseResult {
   filename: string
@@ -47,6 +47,26 @@ export const scriptsApi = {
   /** 获取剧本 */
   get(projectId: number) {
     return api.get<ScriptDetail>(`/projects/${projectId}/script`)
+  },
+
+  /** 获取 Story Bible */
+  getStoryBible(projectId: number) {
+    return api.get<StoryBible>(`/projects/${projectId}/story-bible`)
+  },
+
+  /** 更新 Story Bible */
+  updateStoryBible(projectId: number, data: StoryBibleUpdate) {
+    return api.put<StoryBible>(`/projects/${projectId}/story-bible`, data)
+  },
+
+  /** AI 起草 Story Bible */
+  draftStoryBible(projectId: number, data: StoryBibleDraftRequest) {
+    return api.post<StoryBible>(`/projects/${projectId}/story-bible/draft`, data)
+  },
+
+  /** AI 起草生成前 Story Bible（项目创建前） */
+  draftStoryBiblePreview(data: StoryBibleDraftRequest) {
+    return api.post<StoryBible>('/story-bible/draft', data)
   },
 
   /** 更新剧本 */

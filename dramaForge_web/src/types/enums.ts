@@ -93,9 +93,9 @@ export const DramaGenreLabel: Record<DramaGenre, string> = {
 }
 
 export const ProjectStepLabel: Record<ProjectStep, string> = {
-  [ProjectStep.SCRIPT]: '剧本大纲',
-  [ProjectStep.ASSETS]: '角色和场景',
-  [ProjectStep.STORYBOARD]: '分集视频',
+  [ProjectStep.SCRIPT]: 'Story Bible & 剧本',
+  [ProjectStep.ASSETS]: '角色与场景资产',
+  [ProjectStep.STORYBOARD]: '分镜与成片',
   [ProjectStep.COMPLETED]: '已完成',
 }
 

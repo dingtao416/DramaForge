@@ -279,6 +279,8 @@ async def regenerate_character(
             image_options=_media_options(image_resolved),
             # Enhanced context
             visual_description=body.visual_description or "",
+            appearance_type=body.appearance_type or "standard",
+            image_name=body.image_name,
             drama_style=project.style.value if project and project.style else "realistic",
             aspect_ratio=project.aspect_ratio if project else "9:16",
             optimize_prompt=body.optimize_prompt,
@@ -422,6 +424,8 @@ async def regenerate_scene(
             project_id=project_id,
             prompt=body.prompt,
             variant_count=body.variant_count,
+            state_type=body.state_type or "default",
+            image_name=body.image_name,
             image_model=resolved.model_id,
             image_api_key=resolved.api_key,
             image_base_url=resolved.base_url,
@@ -529,7 +533,7 @@ async def create_global_character(
     full_desc = "；".join(filter(None, desc_parts))
 
     # Save image if provided
-    image_urls: list[str] = []
+    image_entries: list[dict[str, str]] = []
     if image and image.filename:
         ext = _validated_upload_extension(
             image,
@@ -542,14 +546,19 @@ async def create_global_character(
         img_path = storage_service.project_path(project_id) / f"char_{uuid.uuid4().hex[:8]}.{ext}"
         img_path.parent.mkdir(parents=True, exist_ok=True)
         img_path.write_bytes(img_bytes)
-        image_urls.append(storage_service.get_url(str(img_path)))
+        image_entries.append({
+            "url": storage_service.get_url(str(img_path)),
+            "name": image.filename.rsplit(".", 1)[0] if image.filename else name.strip(),
+            "description": full_desc,
+            "appearance_type": "standard",
+        })
 
     character = Character(
         project_id=project_id,
         name=name.strip(),
         role=char_role,
         description=full_desc,
-        reference_images=image_urls,
+        reference_images=image_entries,
     )
     db.add(character)
     await db.flush()
@@ -594,17 +603,24 @@ async def upload_global_asset(
     if create_record:
         display_name = name.strip() or file.filename.rsplit(".", 1)[0]
         if asset_type == "scene":
+            image_entry = {"url": url, "name": display_name, "description": ""}
             asset = SceneLocation(
                 project_id=project_id,
                 name=display_name,
-                reference_images=[url],
+                reference_images=[image_entry],
             )
         else:
+            image_entry = {
+                "url": url,
+                "name": display_name,
+                "description": "",
+                "appearance_type": "standard",
+            }
             asset = Character(
                 project_id=project_id,
                 name=display_name,
                 role=CharacterRole.EXTRA,
-                reference_images=[url],
+                reference_images=[image_entry],
             )
         db.add(asset)
         await db.flush()

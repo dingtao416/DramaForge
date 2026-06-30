@@ -17,6 +17,22 @@ export interface SceneCreate {
   interior?: boolean
 }
 
+export interface CharacterRegenerateOptions {
+  prompt?: string
+  visualDescription?: string
+  optimizePrompt?: boolean
+  variantCount?: number
+  appearanceType?: string
+  imageName?: string
+}
+
+export interface SceneRegenerateOptions {
+  prompt?: string
+  variantCount?: number
+  stateType?: string
+  imageName?: string
+}
+
 export const assetsApi = {
   /** 生成全部资产 */
   generateAll(projectId: number, data?: AssetsGenerateRequest) {
@@ -39,11 +55,29 @@ export const assetsApi = {
   },
 
   /** 重新生成角色形象 */
-  regenerateCharacter(projectId: number, charId: number, prompt?: string, visualDescription?: string, optimizePrompt?: boolean) {
+  regenerateCharacter(
+    projectId: number,
+    charId: number,
+    promptOrOptions?: string | CharacterRegenerateOptions,
+    visualDescription?: string,
+    optimizePrompt?: boolean,
+  ) {
+    const options: CharacterRegenerateOptions =
+      typeof promptOrOptions === 'object'
+        ? promptOrOptions
+        : {
+            prompt: promptOrOptions,
+            visualDescription,
+            optimizePrompt,
+          }
+
     return api.post<CharacterDetail>(`/projects/${projectId}/characters/${charId}/regenerate`, {
-      prompt,
-      visual_description: visualDescription || '',
-      optimize_prompt: optimizePrompt || false,
+      prompt: options.prompt,
+      variant_count: options.variantCount || 1,
+      visual_description: options.visualDescription || '',
+      optimize_prompt: options.optimizePrompt || false,
+      appearance_type: options.appearanceType || 'standard',
+      image_name: options.imageName,
     })
   },
 
@@ -75,8 +109,16 @@ export const assetsApi = {
   },
 
   /** 重新生成场景形象 */
-  regenerateScene(projectId: number, sceneId: number, prompt?: string) {
-    return api.post<SceneDetail>(`/projects/${projectId}/scenes/${sceneId}/regenerate`, { prompt })
+  regenerateScene(projectId: number, sceneId: number, promptOrOptions?: string | SceneRegenerateOptions) {
+    const options: SceneRegenerateOptions =
+      typeof promptOrOptions === 'object' ? promptOrOptions : { prompt: promptOrOptions }
+
+    return api.post<SceneDetail>(`/projects/${projectId}/scenes/${sceneId}/regenerate`, {
+      prompt: options.prompt,
+      variant_count: options.variantCount || 1,
+      state_type: options.stateType || 'default',
+      image_name: options.imageName,
+    })
   },
 
   /** 审核通过全部资产 */

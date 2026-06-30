@@ -147,6 +147,22 @@ async def init_db() -> None:
                 await conn.execute(
                     text("ALTER TABLE shots ADD COLUMN narration TEXT NOT NULL DEFAULT ''")
                 )
+            result = await conn.execute(text("PRAGMA table_info(scripts)"))
+            columns = {row[1] for row in result.fetchall()}
+            story_bible_columns = {
+                "premise": "TEXT DEFAULT ''",
+                "world_rules": "TEXT DEFAULT ''",
+                "character_relationships": "TEXT DEFAULT ''",
+                "timeline": "TEXT DEFAULT ''",
+                "episode_arc": "TEXT DEFAULT ''",
+                "visual_style_rules": "TEXT DEFAULT ''",
+                "continuity_notes": "TEXT DEFAULT ''",
+            }
+            for column_name, column_type in story_bible_columns.items():
+                if column_name not in columns:
+                    await conn.execute(
+                        text(f"ALTER TABLE scripts ADD COLUMN {column_name} {column_type}")
+                    )
 
 
 async def close_db() -> None:

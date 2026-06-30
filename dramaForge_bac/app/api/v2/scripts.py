@@ -25,6 +25,9 @@ from app.schemas.script import (
     ScriptGenerateRequest,
     ScriptDetail,
     ScriptUpdate,
+    StoryBibleDetail,
+    StoryBibleDraftRequest,
+    StoryBibleUpdate,
     EpisodeUpdate,
 )
 from app.engines.script_engine import script_engine
@@ -34,6 +37,16 @@ from app.core.security import CurrentUser, DbSession, get_user_project
 from app.core.billing_deps import require_credits
 
 router = APIRouter()
+
+STORY_BIBLE_API_FIELDS = (
+    "premise",
+    "world_rules",
+    "character_relationships",
+    "timeline",
+    "episode_arc",
+    "visual_style_rules",
+    "continuity_notes",
+)
 
 
 def _sse_event(event: str, data: dict | str | None) -> str:
@@ -57,6 +70,60 @@ async def _get_script(project_id: int, db: AsyncSession) -> Script:
     if not script:
         raise HTTPException(status_code=404, detail="Script not found")
     return script
+
+
+async def _get_or_create_story_bible_script(project_id: int, db: AsyncSession) -> Script:
+    stmt = (
+        select(Script)
+        .where(Script.project_id == project_id)
+        .options(selectinload(Script.episodes))
+    )
+    result = await db.execute(stmt)
+    script = result.scalar_one_or_none()
+    if script:
+        return script
+
+    script = Script(project_id=project_id)
+    db.add(script)
+    await db.flush()
+    await db.refresh(script, attribute_names=["episodes"])
+    return script
+
+
+def _story_bible_from_script(script: Script | None) -> dict[str, str]:
+    if not script:
+        return {field: "" for field in STORY_BIBLE_API_FIELDS}
+    return {
+        field: str(getattr(script, field, "") or "").strip()
+        for field in STORY_BIBLE_API_FIELDS
+    }
+
+
+def _filled_story_bible(story_bible: dict[str, str]) -> dict[str, str]:
+    return {
+        field: value
+        for field, value in story_bible.items()
+        if str(value or "").strip()
+    }
+
+
+def _merge_story_bible_fields(
+    generated_script: dict,
+    existing_story_bible: dict[str, str],
+) -> dict:
+    merged = dict(generated_script)
+    for field in STORY_BIBLE_API_FIELDS:
+        existing = str(existing_story_bible.get(field) or "").strip()
+        if existing:
+            merged[field] = existing
+        else:
+            merged[field] = str(merged.get(field) or "")
+    return merged
+
+
+def _apply_story_bible_fields(script: Script, story_bible: dict[str, str]) -> None:
+    for field in STORY_BIBLE_API_FIELDS:
+        setattr(script, field, str(story_bible.get(field) or ""))
 
 
 @router.post("/projects/{project_id}/script/generate", response_model=ScriptDetail)
@@ -88,6 +155,7 @@ async def generate_script(
         select(Script).where(Script.project_id == project_id).options(selectinload(Script.episodes))
     )
     old_script = existing.scalar_one_or_none()
+    existing_story_bible = _story_bible_from_script(old_script)
 
     preserve = body.preserve_episodes
 
@@ -127,7 +195,9 @@ async def generate_script(
         chat_api_key=resolved.api_key,
         chat_base_url=resolved.base_url,
         chat_options=resolved.raw_params or {},
+        story_bible=_filled_story_bible(existing_story_bible),
     )
+    result["script"] = _merge_story_bible_fields(result["script"], existing_story_bible)
 
     if old_script and preserve:
         # ── Preserve mode: update existing script, merge episodes ──
@@ -240,8 +310,21 @@ async def generate_script(
 _gen_registry: dict[int, dict] = {}
 
 
-async def _save_script_result(project_id: int, result: dict, preserve: bool = False) -> int:
+async def _save_script_result(
+    project_id: int,
+    result: dict,
+    preserve: bool = False,
+    story_bible_override: dict[str, str] | None = None,
+) -> int:
     """Save generated script to DB using a fresh session. Returns script_id."""
+    if story_bible_override is not None:
+        result = {
+            **result,
+            "script": _merge_story_bible_fields(
+                result.get("script", {}),
+                story_bible_override,
+            ),
+        }
     async with _AsyncSessionLocal() as sess:
         if preserve:
             # Update existing script in place
@@ -425,6 +508,11 @@ async def generate_script_stream(
     # Resolve user's configured chat model
     resolved = await user_model_resolver.resolve(db, user.id, "chat")
 
+    script_result = await db.execute(
+        select(Script).where(Script.project_id == project_id)
+    )
+    existing_story_bible = _story_bible_from_script(script_result.scalar_one_or_none())
+
     # ── Check for existing generation ──
     existing_entry = _gen_registry.get(project_id)
     if existing_entry and existing_entry["status"] == "generating":
@@ -503,6 +591,7 @@ async def generate_script_stream(
                 chat_api_key=resolved.api_key,
                 chat_base_url=resolved.base_url,
                 chat_options=resolved.raw_params or {},
+                story_bible=_filled_story_bible(existing_story_bible),
             ):
                 # Check cancellation before processing each event
                 if entry.get("cancelled"):
@@ -523,7 +612,12 @@ async def generate_script_stream(
                         return
                     # Save to DB with fresh session
                     try:
-                        script_id = await _save_script_result(project_id, event["data"], preserve)
+                        script_id = await _save_script_result(
+                            project_id,
+                            event["data"],
+                            preserve,
+                            existing_story_bible,
+                        )
                         event["data"]["script_id"] = script_id
                         event["data"]["episode_count"] = len(event["data"].get("episodes", []))
                         event["data"]["character_count"] = len(event["data"].get("characters", []))
@@ -712,6 +806,109 @@ async def get_script(
     """Get the script for a project."""
     await get_user_project(project_id, user, db)
     return await _get_script(project_id, db)
+
+
+@router.get("/projects/{project_id}/story-bible", response_model=StoryBibleDetail)
+async def get_story_bible(
+    project_id: int,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get only the Story Bible for a project script, creating a draft script if needed."""
+    await get_user_project(project_id, user, db)
+    return await _get_or_create_story_bible_script(project_id, db)
+
+
+@router.post("/story-bible/draft", response_model=StoryBibleDetail)
+async def draft_story_bible_preview(
+    body: StoryBibleDraftRequest,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """AI-draft Story Bible fields before a project exists."""
+    await require_credits(db, user.id, "script_gen", description="Story Bible AI 起草")
+    resolved = await user_model_resolver.resolve(db, user.id, "chat")
+    await db.commit()
+
+    draft = await script_engine.draft_story_bible(
+        user_input=(body.user_input or "").strip(),
+        project=None,
+        genre=body.genre,
+        total_episodes=body.total_episodes,
+        duration=body.duration_per_episode,
+        existing_story_bible=None,
+        chat_model=resolved.model_id,
+        chat_api_key=resolved.api_key,
+        chat_base_url=resolved.base_url,
+        chat_options=resolved.raw_params or {},
+    )
+    return StoryBibleDetail(**{
+        field: str(draft.get(field) or "")
+        for field in STORY_BIBLE_API_FIELDS
+    })
+
+
+@router.put("/projects/{project_id}/story-bible", response_model=StoryBibleDetail)
+async def update_story_bible(
+    project_id: int,
+    body: StoryBibleUpdate,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Edit only Story Bible fields, creating a draft script if needed."""
+    await get_user_project(project_id, user, db)
+    script = await _get_or_create_story_bible_script(project_id, db)
+
+    update_data = body.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(script, key, value)
+
+    await db.flush()
+    await db.refresh(script)
+    return script
+
+
+@router.post("/projects/{project_id}/story-bible/draft", response_model=StoryBibleDetail)
+async def draft_story_bible(
+    project_id: int,
+    body: StoryBibleDraftRequest,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """AI-draft Story Bible fields before full script generation."""
+    await require_credits(db, user.id, "script_gen", description="Story Bible AI 起草")
+    project = await get_user_project(project_id, user, db)
+    script = await _get_or_create_story_bible_script(project_id, db)
+    existing_story_bible = _story_bible_from_script(script)
+    resolved = await user_model_resolver.resolve(db, user.id, "chat")
+    await db.commit()
+
+    draft = await script_engine.draft_story_bible(
+        user_input=(body.user_input or project.description or project.title).strip(),
+        project=project,
+        genre=body.genre or (project.genre.value if project.genre else None),
+        total_episodes=body.total_episodes,
+        duration=body.duration_per_episode,
+        existing_story_bible=_filled_story_bible(existing_story_bible),
+        chat_model=resolved.model_id,
+        chat_api_key=resolved.api_key,
+        chat_base_url=resolved.base_url,
+        chat_options=resolved.raw_params or {},
+    )
+
+    merged: dict[str, str] = {}
+    for field in STORY_BIBLE_API_FIELDS:
+        current = existing_story_bible.get(field, "")
+        generated = draft.get(field, "")
+        if body.overwrite:
+            merged[field] = generated or current
+        else:
+            merged[field] = current or generated
+    _apply_story_bible_fields(script, merged)
+
+    await db.flush()
+    await db.refresh(script)
+    return script
 
 
 @router.put("/projects/{project_id}/script", response_model=ScriptDetail)

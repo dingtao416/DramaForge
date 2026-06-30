@@ -37,6 +37,32 @@ class ScriptUpdate(BaseModel):
     setting: Optional[str] = None
     one_liner: Optional[str] = None
     raw_content: Optional[str] = None
+    # Story Bible fields
+    premise: Optional[str] = None
+    world_rules: Optional[str] = None
+    character_relationships: Optional[str] = None
+    timeline: Optional[str] = None
+    episode_arc: Optional[str] = None
+    visual_style_rules: Optional[str] = None
+    continuity_notes: Optional[str] = None
+
+
+class StoryBibleUpdate(BaseModel):
+    premise: Optional[str] = None
+    world_rules: Optional[str] = None
+    character_relationships: Optional[str] = None
+    timeline: Optional[str] = None
+    episode_arc: Optional[str] = None
+    visual_style_rules: Optional[str] = None
+    continuity_notes: Optional[str] = None
+
+
+class StoryBibleDraftRequest(BaseModel):
+    user_input: Optional[str] = None
+    genre: Optional[str] = None
+    total_episodes: int = Field(default=1, ge=1, le=50)
+    duration_per_episode: int = Field(default=60, ge=10, le=600)
+    overwrite: bool = False
 
 
 class EpisodeUpdate(BaseModel):
@@ -66,9 +92,29 @@ class ScriptDetail(BaseModel):
     setting: Optional[str] = ""
     one_liner: Optional[str] = ""
     raw_content: Optional[str] = ""
+    # Story Bible fields
+    premise: Optional[str] = ""
+    world_rules: Optional[str] = ""
+    character_relationships: Optional[str] = ""
+    timeline: Optional[str] = ""
+    episode_arc: Optional[str] = ""
+    visual_style_rules: Optional[str] = ""
+    continuity_notes: Optional[str] = ""
     is_approved: bool = False
     created_at: datetime
     episodes: list[EpisodeBrief] = []
     warnings: list[str] = []
+
+    model_config = {"from_attributes": True}
+
+
+class StoryBibleDetail(BaseModel):
+    premise: Optional[str] = ""
+    world_rules: Optional[str] = ""
+    character_relationships: Optional[str] = ""
+    timeline: Optional[str] = ""
+    episode_arc: Optional[str] = ""
+    visual_style_rules: Optional[str] = ""
+    continuity_notes: Optional[str] = ""
 
     model_config = {"from_attributes": True}

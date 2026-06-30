@@ -7,6 +7,7 @@ import { useGenerationStore } from '@/stores/generation'
 import { DramaGenreLabel, ProjectStep } from '@/types/enums'
 import LoadingOverlay from '@/components/common/LoadingOverlay.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import StoryBibleEditor from '@/components/script/StoryBibleEditor.vue'
 import { exportScriptToDocx } from '@/utils/exportDocx'
 
 const route = useRoute()
@@ -22,6 +23,10 @@ const genRunning = ref(false)
 const genProgressContent = ref('')
 const initialLoading = ref(true)  // prevents empty state flash
 
+async function loadScript() {
+  await scriptStore.fetchScript(projectId)
+}
+
 onMounted(async () => {
   // If this project is actively being generated via the global store, show live progress
   if (genStore.projectId === projectId && genStore.isGenerating) {
@@ -35,7 +40,7 @@ onMounted(async () => {
         if (newStatus === 'complete' || newStatus === 'error') {
           genRunning.value = false
           unwatchStatus()
-          scriptStore.fetchScript(projectId)
+          loadScript()
         }
       },
     )
@@ -57,14 +62,14 @@ onMounted(async () => {
       if (!running) {
         clearInterval(poll)
         genRunning.value = false
-        scriptStore.fetchScript(projectId)
+        loadScript()
       }
     }, 2000)
     return
   }
 
+  await loadScript()
   initialLoading.value = false
-  scriptStore.fetchScript(projectId)
 })
 
 // Style tag mapping — expand single style to descriptive labels
@@ -81,6 +86,8 @@ const styleTags = computed(() => {
   const style = projectStore.currentProject?.style
   return style ? (styleTagsMap[style] || style) : ''
 })
+
+const scriptHasEpisodes = computed(() => Boolean(scriptStore.script?.episodes?.length))
 
 const rawScriptPayload = computed<Record<string, any>>(() => {
   const raw = scriptStore.script?.raw_content
@@ -192,6 +199,12 @@ async function handleCopy() {
   window.setTimeout(() => {
     copySucceeded.value = false
   }, 1600)
+}
+
+// ── Story Bible field update ──
+async function handleStoryBibleUpdate(field: string, value: string) {
+  if (!scriptStore.script) return
+  await scriptStore.updateStoryBible(projectId, { [field]: value })
 }
 
 const advancing = ref(false)
@@ -350,13 +363,13 @@ function toggleAllEpisodes() {
 
   <div class="script-page-shell">
     <EmptyState
-      v-if="!initialLoading && !scriptStore.loading && !scriptStore.script"
+      v-if="!initialLoading && !scriptStore.loading && !scriptHasEpisodes"
       title="暂无剧本"
       description="请从首页开始创作或上传剧本"
       icon="📝"
     />
 
-    <article v-if="scriptStore.script" class="script-document">
+    <article v-if="scriptStore.script && scriptHasEpisodes" class="script-document">
       <div class="script-document-actions" aria-label="剧本操作">
         <button
           class="script-action-btn"
@@ -397,6 +410,19 @@ function toggleAllEpisodes() {
               <div class="script-summary-value">{{ item.value }}</div>
             </div>
           </div>
+        </div>
+      </details>
+
+      <details class="script-document-section" open>
+        <summary class="script-document-summary">
+          <span class="script-section-caret">›</span>
+          <span class="script-section-heading">Story Bible</span>
+        </summary>
+        <div class="script-section-body">
+          <StoryBibleEditor
+            :script="scriptStore.script"
+            @update="handleStoryBibleUpdate"
+          />
         </div>
       </details>
 
@@ -458,9 +484,10 @@ function toggleAllEpisodes() {
         </div>
       </details>
     </article>
+
   </div>
 
-  <div v-if="scriptStore.script" class="bottom-action-bar script-bottom-bar">
+  <div v-if="scriptStore.script && scriptHasEpisodes" class="bottom-action-bar script-bottom-bar">
     <div class="bar-hint script-bar-hint">
       <div class="bar-icon script-bar-icon">✓</div>
       <div class="script-bar-copy">

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { gsap } from 'gsap'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -22,29 +23,23 @@ const REMEMBER_LOGIN_KEY = 'df_remember_login'
 
 const showcaseItems = [
   {
-    title: '短剧创作',
-    desc: '从创意到分镜，完整管理短剧生产流程。',
-    label: 'SCRIPT',
+    title: '筑梦成片',
+    desc: '用 AI 将创意、角色与镜头节奏生成可预演的影像。',
   },
   {
-    title: '智能分镜',
-    desc: '自动拆解场景、角色和镜头语言，保持创作节奏。',
-    label: 'SHOT',
+    title: '光影显影',
+    desc: '让故事从暗场里慢慢成形，进入可控的视频生成流程。',
   },
   {
-    title: '角色资产',
-    desc: '沉淀角色和场景设定，让后续生成保持一致。',
-    label: 'CAST',
-  },
-  {
-    title: '视频成片',
-    desc: '串联画面、配音和镜头，推进到可交付短片。',
-    label: 'FILM',
+    title: '镜头预演',
+    desc: '在生成前看见叙事重心、运动轨迹与画面情绪。',
   },
 ]
 
 const currentShowcase = ref(0)
+const showcasePanelRef = ref<HTMLElement | null>(null)
 let showcaseTimer: ReturnType<typeof setInterval> | null = null
+let dreamMotionContext: ReturnType<typeof gsap.context> | null = null
 
 const normalizedAccount = computed(() => account.value.trim())
 const normalizedUsername = computed(() => username.value.trim())
@@ -55,6 +50,12 @@ const isEmailValid = computed(() => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalized
 const isPasswordValid = computed(() => password.value.length >= 8 && password.value.length <= 128)
 const isCodeValid = computed(() => /^\d{4,10}$/.test(code.value.trim()))
 const canSendCode = computed(() => isEmailValid.value && countdown.value === 0 && !authStore.isSendingCode)
+const hasSubmitInput = computed(() => {
+  if (isRegister.value) {
+    return Boolean(normalizedUsername.value || normalizedEmail.value || password.value || code.value.trim())
+  }
+  return Boolean(normalizedAccount.value || password.value)
+})
 const isFormValid = computed(() => {
   if (isRegister.value) {
     return isUsernameValid.value && isEmailValid.value && isPasswordValid.value && isCodeValid.value
@@ -98,7 +99,33 @@ async function handleSubmit() {
     return
   }
 
-  if (!isFormValid.value) return
+  if (isRegister.value) {
+    if (!isUsernameValid.value) {
+      authStore.error = '用户名需为 3-64 位字母、数字、下划线、点或短横线'
+      return
+    }
+    if (!isEmailValid.value) {
+      authStore.error = '请输入有效的邮箱地址'
+      return
+    }
+    if (!isPasswordValid.value) {
+      authStore.error = '密码需为 8-128 位'
+      return
+    }
+    if (!isCodeValid.value) {
+      authStore.error = '请输入 4-10 位数字验证码'
+      return
+    }
+  } else {
+    if (!isAccountValid.value) {
+      authStore.error = '请输入至少 3 位用户名或邮箱'
+      return
+    }
+    if (!isPasswordValid.value) {
+      authStore.error = '密码需为 8-128 位'
+      return
+    }
+  }
 
   const ok = isRegister.value
     ? await authStore.doRegister({
@@ -141,7 +168,131 @@ function toggleMode() {
   authStore.clearError()
 }
 
-onMounted(() => {
+function startDreamMotion() {
+  if (!showcasePanelRef.value || dreamMotionContext) return
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+  dreamMotionContext = gsap.context(() => {
+    const particles = gsap.utils.toArray<HTMLElement>('.dream-particle')
+    const pixels = gsap.utils.toArray<HTMLElement>('.dream-pixel')
+
+    gsap.fromTo(
+      '.dream-canvas',
+      { opacity: 0, y: 34, scale: 0.96 },
+      { opacity: 1, y: 0, scale: 1, duration: 1.2, ease: 'power3.out' },
+    )
+
+    gsap.fromTo(
+      '.dream-copy',
+      { opacity: 0, y: 24 },
+      { opacity: 1, y: 0, duration: 0.9, delay: 0.18, ease: 'power3.out' },
+    )
+
+    gsap.fromTo(
+      '.dream-frame-line',
+      { scaleX: 0, scaleY: 0, opacity: 0 },
+      {
+        scaleX: 1,
+        scaleY: 1,
+        opacity: 1,
+        duration: 0.85,
+        delay: 0.35,
+        ease: 'power3.out',
+        stagger: 0.12,
+      },
+    )
+
+    gsap.to('.dream-canvas', {
+      y: -10,
+      duration: 3.6,
+      ease: 'sine.inOut',
+      repeat: -1,
+      yoyo: true,
+    })
+
+    gsap.to('.dream-beam', {
+      opacity: 0.72,
+      scaleX: 1.12,
+      duration: 2.4,
+      ease: 'sine.inOut',
+      repeat: -1,
+      yoyo: true,
+      stagger: 0.5,
+    })
+
+    gsap.to('.dream-core-light', {
+      opacity: 0.95,
+      scale: 1.18,
+      duration: 1.7,
+      ease: 'sine.inOut',
+      repeat: -1,
+      yoyo: true,
+    })
+
+    gsap.to('.dream-scan', {
+      xPercent: 430,
+      duration: 2.8,
+      ease: 'power2.inOut',
+      repeat: -1,
+      repeatDelay: 0.45,
+    })
+
+    gsap.to('.dream-track', {
+      x: 18,
+      opacity: 0.9,
+      duration: 2.6,
+      ease: 'sine.inOut',
+      stagger: 0.22,
+      repeat: -1,
+      yoyo: true,
+    })
+
+    particles.forEach((particle, index) => {
+      gsap.set(particle, {
+        xPercent: gsap.utils.random(-48, 48),
+        yPercent: gsap.utils.random(18, 72),
+        scale: gsap.utils.random(0.55, 1.15),
+        opacity: gsap.utils.random(0.12, 0.42),
+      })
+
+      gsap.to(particle, {
+        yPercent: '-=120',
+        xPercent: `+=${gsap.utils.random(-12, 12)}`,
+        opacity: gsap.utils.random(0.42, 0.82),
+        duration: gsap.utils.random(3.2, 5.4),
+        delay: index * 0.11,
+        ease: 'sine.inOut',
+        repeat: -1,
+        yoyo: true,
+      })
+    })
+
+    pixels.forEach((pixel, index) => {
+      gsap.set(pixel, {
+        opacity: 0,
+        scale: 0.7,
+      })
+
+      gsap.to(pixel, {
+        opacity: gsap.utils.random(0.35, 0.92),
+        scale: gsap.utils.random(0.9, 1.3),
+        duration: 0.34,
+        delay: 0.5 + index * 0.09,
+        ease: 'steps(1)',
+        repeat: -1,
+        yoyo: true,
+        repeatDelay: gsap.utils.random(1.1, 2.2),
+      })
+    })
+  }, showcasePanelRef.value)
+}
+
+function stopDreamMotion() {
+  dreamMotionContext?.revert()
+  dreamMotionContext = null
+}
+
+onMounted(async () => {
   rememberMe.value = localStorage.getItem(REMEMBER_LOGIN_KEY) !== 'false'
   const rememberedAccount = localStorage.getItem(REMEMBER_ACCOUNT_KEY)
   if (rememberedAccount) account.value = rememberedAccount
@@ -149,9 +300,13 @@ onMounted(() => {
   showcaseTimer = setInterval(() => {
     currentShowcase.value = (currentShowcase.value + 1) % showcaseItems.length
   }, 4000)
+
+  await nextTick()
+  startDreamMotion()
 })
 
 onUnmounted(() => {
+  stopDreamMotion()
   if (showcaseTimer) clearInterval(showcaseTimer)
   if (countdownTimer) clearInterval(countdownTimer)
 })
@@ -159,45 +314,55 @@ onUnmounted(() => {
 
 <template>
   <div class="login-page">
-    <section class="showcase-panel">
-      <div class="showcase-grid" />
-      <div class="showcase-top-pills">
-        <button
-          v-for="(item, idx) in showcaseItems"
-          :key="item.label"
-          class="pill"
-          :class="{ 'pill-active': currentShowcase === idx }"
-          type="button"
-          @click="currentShowcase = idx"
-        >
-          <span class="pill-code">{{ item.label }}</span>
-          <span class="pill-label">{{ item.title }}</span>
-        </button>
+    <section ref="showcasePanelRef" class="showcase-panel" aria-label="DramaForge AI Video">
+      <div class="dream-backdrop" aria-hidden="true">
+        <span class="dream-vignette" />
+        <span class="dream-warmth" />
+        <span class="dream-shadow" />
       </div>
 
-      <div class="showcase-center">
-        <div class="showcase-logo-large">D</div>
+      <div class="dream-particles" aria-hidden="true">
+        <span v-for="idx in 18" :key="idx" class="dream-particle" />
+      </div>
+
+      <div class="dream-canvas" aria-hidden="true">
+        <span class="dream-beam beam-left" />
+        <span class="dream-beam beam-right" />
+        <div class="dream-film">
+          <span class="dream-film-glow" />
+          <span class="dream-core-light" />
+          <span class="dream-scan" />
+          <span class="dream-horizon" />
+          <span class="dream-track track-one" />
+          <span class="dream-track track-two" />
+          <span class="dream-track track-three" />
+          <span class="dream-track track-four" />
+          <span class="dream-frame-line frame-line-top" />
+          <span class="dream-frame-line frame-line-bottom" />
+          <span class="dream-frame-line frame-line-left" />
+          <span class="dream-frame-line frame-line-right" />
+          <span v-for="idx in 10" :key="idx" class="dream-pixel" />
+        </div>
+      </div>
+
+      <div class="dream-copy">
+        <div class="dream-kicker">DramaForge AI Video</div>
         <transition name="showcase-fade" mode="out-in">
-          <div :key="currentShowcase" class="showcase-text">
-            <div class="showcase-kicker">DramaForge</div>
-            <h2 class="showcase-title">{{ showcaseItems[currentShowcase].title }}</h2>
-            <p class="showcase-desc">{{ showcaseItems[currentShowcase].desc }}</p>
+          <div :key="currentShowcase" class="dream-copy-text">
+            <h2 class="dream-title">{{ showcaseItems[currentShowcase].title }}</h2>
+            <p class="dream-desc">{{ showcaseItems[currentShowcase].desc }}</p>
           </div>
         </transition>
       </div>
 
-      <div class="showcase-bottom">
-        <span>{{ showcaseItems[currentShowcase].label }}</span>
-        <span>{{ showcaseItems[currentShowcase].title }} · {{ showcaseItems[currentShowcase].desc }}</span>
-      </div>
-
-      <div class="showcase-dots">
+      <div class="dream-dots" aria-label="切换左侧展示文案">
         <button
-          v-for="(_, idx) in showcaseItems"
+          v-for="(item, idx) in showcaseItems"
           :key="idx"
-          class="dot"
-          :class="{ 'dot-active': currentShowcase === idx }"
+          class="dream-dot"
+          :class="{ 'dream-dot-active': currentShowcase === idx }"
           type="button"
+          :aria-label="`切换到${item.title}`"
           @click="currentShowcase = idx"
         />
       </div>
@@ -301,7 +466,7 @@ onUnmounted(() => {
           <button
             type="submit"
             class="submit-btn"
-            :disabled="authStore.isLoading || !isFormValid"
+            :disabled="authStore.isLoading || !hasSubmitInput"
           >
             <span v-if="authStore.isLoading" class="spinner" />
             <span v-else>{{ isRegister ? '注册并登录' : '登录' }}</span>
@@ -355,179 +520,505 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background:
-    linear-gradient(140deg, rgba(8, 8, 10, 0.92), rgba(25, 23, 32, 0.96)),
-    url('/assets/default-scene.webp');
-  background-size: cover;
-  color: #2D2515;
+  isolation: isolate;
+  background: #050403;
+  color: #F8EED9;
 }
 
-.showcase-panel::after {
+.dream-backdrop {
   position: absolute;
   inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 55% 38%, rgba(184, 138, 70, 0.2), transparent 45%),
+    linear-gradient(145deg, #050403 0%, #120d08 46%, #070707 100%);
+}
+
+.dream-backdrop::before {
+  position: absolute;
+  inset: -4%;
   content: '';
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.35));
+  background:
+    linear-gradient(90deg, rgba(5, 4, 3, 0.82), rgba(5, 4, 3, 0.3) 45%, rgba(5, 4, 3, 0.88)),
+    url('/assets/default-scene.webp');
+  background-position: center;
+  background-size: cover;
+  filter: saturate(0.46) contrast(1.12);
+  opacity: 0.34;
+  transform: scale(1.04);
+  animation: dreamBackdropBreath 18s ease-in-out infinite alternate;
+}
+
+.dream-vignette,
+.dream-warmth,
+.dream-shadow {
+  position: absolute;
+  inset: 0;
   pointer-events: none;
 }
 
-.showcase-grid {
+.dream-vignette {
+  z-index: 2;
+  background:
+    radial-gradient(ellipse at 50% 42%, transparent 0%, rgba(5, 4, 3, 0.28) 54%, rgba(5, 4, 3, 0.92) 100%),
+    linear-gradient(180deg, rgba(5, 4, 3, 0.04), rgba(5, 4, 3, 0.82));
+}
+
+.dream-warmth {
+  z-index: 1;
+  background:
+    linear-gradient(112deg, transparent 10%, rgba(208, 164, 88, 0.08) 31%, rgba(236, 205, 142, 0.2) 48%, rgba(208, 164, 88, 0.08) 64%, transparent 86%);
+  transform: translateX(-8%);
+  animation: dreamWarmthSweep 11s ease-in-out infinite alternate;
+}
+
+.dream-shadow {
+  z-index: 3;
+  opacity: 0.2;
+  background-image:
+    linear-gradient(rgba(228, 238, 245, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(228, 238, 245, 0.04) 1px, transparent 1px);
+  background-size: 58px 58px;
+  mask-image: linear-gradient(180deg, transparent, #000 18%, #000 72%, transparent);
+  animation: dreamShadowDrift 20s linear infinite;
+}
+
+.dream-particles {
   position: absolute;
   inset: 0;
-  opacity: 0.24;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
-  background-size: 56px 56px;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
 }
 
-.showcase-top-pills {
+.dream-particle {
   position: absolute;
-  top: 28px;
+  bottom: 16%;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(246, 222, 174, 0.86);
+  box-shadow: 0 0 12px rgba(246, 222, 174, 0.52);
+  opacity: 0;
+}
+
+.dream-canvas {
+  position: absolute;
+  top: 16%;
   left: 50%;
   z-index: 2;
-  display: flex;
-  gap: 8px;
+  width: min(540px, 76%);
+  aspect-ratio: 16 / 10;
   transform: translateX(-50%);
+  animation: dreamCanvasFloat 8s ease-in-out infinite alternate;
 }
 
-.pill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.62);
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-  transition: all 0.2s ease;
+.dream-beam {
+  position: absolute;
+  top: 46%;
+  z-index: 0;
+  width: 52%;
+  height: 42%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(238, 203, 136, 0.26), rgba(238, 203, 136, 0.08) 44%, transparent 72%);
+  filter: blur(18px);
+  opacity: 0.28;
+  pointer-events: none;
+  transform-origin: center;
 }
 
-.pill:hover,
-.pill-active {
-  border-color: rgba(255, 255, 255, 0.34);
-  background: rgba(255, 255, 255, 0.14);
-  color: #2D2515;
+.beam-left {
+  left: -25%;
+  transform: rotate(18deg);
 }
 
-.pill-code {
-  font-size: 10px;
-  font-weight: 700;
+.beam-right {
+  right: -25%;
+  transform: rotate(-18deg);
 }
 
-.pill-label {
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.showcase-center {
+.dream-film {
   position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(245, 224, 182, 0.18);
+  border-radius: 8px;
+  background:
+    radial-gradient(ellipse at 52% 50%, rgba(223, 178, 95, 0.18), transparent 53%),
+    linear-gradient(180deg, rgba(255, 247, 224, 0.08), rgba(255, 247, 224, 0.015)),
+    linear-gradient(135deg, rgba(19, 18, 16, 0.45), rgba(5, 4, 3, 0.78));
+  box-shadow:
+    0 34px 90px rgba(0, 0, 0, 0.5),
+    inset 0 0 56px rgba(242, 209, 148, 0.1);
+}
+
+.dream-film::before {
+  position: absolute;
+  inset: 22px 26px;
+  border: 1px solid rgba(248, 237, 211, 0.1);
+  border-radius: 6px;
+  content: '';
+}
+
+.dream-film::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background:
+    repeating-linear-gradient(180deg, rgba(248, 237, 211, 0.04) 0, rgba(248, 237, 211, 0.04) 1px, transparent 1px, transparent 7px),
+    linear-gradient(90deg, rgba(228, 238, 245, 0.06), transparent 18%, transparent 82%, rgba(228, 238, 245, 0.04));
+  opacity: 0.36;
+  pointer-events: none;
+}
+
+.dream-film-glow {
+  position: absolute;
+  inset: 20% 18% 24%;
+  background: radial-gradient(ellipse at center, rgba(246, 222, 174, 0.24), rgba(246, 222, 174, 0.06) 46%, transparent 72%);
+  filter: blur(12px);
+  opacity: 0.72;
+  animation: dreamFilmGlow 5.8s ease-in-out infinite alternate;
+}
+
+.dream-core-light {
+  position: absolute;
+  top: 50%;
+  left: 50%;
   z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 30px;
-  padding: 0 48px;
-  text-align: center;
+  width: 116px;
+  height: 116px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, rgba(255, 250, 231, 0.82), rgba(239, 201, 132, 0.28) 32%, rgba(239, 201, 132, 0.08) 58%, transparent 72%);
+  filter: blur(3px);
+  opacity: 0.42;
+  transform: translate(-50%, -50%);
+  transform-origin: center;
 }
 
-.showcase-logo-large {
-  display: flex;
-  width: 86px;
-  height: 86px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 22px;
-  background: linear-gradient(135deg, #E8A317, #111827);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
-  font-size: 38px;
-  font-weight: 800;
+.dream-scan {
+  position: absolute;
+  top: -12%;
+  bottom: -12%;
+  left: 0;
+  z-index: 3;
+  width: 34%;
+  background: linear-gradient(90deg, transparent, rgba(248, 237, 211, 0.28), rgba(248, 237, 211, 0.08), transparent);
+  transform: translateX(-130%) skewX(-9deg);
+  animation: dreamScan 4.8s ease-in-out infinite;
 }
 
-.showcase-text {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
+.dream-horizon {
+  position: absolute;
+  right: 10%;
+  bottom: 34%;
+  left: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(247, 223, 178, 0.56), transparent);
+  box-shadow: 0 0 24px rgba(247, 223, 178, 0.18);
 }
 
-.showcase-kicker {
+.dream-track {
+  position: absolute;
+  z-index: 2;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(248, 237, 211, 0.68), transparent);
+  opacity: 0.62;
+  transform-origin: left center;
+  animation: dreamTrackDrift 5.8s ease-in-out infinite alternate;
+}
+
+.track-one {
+  top: 34%;
+  left: 15%;
+  width: 62%;
+  transform: rotate(-6deg);
+}
+
+.track-two {
+  top: 48%;
+  left: 24%;
+  width: 58%;
+  animation-delay: -1.2s;
+  transform: rotate(3deg);
+}
+
+.track-three {
+  top: 61%;
+  left: 18%;
+  width: 68%;
+  animation-delay: -2.4s;
+  transform: rotate(-2deg);
+}
+
+.track-four {
+  top: 72%;
+  left: 30%;
+  width: 46%;
+  animation-delay: -3.2s;
+  transform: rotate(5deg);
+}
+
+.dream-frame-line {
+  position: absolute;
+  z-index: 4;
+  display: block;
+  background: linear-gradient(90deg, transparent, rgba(255, 239, 202, 0.82), transparent);
+  box-shadow: 0 0 18px rgba(244, 207, 139, 0.26);
+  opacity: 0;
+}
+
+.frame-line-top,
+.frame-line-bottom {
+  right: 24px;
+  left: 24px;
+  height: 1px;
+  transform-origin: left center;
+}
+
+.frame-line-top {
+  top: 22px;
+}
+
+.frame-line-bottom {
+  bottom: 22px;
+}
+
+.frame-line-left,
+.frame-line-right {
+  top: 22px;
+  bottom: 22px;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(255, 239, 202, 0.76), transparent);
+  transform-origin: top center;
+}
+
+.frame-line-left {
+  left: 24px;
+}
+
+.frame-line-right {
+  right: 24px;
+}
+
+.dream-pixel {
+  position: absolute;
+  z-index: 3;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: rgba(255, 239, 202, 0.76);
+  box-shadow: 0 0 14px rgba(244, 207, 139, 0.32);
+  opacity: 0;
+}
+
+.dream-pixel:nth-of-type(1) {
+  top: 27%;
+  left: 21%;
+}
+
+.dream-pixel:nth-of-type(2) {
+  top: 31%;
+  left: 58%;
+}
+
+.dream-pixel:nth-of-type(3) {
+  top: 39%;
+  left: 39%;
+}
+
+.dream-pixel:nth-of-type(4) {
+  top: 44%;
+  left: 72%;
+}
+
+.dream-pixel:nth-of-type(5) {
+  top: 53%;
+  left: 28%;
+}
+
+.dream-pixel:nth-of-type(6) {
+  top: 59%;
+  left: 51%;
+}
+
+.dream-pixel:nth-of-type(7) {
+  top: 64%;
+  left: 78%;
+}
+
+.dream-pixel:nth-of-type(8) {
+  top: 71%;
+  left: 35%;
+}
+
+.dream-pixel:nth-of-type(9) {
+  top: 76%;
+  left: 62%;
+}
+
+.dream-pixel:nth-of-type(10) {
+  top: 35%;
+  left: 83%;
+}
+
+.dream-copy {
+  position: absolute;
+  right: 64px;
+  bottom: 108px;
+  left: 64px;
+  z-index: 3;
+  max-width: 430px;
+}
+
+.dream-kicker {
+  margin-bottom: 14px;
+  color: rgba(234, 198, 128, 0.78);
   font-size: 12px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.56);
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
-.showcase-title {
-  margin: 0;
-  color: #2D2515;
-  font-size: 30px;
-  font-weight: 700;
+.dream-copy-text {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.showcase-desc {
-  max-width: 360px;
+.dream-title {
   margin: 0;
-  color: rgba(255, 255, 255, 0.64);
-  font-size: 15px;
-  line-height: 1.7;
+  color: #FFF4DC;
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 1.08;
+  text-shadow: 0 18px 50px rgba(0, 0, 0, 0.46);
+}
+
+.dream-desc {
+  max-width: 390px;
+  margin: 0;
+  color: rgba(250, 241, 220, 0.7);
+  font-size: 16px;
+  line-height: 1.8;
 }
 
 .showcase-fade-enter-active,
 .showcase-fade-leave-active {
-  transition: all 0.35s ease;
+  transition: opacity 0.38s ease, transform 0.38s ease;
 }
 
 .showcase-fade-enter-from {
   opacity: 0;
-  transform: translateY(12px);
+  transform: translateY(10px);
 }
 
 .showcase-fade-leave-to {
   opacity: 0;
-  transform: translateY(-12px);
+  transform: translateY(-10px);
 }
 
-.showcase-bottom {
+.dream-dots {
   position: absolute;
-  right: 40px;
-  bottom: 48px;
-  left: 40px;
-  z-index: 2;
+  bottom: 56px;
+  left: 64px;
+  z-index: 3;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  color: rgba(255, 255, 255, 0.54);
-  font-size: 13px;
+  gap: 8px;
 }
 
-.showcase-dots {
-  position: absolute;
-  bottom: 24px;
-  left: 50%;
-  z-index: 2;
-  display: flex;
-  gap: 6px;
-  transform: translateX(-50%);
-}
-
-.dot {
-  width: 7px;
-  height: 7px;
+.dream-dot {
+  width: 26px;
+  height: 2px;
   padding: 0;
   border: none;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.24);
+  background: rgba(250, 241, 220, 0.22);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.24s ease, transform 0.24s ease, width 0.24s ease;
 }
 
-.dot-active {
-  width: 22px;
-  background: #FDF5D6;
+.dream-dot:hover,
+.dream-dot-active {
+  width: 38px;
+  background: rgba(234, 198, 128, 0.88);
+}
+
+.dream-dot:hover {
+  transform: translateY(-1px);
+}
+
+@keyframes dreamBackdropBreath {
+  from {
+    opacity: 0.28;
+    transform: scale(1.04) translate3d(-8px, 0, 0);
+  }
+  to {
+    opacity: 0.4;
+    transform: scale(1.09) translate3d(8px, -6px, 0);
+  }
+}
+
+@keyframes dreamWarmthSweep {
+  from {
+    opacity: 0.52;
+    transform: translateX(-10%);
+  }
+  to {
+    opacity: 0.9;
+    transform: translateX(8%);
+  }
+}
+
+@keyframes dreamShadowDrift {
+  to {
+    background-position: 58px 58px;
+  }
+}
+
+@keyframes dreamCanvasFloat {
+  from {
+    transform: translateX(-50%) translateY(0);
+  }
+  to {
+    transform: translateX(-50%) translateY(-10px);
+  }
+}
+
+@keyframes dreamFilmGlow {
+  0%,
+  100% {
+    opacity: 0.52;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes dreamScan {
+  0% {
+    transform: translateX(-130%) skewX(-9deg);
+  }
+  46%,
+  100% {
+    transform: translateX(330%) skewX(-9deg);
+  }
+}
+
+@keyframes dreamTrackDrift {
+  0%,
+  100% {
+    opacity: 0.34;
+    translate: 0 0;
+  }
+  50% {
+    opacity: 0.78;
+    translate: 10px -4px;
+  }
 }
 
 .auth-panel {
@@ -881,6 +1372,50 @@ onUnmounted(() => {
   transform: translateX(-50%);
 }
 
+@media (max-width: 1180px) {
+  .dream-canvas {
+    top: 15%;
+    width: min(480px, 78%);
+  }
+
+  .dream-copy {
+    right: 44px;
+    bottom: 94px;
+    left: 44px;
+  }
+
+  .dream-title {
+    font-size: 40px;
+  }
+
+  .dream-dots {
+    left: 44px;
+  }
+}
+
+@media (max-height: 760px) and (min-width: 981px) {
+  .dream-canvas {
+    top: 12%;
+    width: min(460px, 72%);
+  }
+
+  .dream-copy {
+    bottom: 78px;
+  }
+
+  .dream-title {
+    font-size: 38px;
+  }
+
+  .dream-desc {
+    font-size: 15px;
+  }
+
+  .dream-dots {
+    bottom: 42px;
+  }
+}
+
 @media (max-width: 980px) {
   .showcase-panel {
     display: none;
@@ -902,6 +1437,24 @@ onUnmounted(() => {
 
   .code-btn {
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dream-backdrop::before,
+  .dream-warmth,
+  .dream-shadow,
+  .dream-canvas,
+  .dream-particle,
+  .dream-beam,
+  .dream-film-glow,
+  .dream-core-light,
+  .dream-scan,
+  .dream-track,
+  .dream-frame-line,
+  .dream-pixel,
+  .spinner {
+    animation: none;
   }
 }
 </style>

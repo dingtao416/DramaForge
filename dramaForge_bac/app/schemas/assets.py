@@ -45,6 +45,8 @@ class CharacterCreate(BaseModel):
 class CharacterRegenerateRequest(BaseModel):
     prompt: Optional[str] = None
     variant_count: int = Field(default=1, ge=1, le=4, description="生成变体数量，>1 时生成多张图供选择")
+    appearance_type: str = Field(default="standard", description="形象类型，如 standard/turnaround_front/stage_early")
+    image_name: Optional[str] = Field(default=None, description="生成后写入 reference_images 的显示名称")
     # ── Enhanced context ──
     visual_description: Optional[str] = Field(default="", description="当前形象的描述，用于AI生成prompt")
     optimize_prompt: bool = Field(default=False, description="是否使用文本LLM优化图像生成提示词")
@@ -98,6 +100,8 @@ class SceneCreate(BaseModel):
 class SceneRegenerateRequest(BaseModel):
     prompt: Optional[str] = None
     variant_count: int = Field(default=1, ge=1, le=4, description="生成变体数量，>1 时生成多张图供选择")
+    state_type: str = Field(default="default", description="场景状态类型，如 default/day/night/damaged")
+    image_name: Optional[str] = Field(default=None, description="生成后写入 reference_images 的显示名称")
 
 
 # ── Asset generation ──

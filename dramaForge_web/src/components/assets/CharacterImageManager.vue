@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { assetsApi } from '@/api/assets'
 import type { CharacterDetail, RefImage } from '@/types/character'
+import { CharacterAppearanceType, CharacterAppearanceTypeLabel, TURNAROUND_TYPES, STAGE_TYPES } from '@/types/character'
 
 const props = defineProps<{
   visible: boolean
@@ -22,21 +23,27 @@ const fileInput = ref<HTMLInputElement | null>(null)
 watch([() => props.visible, () => props.character], ([visible, character]) => {
   if (visible && character) {
     images.value = (character.reference_images || []).map(img => {
-      // Support legacy string format
-      if (typeof img === 'string') return { url: img, name: '' }
-      return { ...img }
+      if (typeof img === 'string') return { url: img, name: '', appearance_type: CharacterAppearanceType.STANDARD }
+      return { ...img, appearance_type: img.appearance_type || CharacterAppearanceType.STANDARD }
     })
   }
 }, { immediate: true })
 
 // ── Normalize for display name ──
 function displayName(img: RefImage, idx: number): string {
-  return img.name || `形象图 ${idx + 1}`
+  const label = img.appearance_type ? CharacterAppearanceTypeLabel[img.appearance_type] : ''
+  return img.name || label || `形象图 ${idx + 1}`
 }
 
 // ── Rename ──
 function updateName(idx: number, name: string) {
   images.value[idx] = { ...images.value[idx], name }
+  autoSave()
+}
+
+// ── Set appearance type ──
+function setAppearanceType(idx: number, appearanceType: string) {
+  images.value[idx] = { ...images.value[idx], appearance_type: appearanceType }
   autoSave()
 }
 
@@ -53,7 +60,7 @@ async function handleFile(e: Event) {
     const fd = new FormData(); fd.append('file', file)
     const { data } = await assetsApi.uploadAsset(props.character.project_id, fd)
     if (data?.url) {
-      images.value = [...images.value, { url: data.url, name: file.name.replace(/\.[^.]+$/, '') }]
+      images.value = [...images.value, { url: data.url, name: file.name.replace(/\.[^.]+$/, ''), appearance_type: CharacterAppearanceType.STANDARD }]
       await saveToBackend()
     }
   } catch (err) { console.error('Upload failed', err) }
@@ -84,13 +91,20 @@ async function saveToBackend() {
 }
 
 async function autoSave() {
-  // Debounced save — called on name change, immediate for add/delete
   await saveToBackend()
 }
 
 function handleClose() {
   emit('updated')
   emit('close')
+}
+
+// ── Appearance type badge color ──
+function typeBadgeClass(appearanceType: string | undefined): string {
+  if (!appearanceType || appearanceType === CharacterAppearanceType.STANDARD) return 'badge-standard'
+  if (TURNAROUND_TYPES.includes(appearanceType as any)) return 'badge-turnaround'
+  if (STAGE_TYPES.includes(appearanceType as any)) return 'badge-stage'
+  return 'badge-standard'
 }
 </script>
 
@@ -135,6 +149,14 @@ function handleClose() {
               <!-- Image -->
               <div class="image-card-pic">
                 <img :src="img.url" :alt="displayName(img, idx)" class="w-full h-full object-cover" />
+                <!-- Appearance type badge -->
+                <span
+                  v-if="img.appearance_type && img.appearance_type !== 'standard'"
+                  class="type-badge"
+                  :class="typeBadgeClass(img.appearance_type)"
+                >
+                  {{ CharacterAppearanceTypeLabel[img.appearance_type] || img.appearance_type }}
+                </span>
                 <!-- Delete overlay -->
                 <button
                   class="image-delete-btn"
@@ -154,6 +176,26 @@ function handleClose() {
                   placeholder="输入形象图名称"
                   @input="updateName(idx, ($event.target as HTMLInputElement).value)"
                 />
+              </div>
+              <!-- Appearance type selector -->
+              <div class="image-card-type">
+                <select
+                  :value="img.appearance_type || CharacterAppearanceType.STANDARD"
+                  class="type-select"
+                  @change="setAppearanceType(idx, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="standard">标准形象</option>
+                  <optgroup label="三视图">
+                    <option value="turnaround_front">正面</option>
+                    <option value="turnaround_side">侧面</option>
+                    <option value="turnaround_back">背面</option>
+                  </optgroup>
+                  <optgroup label="阶段形象">
+                    <option value="stage_early">前期形象</option>
+                    <option value="stage_mid">转折后</option>
+                    <option value="stage_late">结局形象</option>
+                  </optgroup>
+                </select>
               </div>
             </div>
 
@@ -345,5 +387,45 @@ function handleClose() {
   padding: 14px 24px;
   border-top: 2px solid #D4C898;
   background: #FDF5D6;
+}
+
+/* ── Appearance Type Badge ── */
+.type-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 2px 7px;
+  border-radius: 2px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 0.5px;
+  color: #fff;
+  line-height: 1.6;
+  z-index: 2;
+  pointer-events: none;
+}
+.badge-standard { display: none; }
+.badge-turnaround { background: rgba(79, 70, 229, 0.85); }
+.badge-stage { background: rgba(6, 182, 212, 0.85); }
+
+/* ── Appearance Type Selector ── */
+.image-card-type {
+  padding: 4px 8px 8px;
+  border-top: 1px solid rgba(212, 200, 152, 0.3);
+}
+.type-select {
+  width: 100%;
+  border: 1px solid #D4C898;
+  border-radius: 4px;
+  background: #FEF9E7;
+  font-size: 10px;
+  color: #4A3F28;
+  padding: 3px 4px;
+  outline: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.type-select:focus {
+  border-color: #E8A317;
 }
 </style>

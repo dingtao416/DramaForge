@@ -5,6 +5,7 @@ import type { CharacterDetail } from '@/types/character'
 import type { SceneDetail } from '@/types/scene'
 import DurationSlider from './DurationSlider.vue'
 import RefAutocomplete from './RefAutocomplete.vue'
+import { firstReferenceImageUrl } from '@/utils/referenceImages'
 
 const props = defineProps<{
   shot: Shot
@@ -32,7 +33,7 @@ const characterOptions = computed(() =>
   (props.characters || []).map(c => ({
     id: c.id,
     name: c.name,
-    thumbnail: c.reference_images?.[0]?.url,
+    thumbnail: firstReferenceImageUrl(c.reference_images),
   }))
 )
 
@@ -40,7 +41,7 @@ const sceneOptions = computed(() =>
   (props.scenes || []).map(s => ({
     id: s.id,
     name: s.name,
-    thumbnail: s.reference_images?.[0],
+    thumbnail: firstReferenceImageUrl(s.reference_images),
   }))
 )
 

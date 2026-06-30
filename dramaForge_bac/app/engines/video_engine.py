@@ -63,6 +63,7 @@ class VideoEngine:
         chat_api_key: str = None,
         chat_base_url: str = None,
         chat_options: dict | None = None,
+        script: Script | None = None,
     ) -> list[dict]:
         """
         Use LLM to split an episode into structured segments and shots.
@@ -72,17 +73,43 @@ class VideoEngine:
         """
         logger.info(f"VideoEngine: splitting storyboard for episode={episode.id}")
 
-        # Build asset context strings
+        # Build asset context strings (include reference_images for visual hints)
         char_dicts = [
-            {"name": c.name, "role": c.role.value if c.role else "", "description": c.description or ""}
+            {
+                "name": c.name,
+                "role": c.role.value if c.role else "",
+                "description": c.description or "",
+                "reference_images": c.reference_images or [],
+            }
             for c in characters
         ]
         scene_dicts = [
-            {"name": s.name, "description": s.description or "",
-             "time_of_day": s.time_of_day or "day", "interior": s.interior}
+            {
+                "name": s.name,
+                "description": s.description or "",
+                "time_of_day": s.time_of_day or "day",
+                "interior": s.interior,
+                "reference_images": s.reference_images or [],
+            }
             for s in scenes
         ]
         chars_ctx, scenes_ctx = build_asset_context(char_dicts, scene_dicts)
+
+        # Build Story Bible context
+        bible_context = ""
+        if script:
+            parts = []
+            if script.premise:
+                parts.append(f"核心命题：{script.premise}")
+            if script.visual_style_rules:
+                parts.append(f"视觉风格规则：{script.visual_style_rules}")
+            if script.character_relationships:
+                parts.append(f"人物关系：{script.character_relationships}")
+            if script.episode_arc:
+                parts.append(f"分集节奏：{script.episode_arc}")
+            if script.continuity_notes:
+                parts.append(f"连续性要求：{script.continuity_notes}")
+            bible_context = "\n".join(parts)
 
         # Build prompt
         messages = build_storyboard_prompt(
@@ -91,6 +118,7 @@ class VideoEngine:
             characters_context=chars_ctx,
             scenes_context=scenes_ctx,
             shots_per_segment=shots_per_segment,
+            story_bible_context=bible_context,
         )
 
         # Call LLM
@@ -832,6 +860,7 @@ class VideoEngine:
         video_model: str = None,
         video_api_key: str = None,
         video_base_url: str = None,
+        script: Script | None = None,
     ) -> list[Segment]:
         """
         Full pipeline: generate all segments and shots for an episode.
@@ -849,6 +878,7 @@ class VideoEngine:
             episode, characters, scenes, shots_per_segment,
             chat_model=chat_model, chat_api_key=chat_api_key, chat_base_url=chat_base_url,
             chat_options=chat_options,
+            script=script,
         )
 
         # Step 2: Create ORM objects (caller is responsible for DB session)

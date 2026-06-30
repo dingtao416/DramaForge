@@ -4,6 +4,7 @@ import type { SegmentDetail } from '@/types/segment'
 import type { ShotDetail, ShotUpdate, ShotVisualReference } from '@/types/shot'
 import type { CharacterDetail } from '@/types/character'
 import type { SceneDetail } from '@/types/scene'
+import { firstReferenceImageUrl } from '@/utils/referenceImages'
 
 const props = defineProps<{
   segment: SegmentDetail | null
@@ -145,7 +146,7 @@ function roleLabel(role: string) {
 }
 
 function characterReference(char: CharacterDetail): ShotVisualReference | null {
-  const image = char.reference_images?.[0]?.url
+  const image = firstReferenceImageUrl(char.reference_images)
   if (!image) return null
   return {
     id: `character:${char.id}:0`,
@@ -162,7 +163,7 @@ function characterReference(char: CharacterDetail): ShotVisualReference | null {
 }
 
 function sceneReference(scene: SceneDetail): ShotVisualReference | null {
-  const image = scene.reference_images?.[0]
+  const image = firstReferenceImageUrl(scene.reference_images)
   if (!image) return null
   return {
     id: `scene:${scene.id}:0`,

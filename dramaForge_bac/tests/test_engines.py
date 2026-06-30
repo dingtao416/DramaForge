@@ -13,6 +13,7 @@ from app.models.scene import SceneLocation
 
 
 script_engine_module = importlib.import_module("app.engines.script_engine")
+assets_engine_module = importlib.import_module("app.engines.assets_engine")
 video_engine_module = importlib.import_module("app.engines.video_engine")
 
 
@@ -37,6 +38,15 @@ def _raw_script(**overrides):
             "story_overview": "女主在公司被陷害后反击。",
             "core_hook": "职场陷害与身份反转",
             "one_sentence_story": "被陷害的女主用真相完成反击。",
+        },
+        "story_bible": {
+            "premise": "林夏被职场对手陷害后，用证据和冷静判断完成反击。",
+            "world_rules": "现代都市职场环境，会议证据和公司制度决定人物处境。",
+            "character_relationships": "林夏与周铭是职场对手，冲突围绕陷害和反证展开。",
+            "timeline": "第1集：会议反击。",
+            "episode_arc": "单集内完成陷害曝光、证据反转和人物胜负变化。",
+            "visual_style": "写实都市风格，会议室光线冷静克制，镜头强调压迫感。",
+            "continuity_notes": "林夏保持冷静专业形象，周铭保持紧张失控状态。",
         },
         "protagonist": "林夏",
         "genre": "都市情感",
@@ -116,6 +126,30 @@ async def test_create_from_text_repairs_invalid_counts_once(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_from_text_repairs_missing_story_bible_once(monkeypatch):
+    engine = ScriptEngine()
+    invalid = _raw_script(story_bible={})
+    fixed = _raw_script()
+    calls = []
+
+    async def complete(**kwargs):
+        calls.append(kwargs)
+        return _chat_response(invalid if len(calls) == 1 else fixed)
+
+    monkeypatch.setattr(script_engine_module.ai_hub.chat, "complete", complete)
+
+    result = await engine.create_from_text(
+        user_input="职场反击",
+        project=_project(),
+        total_episodes=1,
+    )
+
+    assert len(calls) == 2
+    assert result["script"]["premise"]
+    assert result["script"]["visual_style_rules"]
+
+
+@pytest.mark.asyncio
 async def test_create_from_text_fails_after_repair_keeps_bad_references(monkeypatch):
     engine = ScriptEngine()
     invalid = _raw_script(
@@ -166,6 +200,8 @@ async def test_create_from_docx_extracts_uploaded_characters_and_scenes(monkeypa
     assert result["warnings"] == []
     assert [character["name"] for character in result["characters"]] == ["林夏", "周铭"]
     assert [scene["name"] for scene in result["scenes"]] == ["公司会议室"]
+    assert result["script"]["premise"]
+    assert result["script"]["continuity_notes"]
 
 
 @pytest.mark.asyncio
@@ -184,6 +220,7 @@ async def test_create_from_docx_keeps_script_when_uploaded_extraction_fails(monk
     assert len(result["episodes"]) == 1
     assert result["characters"] == []
     assert result["scenes"] == []
+    assert result["script"]["premise"]
     assert result["warnings"] == ["角色/场景未能自动解析，可手动补充或重新解析"]
 
 
@@ -332,6 +369,65 @@ async def test_create_from_docx_keeps_field_assets_when_upload_counts_are_wrong(
 
     assert [character["name"] for character in result["characters"]] == ["林夏", "周铭"]
     assert [scene["name"] for scene in result["scenes"]] == ["公司会议室"]
+
+
+@pytest.mark.asyncio
+async def test_regenerate_character_image_records_appearance_type(monkeypatch):
+    engine = assets_engine_module.AssetsEngine()
+    character = Character(
+        id=7,
+        project_id=1,
+        name="林夏",
+        role=CharacterRole.PROTAGONIST,
+        description="聪明坚韧",
+        reference_images=[],
+    )
+
+    async def generate(**kwargs):
+        return None
+
+    monkeypatch.setattr(assets_engine_module.ai_hub.image, "generate", generate)
+
+    urls = await engine.regenerate_character_image(
+        character=character,
+        project_id=1,
+        prompt="portrait",
+        appearance_type="turnaround_front",
+        image_name="正面",
+    )
+
+    assert urls
+    assert character.reference_images[0]["appearance_type"] == "turnaround_front"
+    assert character.reference_images[0]["name"] == "正面"
+
+
+@pytest.mark.asyncio
+async def test_regenerate_scene_image_records_state_type(monkeypatch):
+    engine = assets_engine_module.AssetsEngine()
+    scene = SceneLocation(
+        id=8,
+        project_id=1,
+        name="公司会议室",
+        description="高压会议现场",
+        reference_images=[],
+    )
+
+    async def generate(**kwargs):
+        return None
+
+    monkeypatch.setattr(assets_engine_module.ai_hub.image, "generate", generate)
+
+    urls = await engine.regenerate_scene_image(
+        scene=scene,
+        project_id=1,
+        prompt="night meeting room",
+        state_type="night",
+        image_name="夜晚",
+    )
+
+    assert urls
+    assert scene.reference_images[0]["state_type"] == "night"
+    assert scene.reference_images[0]["name"] == "夜晚"
 
 
 @pytest.mark.asyncio

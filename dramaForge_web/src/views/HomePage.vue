@@ -33,7 +33,7 @@ const feedbackText = ref('')
 const feedbackType = ref('bug')
 
 /* ─── Mode definitions ─── */
-type Mode = 'agent' | 'drama' | 'clip' | 'longvideo2' | 'image' | 'longvideo'
+type Mode = 'agent' | 'drama'
 
 interface ModeOption {
   key: Mode
@@ -41,16 +41,11 @@ interface ModeOption {
   tag?: string
   desc: string
   placeholder: string
-  topHint?: string
 }
 
 const modes: ModeOption[] = [
-  { key: 'agent', label: 'Agent 模式', desc: '全能创作 Agent，图片、短片、长视频一站式创作', placeholder: '想做视频？做图片？还是来点灵感探索？' },
+  { key: 'agent', label: '创作 Agent', desc: '全能创作助手，对话探索创意、管理项目、解答问题', placeholder: '想做视频？做图片？还是来点灵感探索？' },
   { key: 'drama', label: '短剧 Agent', tag: 'New', desc: '一键进入短剧创作工作台，快速开始分镜与剧情生成', placeholder: '' },
-  { key: 'clip', label: '沉浸式短片', desc: '15秒内音画同出短视频，一句话秒出片', placeholder: '描述你的想法，可用@指定素材，进行参考生视频' },
-  { key: 'longvideo2', label: '智能长视频 2.0', desc: '自动多分镜编排，轻松生成高质量长片', placeholder: '描述你想创作的长视频内容...' },
-  { key: 'image', label: '生成图片', desc: '输入描述即刻出图，快速验证创意灵感', placeholder: '描述你想生成的图片...' },
-  { key: 'longvideo', label: '智能长视频', desc: '基础长视频流程，速度稳定均衡', placeholder: '描述你想创作的视频内容...' },
 ]
 
 const currentMode = ref<Mode>('agent')
@@ -62,10 +57,6 @@ const currentModeOption = computed(() => modes.find(m => m.key === currentMode.v
 const modeAgentMap: Record<Mode, string> = {
   agent: 'general',
   drama: 'scriptwriter',
-  clip: 'director',
-  longvideo2: 'director',
-  image: 'general',
-  longvideo: 'project',
 }
 
 function selectMode(mode: Mode) {
@@ -235,15 +226,9 @@ function toggleModelAuto() {
 }
 
 /** Auto-select appropriate default model tab based on mode */
-watch(currentMode, (mode) => {
-  if (['clip', 'longvideo2', 'longvideo'].includes(mode)) {
-    modelTab.value = 'video'
-  } else if (mode === 'image') {
-    modelTab.value = 'image'
-  } else {
-    modelTab.value = 'chat'
-  }
-  // Reset to auto for new mode
+watch(currentMode, () => {
+  // Only agent mode uses chat models; drama mode routes to workbench
+  modelTab.value = 'chat'
   selectedModel.value = ''
   selectedModelCapability.value = ''
   modelAuto.value = true
@@ -285,10 +270,10 @@ function toggleMenu(menu: 'upload' | 'model' | 'ratio' | 'preset' | 'mode') {
 const quickTags = ['香港电影 · 996', '漫剧：超绝人物特写', '潮汕功夫茶宣传片', '爆款手办生成']
 
 const featureCards = [
-  { title: '短剧 Agent', desc: 'Seedance 2.0 多剧集一键成片', isNew: true, bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
-  { title: 'Seedance 2.0', desc: '首发试用', isNew: false, bg: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' },
-  { title: '爆款复刻', desc: '自动解析爆点，参考文案/主题/画风', isNew: false, bg: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' },
-  { title: '一镜到底', desc: '多张图片生成连续自然的转场', isNew: false, bg: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' },
+  { title: '短剧 Agent', desc: 'AI 驱动三步流水线：剧本→资产→成片', isNew: true, bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', route: '/drama-workbench' },
+  { title: '资产库', desc: '角色与场景资产统一管理复用', isNew: false, bg: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', route: '/assets' },
+  { title: '项目管理', desc: '多项目并行，分步审核推进', isNew: false, bg: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', route: '/projects' },
+  { title: '模型配置', desc: '多模型接入，灵活切换与成本控制', isNew: false, bg: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', route: '/settings' },
 ]
 
 // Load chat conversations, billing, recent projects, and AI config on mount
@@ -857,10 +842,6 @@ function onMediaImageError(e: Event): void {
             style="margin-top: 35px; background: #FDF5D6; box-shadow: 4px 4px 0 0 rgba(0,0,0,0.4);"
             :style="showModeMenu || showModelMenu ? { borderColor: '#F5C34B', boxShadow: '0 0 0 3px rgba(241,196,15,0.25), 4px 4px 0 0 rgba(0,0,0,0.4)' } : {}">
             <!-- Top hint bar (mode-specific) -->
-            <div v-if="currentModeOption.topHint" class="top-hint-bar">
-              {{ currentModeOption.topHint }}
-            </div>
-
             <!-- Textarea -->
             <textarea
               v-model="userInput"
@@ -902,16 +883,8 @@ function onMediaImageError(e: Event): void {
                   class="toolbar-btn-text rounded-[2px] flex items-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent"
                   @click="toggleMenu('mode')"
                 >
-                  <!-- Agent 模式 — 地球/网络图标 -->
                   <svg v-if="currentMode === 'agent'" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><ellipse cx="8" cy="8" rx="3" ry="6" stroke="currentColor" stroke-width="1"/><path d="M2 8h12" stroke="currentColor" stroke-width="1"/><path d="M2.8 5h10.4M2.8 11h10.4" stroke="currentColor" stroke-width="0.8"/></svg>
-                  <!-- 沉浸式短片 — 闪电图标 -->
-                  <svg v-else-if="currentMode === 'clip'" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M9.5 1.5L4 9h4l-1.5 5.5L13 7H9l.5-5.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  <!-- 智能长视频2.0 — 视频+星星图标 -->
-                  <svg v-else-if="currentMode === 'longvideo2'" width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="3.5" width="11" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><polygon points="6,6 6,9.5 9,7.75" fill="currentColor"/><path d="M13.5 2l.4 1.2 1.1.3-1.1.3-.4 1.2-.4-1.2-1.1-.3 1.1-.3z" fill="currentColor"/></svg>
-                  <!-- 生成图片 — 风景画图标 -->
-                  <svg v-else-if="currentMode === 'image'" width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="11" rx="2" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6" r="1.5" stroke="currentColor" stroke-width="1"/><path d="M2 12l3-3.5 2.5 2 3-4L14.5 12" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  <!-- 智能长视频 — 场记板图标 -->
-                  <svg v-else-if="currentMode === 'longvideo'" width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="4" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M2 7h12" stroke="currentColor" stroke-width="1"/><path d="M5 4L7 7M9 4l2 3" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+                  <svg v-else width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="4" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 7h5M5.5 9.5H9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
                   <span>{{ currentModeOption.label }}</span>
                   <!-- 下拉箭头 -->
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" class="text-gray-400"><path d="M3.5 4.5L6 7L8.5 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1047,13 +1020,7 @@ function onMediaImageError(e: Event): void {
                 </div>
               </div>
 
-              <!-- ⑤ @引用素材（仅沉浸式短片） -->
-              <button v-if="currentMode === 'clip'" class="toolbar-btn-circle rounded-[2px] flex items-center justify-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent" title="@引用素材">
-                <!-- @ 符号 -->
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M10.5 8v1a2 2 0 004 0V8a6 6 0 10-2 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-              </button>
-
-              <!-- ⑥ 画幅比例（所有模式通用） -->
+              <!-- ⑤ 画幅比例 -->
               <div class="dropdown-wrapper">
                 <button
                   class="toolbar-btn-circle rounded-[2px] flex items-center justify-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent"
@@ -1074,59 +1041,6 @@ function onMediaImageError(e: Event): void {
                     <span class="ratio-icon">{{ opt.icon }}</span>
                     <span>{{ opt.label }}</span>
                     <svg v-if="selectedRatio === opt.value" width="14" height="14" viewBox="0 0 14 14" fill="none" class="check-icon"><path d="M3 7l3 3 5-6" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  </div>
-                </div>
-              </div>
-
-              <!-- ⑦ 参考（仅沉浸式短片） -->
-              <button v-if="currentMode === 'clip'" class="toolbar-btn-circle rounded-[2px] flex items-center justify-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent" title="参考风格">
-                <!-- 链接/参考图标 -->
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6.5 9.5l3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M9 7l1.5-1.5a2.12 2.12 0 013 3L12 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M7 9L5.5 10.5a2.12 2.12 0 01-3-3L4 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-              </button>
-
-              <!-- ⑧ 时长选择（仅沉浸式短片） -->
-              <button v-if="currentMode === 'clip'" class="toolbar-btn-circle rounded-[2px] flex items-center justify-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent" title="时长选择">
-                <!-- 时钟图标 -->
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3.5l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-
-              <!-- ⑨ 创作偏好（仅智能长视频2.0） -->
-              <button v-if="currentMode === 'longvideo2'" class="toolbar-btn-circle rounded-[2px] flex items-center justify-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent" title="创作偏好">
-                <!-- 调色板/画笔图标 -->
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6.5" r="1" fill="currentColor"/><circle cx="8" cy="5" r="1" fill="currentColor"/><circle cx="10.5" cy="6.5" r="1" fill="currentColor"/><circle cx="5.5" cy="9.5" r="1" fill="currentColor"/></svg>
-              </button>
-
-              <!-- ⑩ 预设提示词（Agent / 沉浸式短片 / 智能长视频2.0 / 生成图片 / 智能长视频） -->
-              <div v-if="['agent', 'clip', 'longvideo2', 'image', 'longvideo'].includes(currentMode)" class="dropdown-wrapper">
-                <button
-                  class="toolbar-btn-circle rounded-[2px] flex items-center justify-center text-gray-600 hover:bg-black/5 cursor-pointer transition-colors border-2 border-[#D4C898] bg-transparent"
-                  @click="toggleMenu('preset')"
-                  title="预设提示词"
-                >
-                  <!-- 文档/模板图标 -->
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2h6l4 4v7.5a1.5 1.5 0 01-1.5 1.5h-7A1.5 1.5 0 014 13.5V2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M10 2v4h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 8.5h3M6.5 11h5" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
-                </button>
-                <div v-if="showPresetMenu" class="dropdown-menu dropdown-preset">
-                  <div class="dropdown-header">
-                    <div class="flex items-center gap-2">
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.3"/><line x1="5" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="5" y1="10" x2="9" y2="10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                      <span class="dropdown-header-title">预设提示词</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="text-gray-400 cursor-pointer hover:text-gray-600"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="text-gray-400 cursor-pointer hover:text-gray-600"><path d="M2 4h10M4 4v7a1 1 0 001 1h4a1 1 0 001-1V4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                    </div>
-                  </div>
-                  <div class="preset-search-row">
-                    <div class="preset-search-box">
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="text-gray-400"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><path d="M9.5 9.5L12 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-                      <input v-model="presetSearch" class="preset-search-input" placeholder="搜索预设..." />
-                    </div>
-                    <button class="preset-new-btn">+ 新建</button>
-                  </div>
-                  <div class="preset-empty">
-                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" class="text-gray-200"><rect x="8" y="6" width="32" height="36" rx="4" stroke="currentColor" stroke-width="2"/><path d="M16 18h16M16 26h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                    <p>暂无预设，点击新建创建第一个预设</p>
                   </div>
                 </div>
               </div>
@@ -1178,7 +1092,7 @@ function onMediaImageError(e: Event): void {
                 :key="card.title"
                 class="feature-card rounded-[14px] overflow-hidden relative cursor-pointer group hover:shadow-lg transition-shadow"
                 :style="{ background: card.bg }"
-                @click="card.title === '短剧 Agent' ? router.push('/drama-workbench') : undefined"
+                @click="card.route ? router.push(card.route) : undefined"
               >
                 <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
                 <span

@@ -25,12 +25,31 @@ from app.prompts.script_prompts import (
     NARRATION_REWRITE_PROMPT,
     SCRIPT_STRUCTURED_SYSTEM,
     build_repair_prompt,
+    build_story_bible_draft_prompt,
     build_structured_prompt,
     build_upload_analysis_prompt,
 )
 
 
 UPLOAD_EXTRACTION_WARNING = "角色/场景未能自动解析，可手动补充或重新解析"
+STORY_BIBLE_FIELDS = (
+    "premise",
+    "world_rules",
+    "character_relationships",
+    "timeline",
+    "episode_arc",
+    "visual_style",
+    "continuity_notes",
+)
+STORY_BIBLE_DETAIL_FIELDS = (
+    "premise",
+    "world_rules",
+    "character_relationships",
+    "timeline",
+    "episode_arc",
+    "visual_style_rules",
+    "continuity_notes",
+)
 
 
 class ScriptValidationError(ValueError):
@@ -56,6 +75,7 @@ class ScriptEngine:
         chat_api_key: str = None,
         chat_base_url: str = None,
         chat_options: dict[str, Any] | None = None,
+        story_bible: dict[str, str] | None = None,
     ) -> dict:
         """
         AI-generate a structured script from user's creative input.
@@ -72,6 +92,7 @@ class ScriptEngine:
             total_episodes=total_episodes,
             duration=duration,
             style=style,
+            story_bible=story_bible,
         )
 
         logger.info(f"ScriptEngine: generating script for project={project.id}")
@@ -114,6 +135,7 @@ class ScriptEngine:
         chat_api_key: str = None,
         chat_base_url: str = None,
         chat_options: dict[str, Any] | None = None,
+        story_bible: dict[str, str] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """
         AI-generate a structured script with streaming progress.
@@ -132,6 +154,7 @@ class ScriptEngine:
             total_episodes=total_episodes,
             duration=duration,
             style=style,
+            story_bible=story_bible,
         )
 
         max_tokens = 6000 + total_episodes * 2500
@@ -167,6 +190,48 @@ class ScriptEngine:
         except Exception as exc:
             logger.error(f"ScriptEngine stream error: {exc}")
             yield {"type": "error", "data": str(exc)}
+
+    async def draft_story_bible(
+        self,
+        user_input: str,
+        project: Project | None,
+        *,
+        genre: str = None,
+        total_episodes: int = 1,
+        duration: int = 60,
+        existing_story_bible: dict[str, str] | None = None,
+        chat_model: str = None,
+        chat_api_key: str = None,
+        chat_base_url: str = None,
+        chat_options: dict[str, Any] | None = None,
+    ) -> dict[str, str]:
+        """Draft Story Bible fields before full script generation."""
+        project_genre = project.genre.value if project and project.genre else None
+        project_style = project.style.value if project and project.style else None
+        genre = genre or project_genre or "其他"
+        style = project_style or "写实"
+
+        messages = build_story_bible_draft_prompt(
+            user_input=user_input,
+            genre=genre,
+            total_episodes=total_episodes,
+            duration=duration,
+            style=style,
+            existing_story_bible=existing_story_bible,
+        )
+
+        resp = await ai_hub.chat.complete(
+            messages=messages,
+            temperature=0.5,
+            max_tokens=3000,
+            model=chat_model,
+            api_key=chat_api_key,
+            base_url=chat_base_url,
+            **_extra_chat_kwargs(chat_options),
+        )
+        raw_json = self._parse_json_from_text(resp.content)
+        source = raw_json.get("story_bible") if isinstance(raw_json.get("story_bible"), dict) else raw_json
+        return self._normalize_story_bible_detail(source)
 
     async def parse_uploaded_file(self, file_path: str | Path) -> str:
         """
@@ -471,6 +536,13 @@ class ScriptEngine:
             })
 
         synopsis = full_text[:200] + "..." if len(full_text) > 200 else full_text
+        story_bible = self._build_uploaded_story_bible(
+            analysis=analysis,
+            field_analysis=field_analysis,
+            full_text=full_text,
+            total_episodes=total_episodes,
+            project=project,
+        )
         return {
             "counts": analysis.get("counts") or {
                 "episode_count": total_episodes,
@@ -493,7 +565,66 @@ class ScriptEngine:
             "characters": field_characters,
             "scenes": field_scenes,
             "episodes": episodes,
+            "story_bible": story_bible,
             "warnings": warnings,
+        }
+
+    def _build_uploaded_story_bible(
+        self,
+        *,
+        analysis: dict,
+        field_analysis: dict,
+        full_text: str,
+        total_episodes: int,
+        project: Project,
+    ) -> dict:
+        summary = analysis.get("script_summary") if isinstance(analysis.get("script_summary"), dict) else {}
+        synopsis = str(summary.get("story_overview") or "").strip()
+        if not synopsis:
+            compact_text = re.sub(r"\s+", " ", full_text).strip()
+            synopsis = compact_text[:300] if compact_text else "上传剧本尚未提供完整故事梗概。"
+
+        characters = field_analysis.get("characters") if isinstance(field_analysis.get("characters"), list) else []
+        scenes = field_analysis.get("scenes") if isinstance(field_analysis.get("scenes"), list) else []
+        episodes = field_analysis.get("episodes") if isinstance(field_analysis.get("episodes"), list) else []
+
+        character_lines = []
+        for item in characters:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            description = str(item.get("description") or "").strip()
+            if name:
+                character_lines.append(f"{name}：{description or '关系和动机待编辑补充'}")
+
+        scene_lines = []
+        for item in scenes:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            description = str(item.get("description") or "").strip()
+            if name:
+                scene_lines.append(f"{name}：{description or '空间细节待资产阶段补充'}")
+
+        timeline_lines = []
+        for index, item in enumerate(episodes):
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or f"第{index + 1}集").strip()
+            timeline_lines.append(f"第{index + 1}集：{title}")
+        if not timeline_lines:
+            timeline_lines = [f"第{index + 1}集：沿上传剧本文本推进" for index in range(total_episodes)]
+
+        style_value = project.style.value if project.style else "realistic"
+        genre_value = project.genre.value if project.genre else "短剧"
+        return {
+            "premise": f"本项目来自上传剧本，核心故事以原文为准：{synopsis}",
+            "world_rules": f"故事类型为{genre_value}，世界规则、时代背景和社会关系优先遵循上传剧本文本。主要场景包括：{'；'.join(scene_lines) if scene_lines else '上传文本未显式列出场景，后续需在场景资产中补全'}。",
+            "character_relationships": "；".join(character_lines) if character_lines else "上传文本未显式列出人物关系，后续需在 Story Bible 编辑区补全主要角色关系。",
+            "timeline": "\n".join(timeline_lines),
+            "episode_arc": f"全剧按上传内容拆分为 {total_episodes} 集，分集节奏以后续分集正文和编辑结果为准，生成分镜时应保持每集冲突、钩子和情绪递进连续。",
+            "visual_style": f"视觉风格以项目风格 {style_value} 为基础，结合上传剧本中的场景、时间、人物情绪和题材气质统一资产与分镜画面。",
+            "continuity_notes": "角色姓名、场景名称、关键道具和时间顺序必须与上传剧本文本保持一致；未明确的服装、道具和外观细节需要在后续资产编辑中补充。",
         }
 
     def _build_rule_upload_analysis(
@@ -542,6 +673,7 @@ class ScriptEngine:
         require_assets: bool = True,
         require_refs: bool = True,
         require_outline: bool = True,
+        require_story_bible: bool = True,
     ) -> dict:
         """
         Parse LLM JSON output into structured data suitable for DB insertion.
@@ -553,8 +685,10 @@ class ScriptEngine:
             require_assets=require_assets,
             require_refs=require_refs,
             require_outline=require_outline,
+            require_story_bible=require_story_bible,
         )
         script_summary = raw_json.get("script_summary") or {}
+        story_bible = normalized.get("story_bible") or {}
         script_data = {
             "protagonist": normalized.get("protagonist", ""),
             "genre": normalized.get("genre", ""),
@@ -563,6 +697,14 @@ class ScriptEngine:
             "setting": normalized.get("setting") or script_summary.get("core_hook", ""),
             "one_liner": normalized.get("one_liner") or script_summary.get("one_sentence_story", ""),
             "raw_content": json.dumps(normalized, ensure_ascii=False),
+            # ── Story Bible fields ──
+            "premise": story_bible.get("premise", ""),
+            "world_rules": story_bible.get("world_rules", ""),
+            "character_relationships": story_bible.get("character_relationships", ""),
+            "timeline": story_bible.get("timeline", ""),
+            "episode_arc": story_bible.get("episode_arc", ""),
+            "visual_style_rules": story_bible.get("visual_style", ""),
+            "continuity_notes": story_bible.get("continuity_notes", ""),
         }
 
         episodes_data = []
@@ -607,6 +749,7 @@ class ScriptEngine:
         require_assets: bool,
         require_refs: bool,
         require_outline: bool,
+        require_story_bible: bool,
     ) -> dict:
         issues: list[str] = []
         if not isinstance(raw_json, dict):
@@ -615,6 +758,7 @@ class ScriptEngine:
         characters = self._normalize_characters(raw_json.get("characters"))
         scenes = self._normalize_scenes(raw_json.get("scenes"))
         episodes = self._normalize_episodes(raw_json.get("episodes"))
+        story_bible = self._normalize_story_bible(raw_json.get("story_bible"))
         outline = raw_json.get("episode_outline") if isinstance(raw_json.get("episode_outline"), list) else []
 
         if expected_episodes is not None and len(episodes) != expected_episodes:
@@ -625,6 +769,10 @@ class ScriptEngine:
             issues.append("characters must include at least one item")
         if require_assets and not scenes:
             issues.append("scenes must include at least one item")
+        if require_story_bible:
+            for field in STORY_BIBLE_FIELDS:
+                if not story_bible.get(field):
+                    issues.append(f"story_bible.{field} must be present")
 
         counts = raw_json.get("counts")
         computed_counts = {
@@ -665,6 +813,7 @@ class ScriptEngine:
         normalized["characters"] = characters
         normalized["scenes"] = scenes
         normalized["episodes"] = episodes
+        normalized["story_bible"] = story_bible
         normalized["episode_outline"] = outline
         normalized["warnings"] = raw_json.get("warnings", []) if isinstance(raw_json.get("warnings"), list) else []
         return normalized
@@ -727,6 +876,28 @@ class ScriptEngine:
             if name and name not in seen:
                 seen.add(name)
                 result.append(name)
+        return result
+
+    @staticmethod
+    def _normalize_story_bible(value: Any) -> dict[str, str]:
+        source = value if isinstance(value, dict) else {}
+        result: dict[str, str] = {}
+        for field in STORY_BIBLE_FIELDS:
+            if field == "visual_style":
+                result[field] = str(source.get("visual_style") or source.get("visual_style_rules") or "").strip()
+            else:
+                result[field] = str(source.get(field) or "").strip()
+        return result
+
+    @staticmethod
+    def _normalize_story_bible_detail(value: Any) -> dict[str, str]:
+        source = value if isinstance(value, dict) else {}
+        result: dict[str, str] = {}
+        for field in STORY_BIBLE_DETAIL_FIELDS:
+            if field == "visual_style_rules":
+                result[field] = str(source.get("visual_style_rules") or source.get("visual_style") or "").strip()
+            else:
+                result[field] = str(source.get(field) or "").strip()
         return result
 
     @staticmethod

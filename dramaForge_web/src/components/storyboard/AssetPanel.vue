@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { DEFAULT_SCENE_IMAGE } from '@/constants/defaultAssets'
 import type { CharacterDetail } from '@/types/character'
 import type { SceneDetail } from '@/types/scene'
+import { firstReferenceImageUrl } from '@/utils/referenceImages'
 
 const props = defineProps<{
   characters: CharacterDetail[]
@@ -21,6 +22,14 @@ const emit = defineEmits<{
 }>()
 
 const totalAssets = computed(() => props.characters.length + props.scenes.length)
+
+function sceneThumb(scene: SceneDetail): string {
+  return firstReferenceImageUrl(scene.reference_images)
+}
+
+function characterThumb(character: CharacterDetail): string {
+  return firstReferenceImageUrl(character.reference_images)
+}
 </script>
 
 <template>
@@ -83,8 +92,8 @@ const totalAssets = computed(() => props.characters.length + props.scenes.length
 
               <span class="character-thumb">
                 <img
-                  v-if="char.reference_images?.[0]?.url"
-                  :src="char.reference_images[0]?.url"
+                  v-if="characterThumb(char)"
+                  :src="characterThumb(char)"
                   :alt="char.name"
                   loading="lazy"
                 />
@@ -120,8 +129,8 @@ const totalAssets = computed(() => props.characters.length + props.scenes.length
             >
               <span class="scene-thumb">
                 <img
-                  v-if="scene.reference_images?.[0]"
-                  :src="scene.reference_images[0]"
+                  v-if="sceneThumb(scene)"
+                  :src="sceneThumb(scene)"
                   :alt="scene.name"
                   loading="lazy"
                 />
