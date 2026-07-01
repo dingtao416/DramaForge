@@ -46,3 +46,14 @@ logs/
 .coverage
 htmlcov/
 .env/
+
+# ----- Generated media and local data -----
+*.mp4
+*.mov
+*.m4v
+*.webm
+*.avi
+*.mkv
+dramaForge_bac/video/
+dramaForge_web/output/
+*.rdb
