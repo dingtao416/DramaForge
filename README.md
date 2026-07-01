@@ -150,7 +150,7 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 
 ### 许可证
 
-当前仓库尚未包含正式 `LICENSE` 文件。公开发布前请补充明确的开源许可证。
+本项目采用 MIT License 开源协议。详见 [LICENSE](LICENSE)。
 
 [Back to top](#dramaforge)
 
@@ -291,6 +291,6 @@ Email-code login requires SMTP settings. See `.env.example` for details.
 
 ### License
 
-This repository does not currently include a formal `LICENSE` file. Add an explicit open-source license before public release.
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 [Back to top](#dramaforge)
