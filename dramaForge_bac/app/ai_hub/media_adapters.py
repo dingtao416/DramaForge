@@ -18,6 +18,12 @@ class MediaAdapterError(RuntimeError):
     """Raised when a provider adapter cannot complete a request."""
 
 
+def _http_error_message(status_code: int, body: str) -> str:
+    if status_code == 429:
+        return "当前图片生成并发已满，请稍后重试。"
+    return f"HTTP {status_code}: {body[:500]}"
+
+
 @dataclass(slots=True)
 class MediaProviderSettings:
     provider_type: str
@@ -311,7 +317,7 @@ class BaseMediaAdapter:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(self._url(path), headers=self._headers(), json=payload)
             if resp.status_code >= 400:
-                raise MediaAdapterError(f"HTTP {resp.status_code}: {resp.text[:500]}")
+                raise MediaAdapterError(_http_error_message(resp.status_code, resp.text))
             return resp.json()
 
     async def _get(self, path_or_url: str) -> dict[str, Any]:
@@ -319,7 +325,7 @@ class BaseMediaAdapter:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(url, headers=self._headers())
             if resp.status_code >= 400:
-                raise MediaAdapterError(f"HTTP {resp.status_code}: {resp.text[:500]}")
+                raise MediaAdapterError(_http_error_message(resp.status_code, resp.text))
             return resp.json()
 
     async def submit_image(self, request: MediaRequest) -> MediaResult:
@@ -392,10 +398,14 @@ class OpenAICompatibleAdapter(BaseMediaAdapter):
             return _image_result_from_openai_data(data)
         except MediaAdapterError as image_error:
             # Don't fallback to chat for auth errors — fail fast
-            if "401" in str(image_error) or "403" in str(image_error):
+            if (
+                "401" in str(image_error)
+                or "403" in str(image_error)
+                or "当前图片生成并发已满" in str(image_error)
+            ):
                 raise
-            # Respect explicit opt-out of image chat fallback (same pattern as video)
-            if not self.settings.config.get("allow_image_chat_fallback", True):
+            # Image keys are often scoped to image endpoints; fallback is opt-in only.
+            if not self.settings.config.get("allow_image_chat_fallback", False):
                 raise
             logger.warning(
                 f"Image API failed ({image_error}), falling back to chat → "

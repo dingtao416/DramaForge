@@ -31,6 +31,8 @@ from app.api.v2.storyboard import (
 )
 from app.data.model_catalog import BUILTIN_CATALOG
 from app.data.video_model_presets import effective_video_model_config, list_video_model_presets
+from app.models.media_generation import MediaCapability, MediaJobStatus
+from app.services.media_generation_service import MediaGenerationService
 
 
 class CaptureOpenAICompatibleAdapter(OpenAICompatibleAdapter):
@@ -414,6 +416,66 @@ class TaskEndpointPayloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(adapter.payload["size"], "1024x1024")
         self.assertEqual(adapter.payload["aspect_ratio"], "1:1")
         self.assertEqual(adapter.payload["image_url"], "https://cdn.example.test/input.png")
+
+
+class MediaGenerationCancellationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_image_job_commits_running_state_before_provider_call(self):
+        service = MediaGenerationService()
+        job = SimpleNamespace(
+            id=7,
+            user_id=1,
+            capability=MediaCapability.IMAGE,
+            provider_id=1,
+            model_id="image-model",
+            status=MediaJobStatus.QUEUED,
+            progress=0,
+            request_json={"prompt": "test", "_output_path": "out.png"},
+            provider_job_id=None,
+            response_json={},
+            result_assets_json=[],
+            error=None,
+        )
+        db = AsyncMock()
+        db.refresh.return_value = None
+        db.flush.return_value = None
+        events = []
+
+        async def record_commit():
+            events.append("commit")
+
+        db.commit.side_effect = record_commit
+        resolved = SimpleNamespace(
+            provider_id=1,
+            model_id="image-model",
+            provider_type="openai_compatible",
+            auth_type="bearer",
+            base_url="https://example.test/v1",
+            api_key="sk-test",
+            headers={},
+            config={},
+            capabilities={},
+            raw_params={},
+        )
+        async def submit_image(_request):
+            events.append("provider_call")
+            return SimpleNamespace(
+                provider_job_id="provider-1",
+                response={},
+                progress=100,
+                status="succeeded",
+                assets=[{"url": "https://cdn.example.test/out.png"}],
+                error=None,
+            )
+
+        adapter = SimpleNamespace(submit_image=AsyncMock(side_effect=submit_image), download_result=AsyncMock())
+
+        with patch("app.services.media_generation_service.get_media_adapter", return_value=adapter):
+            await service.run_existing_job(db=db, job=job, resolved=resolved, output_path="out.png")
+
+        first_commit_order = events.index("commit")
+        provider_call_order = events.index("provider_call")
+        self.assertLess(first_commit_order, provider_call_order)
+        self.assertEqual(job.status, MediaJobStatus.SUCCEEDED)
 
 
 class VideoGenerationOptionsTests(unittest.TestCase):

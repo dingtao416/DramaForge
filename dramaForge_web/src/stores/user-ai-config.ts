@@ -155,6 +155,13 @@ export const useUserAIConfigStore = defineStore('user-ai-config', () => {
     jobs.value = await aiConfigApi.listJobs()
   }
 
+  async function cancelJob(jobId: number) {
+    const job = await aiConfigApi.cancelJob(jobId)
+    const idx = jobs.value.findIndex((item) => item.id === job.id)
+    if (idx >= 0) jobs.value[idx] = job
+    return job
+  }
+
   return {
     providers,
     videoModelPresets,
@@ -182,5 +189,6 @@ export const useUserAIConfigStore = defineStore('user-ai-config', () => {
     setDefault,
     getModelsForType,
     fetchJobs,
+    cancelJob,
   }
 })

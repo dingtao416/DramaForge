@@ -183,6 +183,8 @@ async def regenerate_episode(
                 f"第{ep.number}集《{ep.title or ''}》：{ep.content[:200] if ep.content else '（暂无内容）'}..."
             )
 
+    sibling_summary_text = "\n".join(sibling_summaries) if sibling_summaries else "暂无其他剧集"
+
     context_text = f"""你正在改写短剧《{project.title}》的第{episode.number}集。
 
 ## 剧本背景
@@ -192,7 +194,7 @@ async def regenerate_episode(
 - 背景：{script.background or '未指定'}
 
 ## 相邻剧集摘要
-{"\n".join(sibling_summaries) if sibling_summaries else '暂无其他剧集'}
+{sibling_summary_text}
 
 ## 当前第{episode.number}集内容
 {episode.content or '（暂无内容）'}

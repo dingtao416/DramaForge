@@ -12,7 +12,7 @@ import {
   deleteConversation as apiDeleteConversation,
 } from '@/api/chat'
 import type { AgentIntentKind, AgentIntentPayload, ChatMessage, Conversation, ConversationDetail, MediaJobPayload, SendMessageRequest } from '@/api/chat'
-import { getJob } from '@/api/user-ai-config'
+import { cancelJob, getJob } from '@/api/user-ai-config'
 import type { MediaJob } from '@/types/user-ai-config'
 
 /** Local UI message (extends API message with streaming state) */
@@ -44,6 +44,8 @@ export const useChatStore = defineStore('chat', () => {
   const displayContent = ref('')         // typewriter-smoothed display content
   const error = ref<string | null>(null)
   const isLoadingConversations = ref(false)
+  const cancellingMediaJobIds = ref<Set<number>>(new Set())
+  const mediaCancelErrors = ref<Record<number, string>>({})
 
   // AbortController + typewriter timer
   let abortController: AbortController | null = null
@@ -56,6 +58,7 @@ export const useChatStore = defineStore('chat', () => {
     conversations.value.find(c => c.id === currentConversationId.value) ?? null
   )
   const hasMessages = computed(() => messages.value.length > 0)
+  const activeMediaStatuses = new Set(['created', 'queued', 'running'])
 
   // ═══════ Typewriter Engine ═══════
 
@@ -111,6 +114,18 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function friendlyMediaError(errorText?: string | null): string | null {
+    const text = errorText || ''
+    if (!text) return null
+    if (text.includes('Concurrency limit exceeded') || text.includes('rate_limit_error') || text.includes('当前图片生成并发已满')) {
+      return '当前图片生成并发已满，请稍后重试。'
+    }
+    if (text.includes('images-only group') || text.includes('/v1/images/generations')) {
+      return '当前图片模型密钥只能用于图片接口，请关闭聊天回退后重试。'
+    }
+    return text
+  }
+
   function updateLastAssistantMeta(meta: Record<string, any>): void {
     const last = messages.value[messages.value.length - 1]
     if (last && last.role === 'assistant') {
@@ -120,6 +135,7 @@ export const useChatStore = defineStore('chat', () => {
 
   function updateMediaJobMeta(job: MediaJob | MediaJobPayload): void {
     const payload = normalizeMediaJob(job)
+    payload.error = friendlyMediaError(payload.error)
     const target = [...messages.value]
       .reverse()
       .find(m => m.role === 'assistant' && m.meta_json?.media_job?.id === payload.id)
@@ -134,10 +150,11 @@ export const useChatStore = defineStore('chat', () => {
     if (pollingMediaJobs.has(jobId)) return
     pollingMediaJobs.add(jobId)
     try {
-      for (let attempt = 0; attempt < 120; attempt += 1) {
+      for (let attempt = -1; attempt < 120; attempt += 1) {
         // Adaptive polling: 2s for first 10 attempts, 3s for next 20, 5s thereafter
-        const delay = attempt < 10 ? 2000 : attempt < 30 ? 3000 : 5000
-        await new Promise(resolve => setTimeout(resolve, delay))
+        const delay = attempt < 0 ? 0 : attempt < 10 ? 2000 : attempt < 30 ? 3000 : 5000
+        if (delay) await new Promise(resolve => setTimeout(resolve, delay))
+        if (cancellingMediaJobIds.value.has(jobId)) break
         const job = await getJob(jobId)
         updateMediaJobMeta(job)
         if (['succeeded', 'failed', 'cancelled'].includes(job.status)) break
@@ -147,6 +164,66 @@ export const useChatStore = defineStore('chat', () => {
     } finally {
       pollingMediaJobs.delete(jobId)
     }
+  }
+
+  async function refreshMediaJob(jobId: number): Promise<void> {
+    try {
+      const job = await getJob(jobId)
+      updateMediaJobMeta(job)
+      if (activeMediaStatuses.has(job.status)) {
+        void pollMediaJob(job.id)
+      }
+    } catch {
+      // Keep the saved message state if the job can no longer be fetched.
+    }
+  }
+
+  async function cancelMediaJob(jobId: number): Promise<void> {
+    if (cancellingMediaJobIds.value.has(jobId)) return
+    const currentJob = [...messages.value]
+      .reverse()
+      .find(m => m.role === 'assistant' && m.meta_json?.media_job?.id === jobId)
+      ?.meta_json?.media_job as MediaJobPayload | undefined
+    if (currentJob && !activeMediaStatuses.has(currentJob.status)) return
+
+    cancellingMediaJobIds.value = new Set([...cancellingMediaJobIds.value, jobId])
+    const nextErrors = { ...mediaCancelErrors.value }
+    delete nextErrors[jobId]
+    mediaCancelErrors.value = nextErrors
+    try {
+      const latest = await getJob(jobId)
+      updateMediaJobMeta(latest)
+      if (!activeMediaStatuses.has(latest.status)) return
+      const job = await cancelJob(jobId)
+      updateMediaJobMeta(job)
+      const cleared = { ...mediaCancelErrors.value }
+      delete cleared[jobId]
+      mediaCancelErrors.value = cleared
+    } catch (e: any) {
+      const status = e?.response?.status
+      const detail = e?.response?.data?.detail
+      const message = status === 404
+        ? '停止失败，请确认后端已重启并加载最新代码。'
+        : (detail || e?.message || '取消图片生成失败')
+      error.value = message
+      mediaCancelErrors.value = { ...mediaCancelErrors.value, [jobId]: message }
+    } finally {
+      const nextIds = new Set(cancellingMediaJobIds.value)
+      nextIds.delete(jobId)
+      cancellingMediaJobIds.value = nextIds
+    }
+  }
+
+  async function retryImageJob(job: MediaJobPayload): Promise<void> {
+    const prompt = String(job.request_json?.prompt || '').trim()
+    if (!prompt) {
+      error.value = '无法重试：任务缺少原始提示词'
+      return
+    }
+    await sendMessage(prompt, {
+      model: job.model_id,
+      model_capability: 'image',
+    })
   }
 
   // ═══════ Actions ═══════
@@ -178,8 +255,9 @@ export const useChatStore = defineStore('chat', () => {
       // Resume polling for any in-progress media jobs
       for (const msg of messages.value) {
         const job = msg.meta_json?.media_job as MediaJobPayload | undefined
-        if (job && ['queued', 'running', 'created'].includes(job.status)) {
-          void pollMediaJob(job.id)
+        if (job) {
+          updateMediaJobMeta(job)
+          void refreshMediaJob(job.id)
         }
       }
     } catch (e: any) {
@@ -377,6 +455,8 @@ export const useChatStore = defineStore('chat', () => {
     displayContent,
     error,
     isLoadingConversations,
+    cancellingMediaJobIds,
+    mediaCancelErrors,
     // Getters
     currentConversation,
     hasMessages,
@@ -386,6 +466,8 @@ export const useChatStore = defineStore('chat', () => {
     newConversation,
     sendMessage,
     stopStreaming,
+    cancelMediaJob,
+    retryImageJob,
     deleteConversation,
   }
 })

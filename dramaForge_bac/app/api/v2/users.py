@@ -58,6 +58,19 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=128)
 
 
+class UpdateUsernameRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64, pattern=USERNAME_PATTERN)
+
+
+class UpdateEmailRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255, pattern=EMAIL_PATTERN)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=8, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
 class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(..., description="Refresh token")
 
@@ -247,3 +260,69 @@ async def get_me(user: CurrentUser, db: DbSession):
         credits=credits,
         plan_code=plan_code,
     )
+
+
+@router.patch("/me/username", response_model=UserResponse)
+async def update_username(
+    request: UpdateUsernameRequest,
+    user: CurrentUser,
+    db: DbSession,
+):
+    """Update current user's username."""
+    username = normalize_username(request.username)
+    result = await db.execute(select(User).where(User.username == username, User.id != user.id))
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already registered",
+        )
+
+    user.username = username
+    if not user.nickname:
+        user.nickname = username
+    await db.flush()
+    return await get_me(user, db)
+
+
+@router.patch("/me/email", response_model=UserResponse)
+async def update_email(
+    request: UpdateEmailRequest,
+    user: CurrentUser,
+    db: DbSession,
+):
+    """Update current user's email."""
+    email = normalize_email(request.email)
+    result = await db.execute(select(User).where(User.email == email, User.id != user.id))
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
+
+    user.email = email
+    await db.flush()
+    return await get_me(user, db)
+
+
+@router.patch("/me/password")
+async def change_password(
+    request: ChangePasswordRequest,
+    user: CurrentUser,
+    db: DbSession,
+):
+    """Change current user's password after verifying the current password."""
+    if not user.password_hash or not verify_password(request.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="当前密码错误",
+        )
+
+    if request.current_password == request.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="新密码不能与当前密码相同",
+        )
+
+    user.password_hash = hash_password(request.new_password)
+    await db.flush()
+    return {"changed": True}

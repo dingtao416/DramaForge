@@ -21,7 +21,31 @@ from app.services.storage import storage
 from app.services.user_model_resolver import ResolvedModel, user_model_resolver
 
 
+def _friendly_media_error(error: Exception | str) -> str:
+    text = str(error)
+    if "Concurrency limit exceeded" in text or "rate_limit_error" in text or "当前图片生成并发已满" in text:
+        return "当前图片生成并发已满，请稍后重试。"
+    if "images-only group" in text or "/v1/images/generations" in text:
+        return "当前图片模型密钥只能用于图片接口，请关闭聊天回退后重试。"
+    return text
+
+
 class MediaGenerationService:
+    async def mark_job_cancelled(
+        self,
+        *,
+        db: AsyncSession,
+        job_id: int,
+    ) -> MediaGenerationJob:
+        job = await db.get(MediaGenerationJob, job_id)
+        if not job:
+            raise ValueError(f"Media generation job {job_id} not found")
+        job.status = MediaJobStatus.CANCELLED
+        job.progress = max(job.progress or 0, 100)
+        job.error = None
+        await db.flush()
+        return job
+
     async def create_job(
         self,
         *,
@@ -75,8 +99,11 @@ class MediaGenerationService:
         try:
             await self.run_existing_job(db=db, job=job)
         except Exception as e:
+            await db.refresh(job)
+            if job.status == MediaJobStatus.CANCELLED:
+                return job
             job.status = MediaJobStatus.FAILED
-            job.error = str(e)[:2000]
+            job.error = _friendly_media_error(e)[:2000]
             job.progress = 100
             await db.flush()
         return job
@@ -89,6 +116,10 @@ class MediaGenerationService:
         resolved: ResolvedModel | None = None,
         output_path: str | None = None,
     ) -> MediaGenerationJob:
+        await db.refresh(job)
+        if job.status == MediaJobStatus.CANCELLED:
+            return job
+
         resolved = resolved or await self._resolve_job_model(db, job)
         output_path = output_path or job.request_json.get("_output_path")
         if not output_path:
@@ -126,11 +157,15 @@ class MediaGenerationService:
         job.status = MediaJobStatus.RUNNING
         job.progress = 10
         await db.flush()
+        await db.commit()
 
         if job.capability == MediaCapability.IMAGE:
             result = await adapter.submit_image(request)
         else:
             result = await adapter.submit_video(request)
+        await db.refresh(job)
+        if job.status == MediaJobStatus.CANCELLED:
+            return job
         job.provider_job_id = result.provider_job_id
         job.response_json = result.response
         job.progress = max(20, result.progress)
@@ -143,6 +178,9 @@ class MediaGenerationService:
 
             await asyncio.sleep(settings.video_poll_interval)
             elapsed += settings.video_poll_interval
+            await db.refresh(job)
+            if job.status == MediaJobStatus.CANCELLED:
+                return job
             result = await adapter.get_status(job.provider_job_id)
             job.response_json = result.response
             job.progress = result.progress
@@ -154,7 +192,13 @@ class MediaGenerationService:
             await db.flush()
 
         if job.status == MediaJobStatus.SUCCEEDED:
+            await db.refresh(job)
+            if job.status == MediaJobStatus.CANCELLED:
+                return job
             await adapter.download_result(result, output_path)
+            await db.refresh(job)
+            if job.status == MediaJobStatus.CANCELLED:
+                return job
             job.result_assets_json = [
                 {
                     "type": job.capability.value,
@@ -176,8 +220,11 @@ class MediaGenerationService:
         try:
             return await self.run_existing_job(db=db, job=job)
         except Exception as e:
+            await db.refresh(job)
+            if job.status == MediaJobStatus.CANCELLED:
+                return job
             job.status = MediaJobStatus.FAILED
-            job.error = str(e)[:2000]
+            job.error = _friendly_media_error(e)[:2000]
             job.progress = 100
             await db.flush()
             return job

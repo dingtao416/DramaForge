@@ -25,6 +25,19 @@ export interface LoginRequest {
   password: string
 }
 
+export interface UpdateUsernameRequest {
+  username: string
+}
+
+export interface UpdateEmailRequest {
+  email: string
+}
+
+export interface ChangePasswordRequest {
+  current_password: string
+  new_password: string
+}
+
 export interface AuthTokens {
   access_token: string
   refresh_token: string
@@ -74,5 +87,20 @@ export async function logout(): Promise<void> {
 
 export async function getCurrentUser(): Promise<UserInfo> {
   const response = await apiClient.get<UserInfo>('/user/me')
+  return response.data
+}
+
+export async function updateUsername(data: UpdateUsernameRequest): Promise<UserInfo> {
+  const response = await apiClient.patch<UserInfo>('/user/me/username', data)
+  return response.data
+}
+
+export async function updateEmail(data: UpdateEmailRequest): Promise<UserInfo> {
+  const response = await apiClient.patch<UserInfo>('/user/me/email', data)
+  return response.data
+}
+
+export async function changePassword(data: ChangePasswordRequest): Promise<{ changed: boolean }> {
+  const response = await apiClient.patch<{ changed: boolean }>('/user/me/password', data)
   return response.data
 }

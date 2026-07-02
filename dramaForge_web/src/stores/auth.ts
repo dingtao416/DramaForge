@@ -3,7 +3,16 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { login, register, logout, getCurrentUser, sendLoginCode } from '@/api/auth'
+import {
+  login,
+  register,
+  logout,
+  getCurrentUser,
+  sendLoginCode,
+  updateUsername,
+  updateEmail,
+  changePassword,
+} from '@/api/auth'
 import { isAuthenticated, clearTokens } from '@/api/client'
 import type { LoginRequest, RegisterRequest, UserInfo } from '@/api/auth'
 
@@ -91,6 +100,51 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function doUpdateUsername(username: string): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+    try {
+      user.value = await updateUsername({ username })
+      return true
+    } catch (e: any) {
+      error.value = e.response?.data?.detail || e.message || '用户名修改失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function doUpdateEmail(email: string): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+    try {
+      user.value = await updateEmail({ email })
+      return true
+    } catch (e: any) {
+      error.value = e.response?.data?.detail || e.message || '邮箱修改失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function doChangePassword(currentPassword: string, newPassword: string): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+    try {
+      await changePassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+      })
+      return true
+    } catch (e: any) {
+      error.value = e.response?.data?.detail || e.message || '密码修改失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   async function initialize(): Promise<void> {
     if (isAuthenticated()) {
       await fetchUser()
@@ -113,6 +167,9 @@ export const useAuthStore = defineStore('auth', () => {
     doRegister,
     doLogout,
     fetchUser,
+    doUpdateUsername,
+    doUpdateEmail,
+    doChangePassword,
     initialize,
     clearError,
   }

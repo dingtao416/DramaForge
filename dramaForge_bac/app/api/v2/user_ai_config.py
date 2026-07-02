@@ -27,7 +27,7 @@ from app.models.media_generation import (
     MediaJobStatus,
 )
 from app.services.media_generation_service import media_generation_service
-from app.tasks.media_generation_tasks import enqueue_media_job
+from app.tasks.media_generation_tasks import cancel_running_media_job, enqueue_media_job
 
 
 router = APIRouter(prefix="/user-ai", tags=["User AI Config"])
@@ -487,6 +487,23 @@ async def get_job(job_id: int, user: CurrentUser, db: DbSession):
     job = await db.get(MediaGenerationJob, job_id)
     if not job or job.user_id != user.id:
         raise HTTPException(404, "Job not found")
+    return job
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=JobResponse)
+async def cancel_job(job_id: int, user: CurrentUser, db: DbSession):
+    job = await db.get(MediaGenerationJob, job_id)
+    if not job or job.user_id != user.id or job.capability != MediaCapability.IMAGE:
+        raise HTTPException(404, "Job not found")
+    if job.status in {MediaJobStatus.CANCELLED, MediaJobStatus.FAILED, MediaJobStatus.SUCCEEDED}:
+        return job
+    if job.status not in {MediaJobStatus.CREATED, MediaJobStatus.QUEUED, MediaJobStatus.RUNNING}:
+        raise HTTPException(400, "Only active image jobs can be cancelled")
+
+    job = await media_generation_service.mark_job_cancelled(db=db, job_id=job.id)
+    cancel_running_media_job(job.id)
+    await db.commit()
+    await db.refresh(job)
     return job
 
 

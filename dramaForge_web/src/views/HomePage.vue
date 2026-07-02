@@ -1,17 +1,24 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Icon } from '@iconify/vue'
 import { projectsApi } from '@/api/projects'
 import { scriptsApi } from '@/api/scripts'
 import { VideoStyle } from '@/types/enums'
+import type { Conversation } from '@/api/chat'
 import type { ProjectList } from '@/types/project'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 import { useBillingStore } from '@/stores/billing'
 import { useUserAIConfigStore } from '@/stores/user-ai-config'
 import BottomSheet from '@/components/common/BottomSheet.vue'
-        import ModalOverlay from '@/components/common/ModalOverlay.vue'
-        import TopbarActions from '@/components/common/TopbarActions.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import ModalOverlay from '@/components/common/ModalOverlay.vue'
+import TopbarActions from '@/components/common/TopbarActions.vue'
+import ImageGenerationCard from '@/components/chat/ImageGenerationCard.vue'
+import ImageTaskCenter from '@/components/chat/ImageTaskCenter.vue'
+import type { MediaJobPayload } from '@/api/chat'
+import type { MediaJob, MediaJobStatus } from '@/types/user-ai-config'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -29,8 +36,13 @@ const showSubscribeSheet = ref(false)
 const showFeedbackSheet = ref(false)
 const showNotificationSheet = ref(false)
 const showMessageSheet = ref(false)
+const showImageTaskSheet = ref(false)
+const imageTaskFilter = ref<'all' | MediaJobStatus>('all')
 const feedbackText = ref('')
 const feedbackType = ref('bug')
+const showDeleteConversationConfirm = ref(false)
+const deleteTargetConversation = ref<Conversation | null>(null)
+const deletingConversation = ref(false)
 
 /* ─── Mode definitions ─── */
 type Mode = 'agent' | 'drama'
@@ -354,6 +366,29 @@ async function handleLoadConversation(convId: number) {
   await chatStore.loadConversation(convId)
 }
 
+function confirmDeleteConversation(conv: Conversation) {
+  deleteTargetConversation.value = conv
+  showDeleteConversationConfirm.value = true
+}
+
+function cancelDeleteConversation() {
+  if (deletingConversation.value) return
+  showDeleteConversationConfirm.value = false
+  deleteTargetConversation.value = null
+}
+
+async function handleDeleteConversation() {
+  if (!deleteTargetConversation.value) return
+  deletingConversation.value = true
+  try {
+    await chatStore.deleteConversation(deleteTargetConversation.value.id)
+    showDeleteConversationConfirm.value = false
+    deleteTargetConversation.value = null
+  } finally {
+    deletingConversation.value = false
+  }
+}
+
 function handleLogout() {
   authStore.doLogout()
   router.push('/login')
@@ -516,6 +551,31 @@ function mediaJobAssetUrl(job: any): string {
   return url.startsWith('/') ? `${backendBase}${url}` : url
 }
 
+function isImageMediaJob(job: any): job is MediaJobPayload {
+  return job?.capability === 'image'
+}
+
+async function handleCancelImageJob(jobId: number) {
+  await chatStore.cancelMediaJob(jobId)
+  await aiStore.fetchJobs().catch(() => undefined)
+}
+
+async function handleRetryImageJob(job: MediaJobPayload | MediaJob) {
+  showImageTaskSheet.value = false
+  await chatStore.retryImageJob({
+    id: job.id,
+    capability: 'image',
+    provider_id: job.provider_id,
+    model_id: job.model_id,
+    provider_job_id: job.provider_job_id,
+    status: job.status,
+    progress: job.progress,
+    request_json: job.request_json || {},
+    result_assets_json: job.result_assets_json || [],
+    error: job.error,
+  })
+}
+
 /** Handle image load error — hide broken img, show fallback */
 function onMediaImageError(e: Event): void {
   const img = e.target as HTMLImageElement
@@ -594,6 +654,15 @@ function onMediaImageError(e: Event): void {
               <div class="text-[13px] text-gray-700 truncate leading-tight">{{ conv.title || '新对话' }}</div>
               <div class="text-[11px] text-gray-500 truncate mt-0.5">{{ getModeLabel(conv.mode) }}</div>
             </div>
+            <button
+              class="sidebar-conv-delete"
+              type="button"
+              title="删除对话"
+              aria-label="删除对话"
+              @click.stop="confirmDeleteConversation(conv)"
+            >
+              <Icon icon="lucide:trash-2" width="16" height="16" />
+            </button>
           </div>
         </template>
         <!-- Earlier conversations -->
@@ -613,6 +682,15 @@ function onMediaImageError(e: Event): void {
               <div class="text-[13px] text-gray-700 truncate leading-tight">{{ conv.title || '新对话' }}</div>
               <div class="text-[11px] text-gray-500 truncate mt-0.5">{{ getModeLabel(conv.mode) }}</div>
             </div>
+            <button
+              class="sidebar-conv-delete"
+              type="button"
+              title="删除对话"
+              aria-label="删除对话"
+              @click.stop="confirmDeleteConversation(conv)"
+            >
+              <Icon icon="lucide:trash-2" width="16" height="16" />
+            </button>
           </div>
         </template>
         <div v-if="!chatStore.conversations.length" class="text-center text-[13px] text-gray-500 py-10">暂无记录</div>
@@ -636,6 +714,7 @@ function onMediaImageError(e: Event): void {
           @subscribe="showSubscribeSheet = true"
           @feedback="showFeedbackSheet = true"
           @notification="showNotificationSheet = true"
+          @image-tasks="showImageTaskSheet = true; aiStore.fetchJobs()"
           @message="showMessageSheet = true"
         />
       </div>
@@ -668,7 +747,15 @@ function onMediaImageError(e: Event): void {
                   <div class="chat-assistant-text whitespace-pre-wrap">
                     {{ msg.content }}<span v-if="msg.isStreaming && msg.content" class="streaming-cursor">|</span>
                   </div>
-                  <div v-if="msg.meta_json?.media_job" class="chat-media-job-card">
+                  <ImageGenerationCard
+                    v-if="isImageMediaJob(msg.meta_json?.media_job)"
+                    :job="msg.meta_json.media_job"
+                    :cancelling="chatStore.cancellingMediaJobIds.has(msg.meta_json.media_job.id)"
+                    :cancel-error="chatStore.mediaCancelErrors[msg.meta_json.media_job.id]"
+                    @cancel="handleCancelImageJob"
+                    @retry="handleRetryImageJob"
+                  />
+                  <div v-else-if="msg.meta_json?.media_job" class="chat-media-job-card">
                     <div class="chat-media-job-main">
                       <div class="chat-media-job-title">{{ mediaJobTypeLabel(msg.meta_json.media_job) }}</div>
                       <div class="chat-media-job-meta">
@@ -1245,6 +1332,11 @@ function onMediaImageError(e: Event): void {
     </div>
   </BottomSheet>
 
+  <!-- 图片任务中心 -->
+  <BottomSheet :visible="showImageTaskSheet" title="图片任务" height="72vh" @close="showImageTaskSheet = false">
+    <ImageTaskCenter v-model="imageTaskFilter" @retry="handleRetryImageJob" />
+  </BottomSheet>
+
   <!-- 消息 -->
   <BottomSheet :visible="showMessageSheet" title="消息" height="60vh" @close="showMessageSheet = false">
     <div class="empty-sheet">
@@ -1253,6 +1345,18 @@ function onMediaImageError(e: Event): void {
       <span>收到的私信和系统消息将显示在这里</span>
     </div>
   </BottomSheet>
+
+  <ConfirmDialog
+    :visible="showDeleteConversationConfirm"
+    title="删除对话"
+    :message="`将永久删除「${deleteTargetConversation?.title || '新对话'}」。删除后无法恢复。`"
+    confirm-text="确认删除"
+    cancel-text="取消"
+    danger
+    :loading="deletingConversation"
+    @confirm="handleDeleteConversation"
+    @cancel="cancelDeleteConversation"
+  />
 
   <!-- 积分不足弹窗 -->
   <ModalOverlay :visible="showInsufficientCredits" title="积分不足" subtitle="当前积分余额不足以完成此操作" width="480px" @close="showInsufficientCredits = false">
@@ -2471,12 +2575,53 @@ function onMediaImageError(e: Event): void {
   transition: background 0.15s;
 }
 
+.sidebar-conv-delete {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: #8B7A5A;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transform: translateX(3px);
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease, color 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+}
+
 .sidebar-conv-item:hover {
   background: rgba(0,0,0,0.04);
 }
 
+.sidebar-conv-item:hover .sidebar-conv-delete,
+.sidebar-conv-delete:focus-visible {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.sidebar-conv-delete:hover {
+  border-color: rgba(194, 61, 48, 0.22);
+  background: rgba(194, 61, 48, 0.08);
+  color: #B33A2F;
+}
+
+.sidebar-conv-delete:focus-visible {
+  outline: 2px solid rgba(232, 163, 23, 0.45);
+  outline-offset: 2px;
+}
+
 .sidebar-conv-active {
   background: rgba(232, 163, 23, 0.12) !important;
+}
+
+.sidebar-conv-active .sidebar-conv-delete {
+  opacity: 0.86;
+  transform: translateX(0);
+  pointer-events: auto;
 }
 
 .sidebar-conv-icon {

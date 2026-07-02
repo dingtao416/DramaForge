@@ -89,6 +89,11 @@ export async function getJob(id: number): Promise<MediaJob> {
   return data
 }
 
+export async function cancelJob(id: number): Promise<MediaJob> {
+  const { data } = await apiClient.post<MediaJob>(`/user-ai/jobs/${id}/cancel`)
+  return data
+}
+
 export async function listCatalog(): Promise<CatalogProvider[]> {
   const { data } = await apiClient.get<CatalogProvider[]>('/user-ai/catalog')
   return data
